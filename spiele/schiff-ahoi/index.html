@@ -56,6 +56,12 @@ const WAFFEN = [
   { name: "Dreifach-Kanone", kugeln: 3, schaden: 1, farbe: "#222",    groesse: 6,  preis: 200 },
   { name: "Feuer-Kanone",    kugeln: 3, schaden: 2, farbe: "#ff6a00", groesse: 8,  preis: 400 },
   { name: "Mega-Kanone",     kugeln: 5, schaden: 3, farbe: "#b040ff", groesse: 10, preis: 800 },
+  { name: "Blitz-Kanone ⚡",     kugeln: 5, schaden: 4,  farbe: "#00e5ff", groesse: 9,  tempo: 15, preis: 1500 },
+  { name: "Regenbogen-Kanone 🌈", kugeln: 7, schaden: 5,  farbe: "bunt",    groesse: 10, preis: 2500 },
+  { name: "Gold-Kanone 👑",       kugeln: 7, schaden: 7,  farbe: "#ffd700", groesse: 12, preis: 4000 },
+  { name: "Sternen-Kanone ⭐",    kugeln: 9, schaden: 10, farbe: "bunt",    groesse: 13, tempo: 17, preis: 7000 },
+  // "tempo" = wie schnell die Kugeln fliegen (ohne tempo gilt KUGEL_TEMPO)
+  // farbe: "bunt" = die Kugeln leuchten in allen Regenbogenfarben
 ];
 
 // ----- Die Gebiete 🗺️ -----
@@ -75,6 +81,18 @@ const GEBIETE = [
   { name: "Feuermeer", ab: 7500,
     wasser: ["#8a2b1a", "#2b0a06"], sand: "#3a2a26", gras: "#ff5a1f", deko: "🌋", haiTempo: 1.8,
     boss: { name: "MEERES-DRACHE", emoji: "🐉", leben: 120, tempo: 2.8, biss: 3, groesse: 200, gold: 150, beute: 10 } },
+  { name: "Geistermeer", ab: 10000,
+    wasser: ["#4b3a6b", "#160f24"], sand: "#6d6875", gras: "#a29bb5", deko: "🪦", haiTempo: 2.0,
+    boss: { name: "GEISTERSCHIFF", emoji: "👻", leben: 200, tempo: 3.0, biss: 3, groesse: 200, gold: 250, beute: 10 } },
+  { name: "Giftsumpf", ab: 12500,
+    wasser: ["#6b8e23", "#1f3308"], sand: "#5c4a1e", gras: "#9acd32", deko: "🍄", haiTempo: 2.2,
+    boss: { name: "RIESEN-KRABBE", emoji: "🦀", leben: 320, tempo: 3.2, biss: 4, groesse: 220, gold: 400, beute: 12 } },
+  { name: "Tiefsee", ab: 15000,
+    wasser: ["#0b1a4a", "#000208"], sand: "#1e2a4a", gras: "#3a6ea5", deko: "🐚", haiTempo: 2.4,
+    boss: { name: "TIEFSEE-MONSTER", emoji: "🦑", leben: 500, tempo: 3.4, biss: 5, groesse: 250, gold: 700, beute: 14 } },
+  { name: "Goldenes Meer", ab: 18000,
+    wasser: ["#e6b422", "#7a5200"], sand: "#fff3b0", gras: "#ffd700", deko: "💰", haiTempo: 2.6,
+    boss: { name: "MEERESKÖNIG", emoji: "🧜‍♂️", leben: 800, tempo: 3.6, biss: 6, groesse: 260, gold: 1200, beute: 16 } },
 ];
 
 // In welchem Gebiet liegt ein Punkt? (0 = Ruhige Bucht, 1 = Korallenriff, ...)
@@ -299,7 +317,7 @@ function schiessen() {
     const w = schiff.winkel + (n - (waffe.kugeln - 1) / 2) * 0.15;
     kugeln.push({
       x: schiff.x + vx * vorne, y: schiff.y + vy * vorne,
-      vx: Math.cos(w) * KUGEL_TEMPO, vy: Math.sin(w) * KUGEL_TEMPO,
+      vx: Math.cos(w) * (waffe.tempo || KUGEL_TEMPO), vy: Math.sin(w) * (waffe.tempo || KUGEL_TEMPO),
       weg: 0, schaden: waffe.schaden, farbe: waffe.farbe, groesse: waffe.groesse,
     });
   }
@@ -394,7 +412,7 @@ function aktualisieren(dt) {
     meldung = { text: `🗺️ ${GEBIETE[gebiet].name}`, zeit: 3 };
     // Der Boss bleibt in seinem Gebiet – fährst du raus, gibt er auf
     if (boss && boss.gebiet !== gebiet) {
-      meldung = { text: `🗺️ ${GEBIETE[gebiet].name} – der ${boss.name} gibt auf!`, zeit: 3 };
+      meldung = { text: `🗺️ ${GEBIETE[gebiet].name} – ${boss.name} gibt auf!`, zeit: 3 };
       boss = null;
     }
   }
@@ -431,7 +449,7 @@ function aktualisieren(dt) {
   // Kanonenkugeln fliegen
   for (const kugel of kugeln) {
     kugel.x += kugel.vx; kugel.y += kugel.vy;
-    kugel.weg += KUGEL_TEMPO;
+    kugel.weg += Math.hypot(kugel.vx, kugel.vy);
     // Trifft die Kugel einen Hai?
     for (const h of haie) {
       if (!h.getroffen && abstand(kugel, h) < 30) {
@@ -930,7 +948,8 @@ function zeichnen() {
   if (boss) zeichneBoss();
   zeichneSchiff();
   for (const kugel of kugeln) {
-    ctx.fillStyle = kugel.farbe;
+    // Bunte Kugeln wechseln die ganze Zeit ihre Farbe
+    ctx.fillStyle = kugel.farbe === "bunt" ? `hsl(${(uhr * 400 + kugel.weg) % 360}, 100%, 60%)` : kugel.farbe;
     ctx.beginPath(); ctx.arc(kugel.x, kugel.y, kugel.groesse, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
