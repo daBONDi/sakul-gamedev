@@ -28,11 +28,13 @@ groesseAnpassen();
 
 // ----- Einstellungen (hier kannst du rumprobieren!) -----
 const SCHIFF_TEMPO = 4;      // wie schnell das Schiff fährt
-const ANZAHL_SCHAETZE = 5;   // wie viele Schätze gleichzeitig in deiner Nähe sind
+const ANZAHL_SCHAETZE = 3;   // wie viele Schätze gleichzeitig in deiner Nähe sind
 const LEBEN = 3;
 const UNENDLICH_MUNITION = true; // true = unendlich viele Kanonenkugeln, false = nur so viele wie bei KANONEN_SCHUSS
 const KANONEN_SCHUSS = 3;    // wie viele Kanonenkugeln du hast (nur wenn UNENDLICH_MUNITION = false)
 const KUGEL_TEMPO = 9;       // wie schnell die Kanonenkugeln fliegen
+const BOSS_ALLE_PUNKTE = 20; // alle so viele Punkte kommt ein Boss-Hai
+const BOSS_LEBEN = 10;       // so viele Treffer braucht der erste Boss-Hai (jeder weitere hält mehr aus!)
 const INSEL_CHANCE = 0.6;    // wie viele Inseln es gibt (0 = keine, 1 = ganz viele)
 
 // So funktioniert das unendliche Meer:
@@ -43,6 +45,7 @@ const KACHEL = 500;
 
 // ----- Spielzustand -----
 let zustand = "start"; // "start", "spielen", "ende"
+let boss, naechsterBoss, bossNummer, meldung;
 let schiff, schaetze, haie, punkte, leben, unverwundbar, funken, schuss, kugeln, weltNummer, kacheln;
 let highscore = Number(ladeHighscore());
 
@@ -115,6 +118,10 @@ function neuesSpiel() {
   funken = [];
   schuss = KANONEN_SCHUSS;
   kugeln = [];
+  boss = null;
+  naechsterBoss = BOSS_ALLE_PUNKTE;
+  bossNummer = 0;
+  meldung = null;
   zustand = "spielen";
 }
 
@@ -246,9 +253,10 @@ function aktualisieren(dt) {
       for (let k = 0; k < 15; k++) {
         funken.push({ x: s.x, y: s.y, vx: zufall(-3, 3), vy: zufall(-3, 3), leben: 1, farbe: "255,215,0", groesse: 5 });
       }
-      schaetze[i] = neuerSchatz();
+      if (s.beute) { schaetze.splice(i, 1); i--; } // Boss-Beute verschwindet einfach
+      else schaetze[i] = neuerSchatz();
       ton(800, 0.1); setTimeout(() => ton(1200, 0.15), 90);
-    } else if (abstand(schiff, s) > 1200) {
+    } else if (abstand(schiff, s) > 1200 && !s.beute) {
       // Zu weit weg? Dann versteckt sich ein neuer Schatz in deiner Nähe
       schaetze[i] = neuerSchatz();
     }
@@ -266,12 +274,36 @@ function aktualisieren(dt) {
     // Zu weit weggeschwommen? Dann taucht der Hai woanders in deiner Nähe auf
     if (abstand(schiff, h) > 1300) Object.assign(h, neuerHai());
     if (unverwundbar <= 0 && abstand(schiff, h) < 32) {
-      leben--;
-      unverwundbar = 2;
-      ton(150, 0.3, "sawtooth");
-      if (leben <= 0) { spielEnde(); return; }
+      autsch();
+      if (leben <= 0) return;
     }
   }
+
+  // ----- Der Boss-Hai -----
+  if (!boss && punkte >= naechsterBoss) bossKommt();
+  if (boss) {
+    // Der Boss schwimmt direkt auf dich zu und wackelt dabei hin und her
+    const zx = schiff.x - boss.x, zy = schiff.y - boss.y;
+    const weg = Math.hypot(zx, zy) || 1;
+    const wackel = Math.sin(uhr * 3) * 0.6;
+    let bx = (zx / weg) * boss.tempo + (-zy / weg) * wackel;
+    let by = (zy / weg) * boss.tempo + (zx / weg) * wackel;
+    if (aufInsel(boss.x + bx, boss.y + by, 30)) {
+      // Insel im Weg? Dann schwimmt er seitlich drumherum
+      const seitX = -by, seitY = bx;
+      bx = seitX; by = seitY;
+    }
+    boss.x += bx; boss.y += by;
+    boss.vx = bx;
+    if (boss.blinken > 0) boss.blinken -= dt;
+    // Abgehängt? Der Boss findet dich trotzdem!
+    if (weg > 1300) { const p = platzInDerNaehe(600, 800); boss.x = p.x; boss.y = p.y; }
+    if (unverwundbar <= 0 && weg < 55) {
+      autsch();
+      if (leben <= 0) return;
+    }
+  }
+  if (meldung) { meldung.zeit -= dt; if (meldung.zeit <= 0) meldung = null; }
 
   // Kanonenkugeln fliegen
   for (const kugel of kugeln) {
@@ -289,6 +321,11 @@ function aktualisieren(dt) {
         ton(120, 0.4, "square");
       }
     }
+    // Trifft die Kugel den Boss-Hai?
+    if (boss && kugel.weg < 9999 && abstand(kugel, boss) < 55) {
+      kugel.weg = 9999;
+      bossGetroffen();
+    }
     // Auf eine Insel geprallt?
     if (aufInsel(kugel.x, kugel.y, 0)) kugel.weg = 9999;
   }
@@ -302,6 +339,47 @@ function aktualisieren(dt) {
     f.leben -= dt * 1.5;
   }
   funken = funken.filter(f => f.leben > 0);
+}
+
+// Das Schiff wurde gebissen!
+function autsch() {
+  leben--;
+  unverwundbar = 2;
+  ton(150, 0.3, "sawtooth");
+  if (leben <= 0) spielEnde();
+}
+
+function bossKommt() {
+  bossNummer++;
+  const p = platzInDerNaehe(550, 750);
+  const maxLeben = BOSS_LEBEN + (bossNummer - 1) * 5; // jeder Boss hält 5 Treffer mehr aus
+  boss = { x: p.x, y: p.y, vx: 0, leben: maxLeben, maxLeben: maxLeben, tempo: Math.min(1.5 + bossNummer * 0.2, 3.2), blinken: 0 };
+  meldung = { text: "⚠️ BOSS-HAI KOMMT! ⚠️", zeit: 3 };
+  ton(110, 0.5, "sawtooth"); setTimeout(() => ton(90, 0.6, "sawtooth"), 400);
+}
+
+function bossGetroffen() {
+  boss.leben--;
+  boss.blinken = 0.15;
+  ton(250, 0.1, "square");
+  for (let k = 0; k < 6; k++) {
+    funken.push({ x: boss.x, y: boss.y, vx: zufall(-3, 3), vy: zufall(-3, 3), leben: 1, farbe: "255,80,80", groesse: 5 });
+  }
+  if (boss.leben <= 0) {
+    // BESIEGT! Riesige Explosion und ganz viel Beute
+    punkte += 15;
+    for (let k = 0; k < 60; k++) {
+      funken.push({ x: boss.x, y: boss.y, vx: zufall(-7, 7), vy: zufall(-7, 7), leben: 1.5, farbe: k % 2 ? "255,120,0" : "255,215,0", groesse: 9 });
+    }
+    for (let k = 0; k < 4; k++) {
+      const w = (k / 4) * Math.PI * 2;
+      schaetze.push({ x: boss.x + Math.cos(w) * 60, y: boss.y + Math.sin(w) * 60, emoji: "👑", wert: 5, zeit: Math.random() * 10, beute: true });
+    }
+    meldung = { text: "🎉 BOSS BESIEGT! +15 🎉", zeit: 3 };
+    naechsterBoss = punkte + BOSS_ALLE_PUNKTE;
+    boss = null;
+    ton(300, 0.15); setTimeout(() => ton(450, 0.15), 150); setTimeout(() => ton(600, 0.15), 300); setTimeout(() => ton(900, 0.4), 450);
+  }
 }
 
 function spielEnde() {
@@ -454,6 +532,54 @@ function zeichneHai(h) {
   ctx.restore();
 }
 
+function zeichneBoss() {
+  ctx.save();
+  ctx.translate(boss.x, boss.y + Math.sin(uhr * 4) * 3);
+  // Roter Schein, wenn er getroffen wird
+  if (boss.blinken > 0) {
+    ctx.fillStyle = "rgba(255,0,0,0.5)";
+    ctx.beginPath(); ctx.arc(0, 0, 55, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.save();
+  if (boss.vx > 0) ctx.scale(-1, 1); // in Schwimmrichtung schauen
+  ctx.font = "100px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("🦈", 0, 0);
+  ctx.restore();
+  // Krone auf dem Kopf
+  ctx.font = "34px serif";
+  ctx.textAlign = "center";
+  ctx.fillText("👑", 0, -55);
+  // Lebensbalken
+  const breite = 100;
+  ctx.fillStyle = "#400";
+  ctx.fillRect(-breite / 2, -82, breite, 10);
+  ctx.fillStyle = "#e33";
+  ctx.fillRect(-breite / 2, -82, breite * (boss.leben / boss.maxLeben), 10);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+  ctx.strokeRect(-breite / 2, -82, breite, 10);
+  ctx.restore();
+}
+
+// Roter Pfeil zum Boss, wenn er nicht zu sehen ist
+function zeichneBossPfeil() {
+  const mx = canvas.width / 2, my = canvas.height / 2;
+  const sx = boss.x - kamera.x + mx, sy = boss.y - kamera.y + my;
+  if (sx > -40 && sx < canvas.width + 40 && sy > 20 && sy < canvas.height + 40) return;
+  const w = Math.atan2(sy - my, sx - mx);
+  const fx = Math.cos(w), fy = Math.sin(w);
+  const t = Math.min(fx !== 0 ? (mx - 40) / Math.abs(fx) : Infinity, fy !== 0 ? (my - 70) / Math.abs(fy) : Infinity);
+  ctx.save();
+  ctx.translate(mx + fx * t, my + 15 + fy * t);
+  ctx.font = "30px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("🦈", 0, 0);
+  ctx.rotate(w);
+  ctx.fillStyle = "rgba(230,30,30,0.9)";
+  ctx.beginPath(); ctx.moveTo(38, 0); ctx.lineTo(20, -12); ctx.lineTo(20, 12); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
 function zeichneAnzeige() {
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.fillRect(0, 0, canvas.width, 55);
@@ -502,6 +628,7 @@ function zeichnen() {
       "⛵ Schiff Ahoi! ⛵",
       "Fahr übers unendliche Meer und finde Schätze: 🪙 = 1   💎 = 3   👑 = 5",
       "Pass auf die Haie auf! 🦈  Schieß mit deinen Kanonen 💣",
+      `Alle ${BOSS_ALLE_PUNKTE} Punkte kommt ein BOSS-HAI! 🦈👑`,
       "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
       "Leertaste oder Klick zum Starten",
       `🏆 Rekord: ${highscore}`,
@@ -519,6 +646,7 @@ function zeichnen() {
   }
   schaetze.forEach(zeichneSchatz);
   haie.forEach(zeichneHai);
+  if (boss) zeichneBoss();
   zeichneSchiff();
   for (const kugel of kugeln) {
     ctx.fillStyle = "#222";
@@ -528,7 +656,19 @@ function zeichnen() {
 
   // Anzeigen bleiben fest auf dem Bildschirm
   zeichneSchatzPfeile();
+  if (boss) zeichneBossPfeil();
   zeichneAnzeige();
+  if (meldung) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, meldung.zeit);
+    ctx.font = "bold 40px system-ui";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 6; ctx.strokeStyle = "#000";
+    ctx.strokeText(meldung.text, canvas.width / 2, 110);
+    ctx.fillStyle = "#ffd166";
+    ctx.fillText(meldung.text, canvas.width / 2, 110);
+    ctx.restore();
+  }
   zeichneKanonenKnopf();
   if (zustand === "ende") {
     zeichneText([
