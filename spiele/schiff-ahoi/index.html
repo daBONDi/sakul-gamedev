@@ -31,10 +31,12 @@ const SCHIFF_TEMPO = 4;      // wie schnell das Schiff fährt
 const SPIELZEIT = 60;        // Sekunden pro Runde
 const ANZAHL_SCHAETZE = 4;   // wie viele Schätze gleichzeitig im Meer sind
 const LEBEN = 3;
+const KANONEN_SCHUSS = 3;  // wie viele Kanonenkugeln du pro Runde hast
+const KUGEL_TEMPO = 9;     // wie schnell die Kanonenkugeln fliegen
 
 // ----- Spielzustand -----
 let zustand = "start"; // "start", "spielen", "ende"
-let schiff, schaetze, haie, inseln, punkte, leben, zeit, unverwundbar, funken;
+let schiff, schaetze, haie, inseln, punkte, leben, zeit, unverwundbar, funken, schuss, kugeln;
 let highscore = Number(ladeHighscore());
 
 function ladeHighscore() {
@@ -61,6 +63,8 @@ function neuesSpiel() {
   zeit = SPIELZEIT;
   unverwundbar = 0;
   funken = [];
+  schuss = KANONEN_SCHUSS;
+  kugeln = [];
   zustand = "spielen";
 }
 
@@ -100,6 +104,7 @@ const tasten = {};
 window.addEventListener("keydown", e => {
   tasten[e.key.toLowerCase()] = true;
   if ((e.key === " " || e.key === "Enter") && zustand !== "spielen") neuesSpiel();
+  else if (e.key === " " && zustand === "spielen" && !e.repeat) schiessen();
   if (e.key.startsWith("Arrow") || e.key === " ") e.preventDefault();
 });
 window.addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
@@ -107,10 +112,32 @@ window.addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 let ziel = null; // wohin man getippt hat
 canvas.addEventListener("pointerdown", e => {
   if (zustand !== "spielen") { neuesSpiel(); return; }
+  // Auf den Kanonen-Knopf getippt?
+  const k = kanonenKnopf();
+  if (Math.hypot(e.clientX - k.x, e.clientY - k.y) < k.r) { schiessen(); return; }
   ziel = { x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener("pointermove", e => { if (ziel) ziel = { x: e.clientX, y: e.clientY }; });
 window.addEventListener("pointerup", () => { ziel = null; });
+
+// ----- Kanonen -----
+// Der Knopf unten rechts zum Schießen (für Handy und Tablet)
+function kanonenKnopf() {
+  return { x: canvas.width - 60, y: canvas.height - 60, r: 45 };
+}
+
+function schiessen() {
+  if (schuss <= 0) { ton(200, 0.1, "square"); return; } // Klick – leer!
+  schuss--;
+  // Die Kugel fliegt in die Richtung, in die das Schiff schaut
+  const vx = Math.cos(schiff.winkel), vy = Math.sin(schiff.winkel);
+  kugeln.push({ x: schiff.x + vx * 32, y: schiff.y + vy * 32, vx: vx * KUGEL_TEMPO, vy: vy * KUGEL_TEMPO, weg: 0 });
+  // Rauchwolke an der Kanone
+  for (let k = 0; k < 10; k++) {
+    funken.push({ x: schiff.x + vx * 32, y: schiff.y + vy * 32, vx: vx * zufall(0, 2) + zufall(-1, 1), vy: vy * zufall(0, 2) + zufall(-1, 1), leben: 1, farbe: "200,200,200", groesse: 7 });
+  }
+  ton(90, 0.35, "sawtooth");
+}
 
 // ----- Spiel-Logik -----
 function aktualisieren(dt) {
@@ -182,6 +209,29 @@ function aktualisieren(dt) {
       if (leben <= 0) { spielEnde(); return; }
     }
   }
+
+  // Kanonenkugeln fliegen
+  for (const kugel of kugeln) {
+    kugel.x += kugel.vx; kugel.y += kugel.vy;
+    kugel.weg += KUGEL_TEMPO;
+    // Trifft die Kugel einen Hai?
+    for (const h of haie) {
+      if (!h.getroffen && abstand(kugel, h) < 30) {
+        h.getroffen = true;
+        kugel.weg = 9999;
+        punkte += 2; // Bonus für den Treffer!
+        for (let k = 0; k < 20; k++) {
+          funken.push({ x: h.x, y: h.y, vx: zufall(-4, 4), vy: zufall(-4, 4), leben: 1, farbe: "255,120,0", groesse: 6 });
+        }
+        ton(120, 0.4, "square");
+      }
+    }
+    // Auf eine Insel geprallt?
+    if (inseln.some(i => abstand(kugel, i) < i.r)) kugel.weg = 9999;
+  }
+  // Kugeln, die zu weit geflogen sind oder getroffen haben, verschwinden
+  kugeln = kugeln.filter(k => k.weg < 600 && k.x > 0 && k.x < canvas.width && k.y > 0 && k.y < canvas.height);
+  haie = haie.filter(h => !h.getroffen);
 
   // Funken und Wellen
   for (const f of funken) {
@@ -317,6 +367,22 @@ function zeichneAnzeige() {
   ctx.fillText(`⏱️ ${Math.ceil(zeit)}`, canvas.width / 2, 28);
   ctx.textAlign = "right";
   ctx.fillText("❤️".repeat(leben), canvas.width - 20, 28);
+  // Wie viele Schuss noch übrig sind
+  ctx.textAlign = "left";
+  ctx.fillText("💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss), 110, 28);
+}
+
+function zeichneKanonenKnopf() {
+  const k = kanonenKnopf();
+  ctx.fillStyle = schuss > 0 ? "rgba(200,40,40,0.75)" : "rgba(80,80,80,0.6)";
+  ctx.beginPath(); ctx.arc(k.x, k.y, k.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.font = "34px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("💣", k.x, k.y - 4);
+  ctx.font = "bold 14px system-ui";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(`${schuss}`, k.x, k.y + 26);
 }
 
 function zeichneText(zeilen) {
@@ -336,8 +402,8 @@ function zeichnen() {
     zeichneText([
       "⛵ Schiff Ahoi! ⛵",
       "Finde Schätze im Meer: 🪙 = 1   💎 = 3   👑 = 5",
-      "Pass auf die Haie auf! 🦈",
-      "Steuern: Pfeiltasten / WASD oder tippen",
+      "Pass auf die Haie auf! 🦈  Du hast 3 Kanonenschüsse 💣",
+      "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
       "Leertaste oder Klick zum Starten",
       `🏆 Rekord: ${highscore}`,
     ]);
@@ -351,7 +417,12 @@ function zeichnen() {
   schaetze.forEach(zeichneSchatz);
   haie.forEach(zeichneHai);
   zeichneSchiff();
+  for (const kugel of kugeln) {
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(kugel.x, kugel.y, 6, 0, Math.PI * 2); ctx.fill();
+  }
   zeichneAnzeige();
+  zeichneKanonenKnopf();
   if (zustand === "ende") {
     zeichneText([
       leben <= 0 ? "🦈 Oh nein! 🦈" : "⏱️ Zeit um!",
