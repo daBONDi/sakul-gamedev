@@ -111,6 +111,18 @@ function speichereGold() {
   gespeichertesGold = gold;
   try { localStorage.setItem("schiffAhoiGold", gold); } catch (e) {}
 }
+// Auch die gekauften Schiffe und Waffen bleiben gespeichert!
+function ladeStufe(name, liste) {
+  let stufe = 0;
+  try { stufe = Number(localStorage.getItem(name)) || 0; } catch (e) {}
+  return Math.max(0, Math.min(stufe, liste.length - 1)); // falls die Liste mal kürzer wird
+}
+function speichereUpgrades() {
+  try {
+    localStorage.setItem("schiffAhoiSchiff", schiffStufe);
+    localStorage.setItem("schiffAhoiWaffe", waffenStufe);
+  } catch (e) {}
+}
 function speichereHighscore(wert) {
   try { localStorage.setItem("schiffAhoiHighscore", wert); } catch (e) {}
 }
@@ -177,10 +189,10 @@ function neuesSpiel() {
   haie = [neuerHai()];
   punkte = 0;
   gold = gespeichertesGold; // Gold vom letzten Mal
-  schiffStufe = 0;
-  waffenStufe = 0;
+  schiffStufe = ladeStufe("schiffAhoiSchiff", SCHIFFE); // gekauftes Schiff vom letzten Mal
+  waffenStufe = ladeStufe("schiffAhoiWaffe", WAFFEN);   // gekaufte Waffe vom letzten Mal
   ladenHinweis = null;
-  leben = LEBEN;
+  leben = LEBEN + SCHIFFE[schiffStufe].extraLeben; // größere Schiffe starten mit mehr Leben
   unverwundbar = 0;
   funken = [];
   schuss = KANONEN_SCHUSS;
@@ -473,11 +485,12 @@ function kaufe(liste, stufe) {
 function kaufeSchiff() {
   if (kaufe(SCHIFFE, schiffStufe)) {
     schiffStufe++;
+    speichereUpgrades();
     leben = maxLeben(); // neues Schiff = alle Leben voll!
   }
 }
 function kaufeWaffe() {
-  if (kaufe(WAFFEN, waffenStufe)) waffenStufe++;
+  if (kaufe(WAFFEN, waffenStufe)) { waffenStufe++; speichereUpgrades(); }
 }
 
 // Wo sind die Knöpfe im Shop? (wird fürs Zeichnen UND fürs Klicken benutzt)
@@ -899,6 +912,7 @@ function zeichnen() {
       "Jeder Schatz schenkt dir ein Leben ❤️  –  Shop mit Taste B 🏪",
       "Leertaste oder Klick zum Starten",
       `🏆 Rekord: ${highscore}     💰 Dein Gold: ${gespeichertesGold}`,
+      `⛵ ${SCHIFFE[ladeStufe("schiffAhoiSchiff", SCHIFFE)].name}   💣 ${WAFFEN[ladeStufe("schiffAhoiWaffe", WAFFEN)].name}`,
     ]);
     return;
   }
