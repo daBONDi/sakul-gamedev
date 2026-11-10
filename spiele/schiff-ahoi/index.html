@@ -39,6 +39,23 @@ const BOSS_ALLE_PUNKTE = 50; // alle so viele Punkte kommt ein Boss-Hai
 const BOSS_LEBEN = 10;       // so viele Treffer braucht der erste Boss-Hai (jeder weitere hält mehr aus!)
 const INSEL_CHANCE = 0.6;    // wie viele Inseln es gibt (0 = keine, 1 = ganz viele)
 
+// ----- Der Shop 🏪 -----
+// Hier kannst du neue Schiffe und Waffen erfinden oder die Preise ändern!
+// Gold 💰 bekommst du für Schätze, Haie und Boss-Haie.
+const SCHIFFE = [
+  { name: "Kleines Boot",         groesse: 1.0, extraLeben: 0, preis: 0 },
+  { name: "Segelschiff",          groesse: 1.3, extraLeben: 2, preis: 20 },
+  { name: "Großes Piratenschiff", groesse: 1.6, extraLeben: 4, preis: 45 },
+  { name: "Riesen-Galeone",       groesse: 2.0, extraLeben: 7, preis: 80 },
+];
+const WAFFEN = [
+  { name: "Kleine Kanone",   kugeln: 1, schaden: 1, farbe: "#222",    groesse: 6,  preis: 0 },
+  { name: "Doppel-Kanone",   kugeln: 2, schaden: 1, farbe: "#222",    groesse: 6,  preis: 15 },
+  { name: "Dreifach-Kanone", kugeln: 3, schaden: 1, farbe: "#222",    groesse: 6,  preis: 30 },
+  { name: "Feuer-Kanone",    kugeln: 3, schaden: 2, farbe: "#ff6a00", groesse: 8,  preis: 55 },
+  { name: "Mega-Kanone",     kugeln: 5, schaden: 3, farbe: "#b040ff", groesse: 10, preis: 90 },
+];
+
 // So funktioniert das unendliche Meer:
 // Das Meer ist in große Felder (Kacheln) aufgeteilt. Immer wenn das Schiff
 // in die Nähe einer neuen Kachel kommt, wird sie erfunden – mit Inseln drauf.
@@ -46,7 +63,8 @@ const INSEL_CHANCE = 0.6;    // wie viele Inseln es gibt (0 = keine, 1 = ganz vi
 const KACHEL = 500;
 
 // ----- Spielzustand -----
-let zustand = "start"; // "start", "spielen", "ende"
+let zustand = "start"; // "start", "spielen", "laden" (Shop), "ende"
+let gold, schiffStufe, waffenStufe, ladenHinweis;
 let boss, naechsterBoss, bossNummer, meldung;
 let schiff, schaetze, haie, punkte, leben, unverwundbar, funken, schuss, kugeln, weltNummer, kacheln;
 let highscore = Number(ladeHighscore());
@@ -107,6 +125,10 @@ function aufInsel(x, y, extra) {
   return inselnBei(x, y).some(i => Math.hypot(x - i.x, y - i.y) < i.r + extra);
 }
 
+// Wie groß ist das Schiff gerade? Und wie viele Leben darf es haben?
+function schiffGroesse() { return SCHIFFE[schiffStufe].groesse; }
+function maxLeben() { return MAX_LEBEN + SCHIFFE[schiffStufe].extraLeben; }
+
 function neuesSpiel() {
   weltNummer = Math.floor(Math.random() * 100000); // jedes Spiel ein neues Meer
   kacheln = new Map();
@@ -115,6 +137,10 @@ function neuesSpiel() {
   for (let i = 0; i < ANZAHL_SCHAETZE; i++) schaetze.push(neuerSchatz());
   haie = [neuerHai()];
   punkte = 0;
+  gold = 0;
+  schiffStufe = 0;
+  waffenStufe = 0;
+  ladenHinweis = null;
   leben = LEBEN;
   unverwundbar = 0;
   funken = [];
@@ -173,15 +199,25 @@ function haiDreht(h) {
 const tasten = {};
 window.addEventListener("keydown", e => {
   tasten[e.key.toLowerCase()] = true;
-  if ((e.key === " " || e.key === "Enter") && zustand !== "spielen") neuesSpiel();
+  const t = e.key.toLowerCase();
+  if ((e.key === " " || e.key === "Enter") && (zustand === "start" || zustand === "ende")) neuesSpiel();
   else if (e.key === " " && zustand === "spielen" && !e.repeat) schiessen();
+  // Shop öffnen und schließen mit B (oder Escape zum Schließen)
+  else if (t === "b" && zustand === "spielen") ladenAuf();
+  else if ((t === "b" || e.key === "Escape" || e.key === " ") && zustand === "laden") ladenZu();
+  else if (t === "1" && zustand === "laden") kaufeSchiff();
+  else if (t === "2" && zustand === "laden") kaufeWaffe();
   if (e.key.startsWith("Arrow") || e.key === " ") e.preventDefault();
 });
 window.addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 
 let ziel = null; // wohin man getippt hat (auf dem Bildschirm)
 canvas.addEventListener("pointerdown", e => {
+  if (zustand === "laden") { ladenKlick(e.clientX, e.clientY); return; }
   if (zustand !== "spielen") { neuesSpiel(); return; }
+  // Auf den Shop-Knopf getippt?
+  const l = ladenKnopf();
+  if (Math.hypot(e.clientX - l.x, e.clientY - l.y) < l.r) { ladenAuf(); return; }
   // Auf den Kanonen-Knopf getippt?
   const k = kanonenKnopf();
   if (Math.hypot(e.clientX - k.x, e.clientY - k.y) < k.r) { schiessen(); return; }
@@ -201,12 +237,22 @@ function schiessen() {
     if (schuss <= 0) { ton(200, 0.1, "square"); return; } // Klick – leer!
     schuss--;
   }
-  // Die Kugel fliegt in die Richtung, in die das Schiff schaut
+  // Die Kugeln fliegen in die Richtung, in die das Schiff schaut
+  const waffe = WAFFEN[waffenStufe];
+  const vorne = 32 * schiffGroesse();
   const vx = Math.cos(schiff.winkel), vy = Math.sin(schiff.winkel);
-  kugeln.push({ x: schiff.x + vx * 32, y: schiff.y + vy * 32, vx: vx * KUGEL_TEMPO, vy: vy * KUGEL_TEMPO, weg: 0 });
+  for (let n = 0; n < waffe.kugeln; n++) {
+    // Mehrere Kugeln fliegen wie ein Fächer auseinander
+    const w = schiff.winkel + (n - (waffe.kugeln - 1) / 2) * 0.15;
+    kugeln.push({
+      x: schiff.x + vx * vorne, y: schiff.y + vy * vorne,
+      vx: Math.cos(w) * KUGEL_TEMPO, vy: Math.sin(w) * KUGEL_TEMPO,
+      weg: 0, schaden: waffe.schaden, farbe: waffe.farbe, groesse: waffe.groesse,
+    });
+  }
   // Rauchwolke an der Kanone
   for (let k = 0; k < 10; k++) {
-    funken.push({ x: schiff.x + vx * 32, y: schiff.y + vy * 32, vx: vx * zufall(0, 2) + zufall(-1, 1), vy: vy * zufall(0, 2) + zufall(-1, 1), leben: 1, farbe: "200,200,200", groesse: 7 });
+    funken.push({ x: schiff.x + vx * vorne, y: schiff.y + vy * vorne, vx: vx * zufall(0, 2) + zufall(-1, 1), vy: vy * zufall(0, 2) + zufall(-1, 1), leben: 1, farbe: "200,200,200", groesse: 7 });
   }
   ton(90, 0.35, "sawtooth");
 }
@@ -233,7 +279,7 @@ function aktualisieren(dt) {
     const neuX = schiff.x + dx / laenge * SCHIFF_TEMPO;
     const neuY = schiff.y + dy / laenge * SCHIFF_TEMPO;
     // Nicht auf Inseln fahren
-    if (!aufInsel(neuX, neuY, 15)) { schiff.x = neuX; schiff.y = neuY; }
+    if (!aufInsel(neuX, neuY, 15 * schiffGroesse())) { schiff.x = neuX; schiff.y = neuY; }
     // Schiff dreht sich sanft in Fahrtrichtung
     const zielWinkel = Math.atan2(dy, dx);
     let diff = zielWinkel - schiff.winkel;
@@ -250,10 +296,11 @@ function aktualisieren(dt) {
   for (let i = 0; i < schaetze.length; i++) {
     const s = schaetze[i];
     s.zeit += dt;
-    if (abstand(schiff, s) < 35) {
+    if (abstand(schiff, s) < 25 + 12 * schiffGroesse()) {
       punkte += s.wert;
+      gold += s.wert;
       // Jeder Schatz schenkt dir ein Leben!
-      leben = Math.min(leben + LEBEN_PRO_SCHATZ, MAX_LEBEN);
+      leben = Math.min(leben + LEBEN_PRO_SCHATZ, maxLeben());
       for (let k = 0; k < 8; k++) {
         funken.push({ x: schiff.x, y: schiff.y, vx: zufall(-2, 2), vy: zufall(-3, -1), leben: 1, farbe: "255,80,140", groesse: 5 });
       }
@@ -280,7 +327,7 @@ function aktualisieren(dt) {
     if (aufInsel(h.x, h.y, 10)) { h.x -= h.vx * 2; h.y -= h.vy * 2; h.vx *= -1; h.vy *= -1; }
     // Zu weit weggeschwommen? Dann taucht der Hai woanders in deiner Nähe auf
     if (abstand(schiff, h) > 1300) Object.assign(h, neuerHai());
-    if (unverwundbar <= 0 && abstand(schiff, h) < 32) {
+    if (unverwundbar <= 0 && abstand(schiff, h) < 18 + 14 * schiffGroesse()) {
       autsch();
       if (leben <= 0) return;
     }
@@ -305,7 +352,7 @@ function aktualisieren(dt) {
     if (boss.blinken > 0) boss.blinken -= dt;
     // Abgehängt? Der Boss findet dich trotzdem!
     if (weg > 1300) { const p = platzInDerNaehe(600, 800); boss.x = p.x; boss.y = p.y; }
-    if (unverwundbar <= 0 && weg < 55) {
+    if (unverwundbar <= 0 && weg < 40 + 15 * schiffGroesse()) {
       autsch();
       if (leben <= 0) return;
     }
@@ -322,6 +369,7 @@ function aktualisieren(dt) {
         h.getroffen = true;
         kugel.weg = 9999;
         punkte += 2; // Bonus für den Treffer!
+        gold += 2;
         for (let k = 0; k < 20; k++) {
           funken.push({ x: h.x, y: h.y, vx: zufall(-4, 4), vy: zufall(-4, 4), leben: 1, farbe: "255,120,0", groesse: 6 });
         }
@@ -331,7 +379,7 @@ function aktualisieren(dt) {
     // Trifft die Kugel den Boss-Hai?
     if (boss && kugel.weg < 9999 && abstand(kugel, boss) < 55) {
       kugel.weg = 9999;
-      bossGetroffen();
+      bossGetroffen(kugel.schaden);
     }
     // Auf eine Insel geprallt?
     if (aufInsel(kugel.x, kugel.y, 0)) kugel.weg = 9999;
@@ -346,6 +394,53 @@ function aktualisieren(dt) {
     f.leben -= dt * 1.5;
   }
   funken = funken.filter(f => f.leben > 0);
+}
+
+// ----- Shop -----
+function ladenAuf() { zustand = "laden"; ziel = null; ton(600, 0.1); }
+function ladenZu() { zustand = "spielen"; ton(400, 0.1); }
+
+function kaufe(liste, stufe) {
+  const naechstes = liste[stufe + 1];
+  if (!naechstes) { ladenHinweis = { text: "Du hast schon das Beste! ⭐", bis: uhr + 2 }; return false; }
+  if (gold < naechstes.preis) {
+    ladenHinweis = { text: `Dir fehlen noch ${naechstes.preis - gold} Gold 💰`, bis: uhr + 2 };
+    ton(150, 0.15, "square");
+    return false;
+  }
+  gold -= naechstes.preis;
+  ladenHinweis = { text: `🎉 ${naechstes.name} gekauft!`, bis: uhr + 2 };
+  ton(600, 0.1); setTimeout(() => ton(900, 0.1), 100); setTimeout(() => ton(1200, 0.2), 200);
+  return true;
+}
+function kaufeSchiff() {
+  if (kaufe(SCHIFFE, schiffStufe)) {
+    schiffStufe++;
+    leben = maxLeben(); // neues Schiff = alle Leben voll!
+  }
+}
+function kaufeWaffe() {
+  if (kaufe(WAFFEN, waffenStufe)) waffenStufe++;
+}
+
+// Wo sind die Knöpfe im Shop? (wird fürs Zeichnen UND fürs Klicken benutzt)
+function ladenLayout() {
+  const b = Math.min(560, canvas.width - 32);
+  const h = 400;
+  const x = (canvas.width - b) / 2, y = Math.max(20, (canvas.height - h) / 2);
+  return {
+    x, y, b, h,
+    schiffKnopf: { x: x + b - 150, y: y + 115, b: 130, h: 50 },
+    waffeKnopf:  { x: x + b - 150, y: y + 235, b: 130, h: 50 },
+    zuKnopf:     { x: x + b / 2 - 110, y: y + h - 70, b: 220, h: 50 },
+  };
+}
+function drin(px, py, k) { return px >= k.x && px <= k.x + k.b && py >= k.y && py <= k.y + k.h; }
+function ladenKlick(px, py) {
+  const l = ladenLayout();
+  if (drin(px, py, l.schiffKnopf)) kaufeSchiff();
+  else if (drin(px, py, l.waffeKnopf)) kaufeWaffe();
+  else if (drin(px, py, l.zuKnopf)) ladenZu();
 }
 
 // Das Schiff wurde gebissen!
@@ -365,8 +460,8 @@ function bossKommt() {
   ton(110, 0.5, "sawtooth"); setTimeout(() => ton(90, 0.6, "sawtooth"), 400);
 }
 
-function bossGetroffen() {
-  boss.leben--;
+function bossGetroffen(schaden) {
+  boss.leben -= schaden;
   boss.blinken = 0.15;
   ton(250, 0.1, "square");
   for (let k = 0; k < 6; k++) {
@@ -375,6 +470,7 @@ function bossGetroffen() {
   if (boss.leben <= 0) {
     // BESIEGT! Riesige Explosion und ganz viel Beute
     punkte += 15;
+    gold += 15;
     for (let k = 0; k < 60; k++) {
       funken.push({ x: boss.x, y: boss.y, vx: zufall(-7, 7), vy: zufall(-7, 7), leben: 1.5, farbe: k % 2 ? "255,120,0" : "255,215,0", groesse: 9 });
     }
@@ -468,6 +564,7 @@ function zeichneSchiff() {
   ctx.save();
   ctx.translate(schiff.x, schiff.y + Math.sin(uhr * 3) * 2);
   ctx.rotate(schiff.winkel);
+  ctx.scale(schiffGroesse(), schiffGroesse());
   // Rumpf
   ctx.fillStyle = "#8b4513";
   ctx.beginPath();
@@ -493,7 +590,7 @@ function zeichneSchiff() {
   // Flagge oben drauf
   ctx.font = "16px serif";
   ctx.textAlign = "center";
-  ctx.fillText("🏴‍☠️", schiff.x, schiff.y - 30);
+  ctx.fillText("🏴‍☠️", schiff.x, schiff.y - 30 * schiffGroesse());
 }
 
 function zeichneSchatz(s) {
@@ -594,13 +691,13 @@ function zeichneAnzeige() {
   ctx.font = "bold 24px system-ui";
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.fillText(`💰 ${punkte}`, 20, 28);
+  ctx.fillText(`⭐ ${punkte}   💰 ${gold}`, 20, 28);
   // Wie viele Schuss noch übrig sind
   ctx.textAlign = "center";
-  const munition = UNENDLICH_MUNITION ? "💣 ∞" : "💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss);
+  const munition = UNENDLICH_MUNITION ? "💣 ∞" + (canvas.width > 700 ? "  " + WAFFEN[waffenStufe].name : "") : "💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss);
   ctx.fillText(munition, canvas.width / 2, 28);
   ctx.textAlign = "right";
-  ctx.fillText("❤️".repeat(leben), canvas.width - 20, 28);
+  ctx.fillText(leben <= 5 ? "❤️".repeat(leben) : `❤️ x ${leben}`, canvas.width - 20, 28);
 }
 
 function zeichneKanonenKnopf() {
@@ -614,6 +711,88 @@ function zeichneKanonenKnopf() {
   ctx.font = "bold 14px system-ui";
   ctx.fillStyle = "#fff";
   ctx.fillText(UNENDLICH_MUNITION ? "∞" : `${schuss}`, k.x, k.y + 26);
+}
+
+function ladenKnopf() {
+  return { x: 60, y: canvas.height - 60, r: 40 };
+}
+function zeichneLadenKnopf() {
+  const k = ladenKnopf();
+  ctx.fillStyle = "rgba(40,140,60,0.8)";
+  ctx.beginPath(); ctx.arc(k.x, k.y, k.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.font = "30px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("🏪", k.x, k.y - 4);
+  ctx.font = "bold 13px system-ui";
+  ctx.fillStyle = "#fff";
+  ctx.fillText("Shop (B)", k.x, k.y + 24);
+}
+
+function zeichneKnopf(k, text, aktiv) {
+  ctx.fillStyle = aktiv ? "#2e9e4f" : "#666";
+  ctx.beginPath(); ctx.roundRect(k.x, k.y, k.b, k.h, 12); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 18px system-ui";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, k.x + k.b / 2, k.y + k.h / 2);
+}
+
+function zeichneLaden() {
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const l = ladenLayout();
+  // Holz-Schild
+  ctx.fillStyle = "#7a4a1f";
+  ctx.beginPath(); ctx.roundRect(l.x, l.y, l.b, l.h, 18); ctx.fill();
+  ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 4; ctx.stroke();
+
+  ctx.fillStyle = "#ffd166";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "bold 32px system-ui";
+  ctx.fillText("🏪 Piraten-Shop", l.x + l.b / 2, l.y + 35);
+  ctx.font = "bold 20px system-ui";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(`Du hast 💰 ${gold} Gold`, l.x + l.b / 2, l.y + 72);
+
+  // Zwei Reihen: Schiff und Waffe
+  const reihen = [
+    { titel: "⛵ Schiff (Taste 1)", liste: SCHIFFE, stufe: schiffStufe, knopf: l.schiffKnopf,
+      info: n => `größer, ${MAX_LEBEN + n.extraLeben} Leben max.` },
+    { titel: "💣 Waffe (Taste 2)", liste: WAFFEN, stufe: waffenStufe, knopf: l.waffeKnopf,
+      info: n => `${n.kugeln} Kugel${n.kugeln > 1 ? "n" : ""}, Schaden ${n.schaden}` },
+  ];
+  for (const reihe of reihen) {
+    const ry = reihe.knopf.y;
+    const jetzt = reihe.liste[reihe.stufe];
+    const naechstes = reihe.liste[reihe.stufe + 1];
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#ffd166";
+    ctx.font = "bold 20px system-ui";
+    ctx.fillText(reihe.titel, l.x + 20, ry - 12);
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px system-ui";
+    ctx.fillText(`Jetzt: ${jetzt.name}`, l.x + 20, ry + 14);
+    if (naechstes) {
+      ctx.fillText(`Neu: ${naechstes.name}`, l.x + 20, ry + 36);
+      ctx.fillStyle = "#cfe";
+      ctx.font = "14px system-ui";
+      ctx.fillText(reihe.info(naechstes), l.x + 20, ry + 56);
+      zeichneKnopf(reihe.knopf, `💰 ${naechstes.preis}`, gold >= naechstes.preis);
+    } else {
+      ctx.fillText("Das ist schon das Beste! ⭐", l.x + 20, ry + 36);
+      zeichneKnopf(reihe.knopf, "✔ Fertig", false);
+    }
+  }
+  zeichneKnopf(l.zuKnopf, "⛵ Weiter segeln", true);
+
+  if (ladenHinweis && uhr < ladenHinweis.bis) {
+    ctx.fillStyle = "#ffd166";
+    ctx.font = "bold 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(ladenHinweis.text, l.x + l.b / 2, l.y + l.h - 92);
+  }
 }
 
 function zeichneText(zeilen) {
@@ -637,7 +816,7 @@ function zeichnen() {
       "Pass auf die Haie auf! 🦈  Schieß mit deinen Kanonen 💣",
       `Alle ${BOSS_ALLE_PUNKTE} Punkte kommt ein BOSS-HAI! 🦈👑`,
       "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
-      "Jeder Schatz schenkt dir ein Leben ❤️",
+      "Jeder Schatz schenkt dir ein Leben ❤️  –  Shop mit Taste B 🏪",
       "Leertaste oder Klick zum Starten",
       `🏆 Rekord: ${highscore}`,
     ]);
@@ -657,8 +836,8 @@ function zeichnen() {
   if (boss) zeichneBoss();
   zeichneSchiff();
   for (const kugel of kugeln) {
-    ctx.fillStyle = "#222";
-    ctx.beginPath(); ctx.arc(kugel.x, kugel.y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = kugel.farbe;
+    ctx.beginPath(); ctx.arc(kugel.x, kugel.y, kugel.groesse, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 
@@ -678,6 +857,8 @@ function zeichnen() {
     ctx.restore();
   }
   zeichneKanonenKnopf();
+  zeichneLadenKnopf();
+  if (zustand === "laden") zeichneLaden();
   if (zustand === "ende") {
     zeichneText([
       "🦈 Oh nein! 🦈",
