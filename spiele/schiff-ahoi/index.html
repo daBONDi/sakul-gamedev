@@ -46,16 +46,16 @@ const INSEL_CHANCE = 0.6;    // wie viele Inseln es gibt (0 = keine, 1 = ganz vi
 // Gold 💰 bekommst du für Schätze, Haie und Boss-Haie.
 const SCHIFFE = [
   { name: "Kleines Boot",         groesse: 1.0, extraLeben: 0, preis: 0 },
-  { name: "Segelschiff",          groesse: 1.3, extraLeben: 2, preis: 20 },
-  { name: "Großes Piratenschiff", groesse: 1.6, extraLeben: 4, preis: 45 },
-  { name: "Riesen-Galeone",       groesse: 2.0, extraLeben: 7, preis: 80 },
+  { name: "Segelschiff",          groesse: 1.3, extraLeben: 2, preis: 60 },
+  { name: "Großes Piratenschiff", groesse: 1.6, extraLeben: 4, preis: 150 },
+  { name: "Riesen-Galeone",       groesse: 2.0, extraLeben: 7, preis: 300 },
 ];
 const WAFFEN = [
   { name: "Kleine Kanone",   kugeln: 1, schaden: 1, farbe: "#222",    groesse: 6,  preis: 0 },
-  { name: "Doppel-Kanone",   kugeln: 2, schaden: 1, farbe: "#222",    groesse: 6,  preis: 15 },
-  { name: "Dreifach-Kanone", kugeln: 3, schaden: 1, farbe: "#222",    groesse: 6,  preis: 30 },
-  { name: "Feuer-Kanone",    kugeln: 3, schaden: 2, farbe: "#ff6a00", groesse: 8,  preis: 55 },
-  { name: "Mega-Kanone",     kugeln: 5, schaden: 3, farbe: "#b040ff", groesse: 10, preis: 90 },
+  { name: "Doppel-Kanone",   kugeln: 2, schaden: 1, farbe: "#222",    groesse: 6,  preis: 40 },
+  { name: "Dreifach-Kanone", kugeln: 3, schaden: 1, farbe: "#222",    groesse: 6,  preis: 100 },
+  { name: "Feuer-Kanone",    kugeln: 3, schaden: 2, farbe: "#ff6a00", groesse: 8,  preis: 200 },
+  { name: "Mega-Kanone",     kugeln: 5, schaden: 3, farbe: "#b040ff", groesse: 10, preis: 400 },
 ];
 
 // ----- Die Gebiete 🗺️ -----
@@ -100,6 +100,16 @@ let highscore = Number(ladeHighscore());
 
 function ladeHighscore() {
   try { return localStorage.getItem("schiffAhoiHighscore") || 0; } catch (e) { return 0; }
+}
+// Das Gold wird im Browser gespeichert und ist beim nächsten Spiel wieder da!
+let gespeichertesGold = Number(ladeGold());
+function ladeGold() {
+  try { return localStorage.getItem("schiffAhoiGold") || 0; } catch (e) { return 0; }
+}
+function speichereGold() {
+  if (gold === gespeichertesGold) return; // nur speichern, wenn sich etwas geändert hat
+  gespeichertesGold = gold;
+  try { localStorage.setItem("schiffAhoiGold", gold); } catch (e) {}
 }
 function speichereHighscore(wert) {
   try { localStorage.setItem("schiffAhoiHighscore", wert); } catch (e) {}
@@ -166,7 +176,7 @@ function neuesSpiel() {
   for (let i = 0; i < ANZAHL_SCHAETZE; i++) schaetze.push(neuerSchatz());
   haie = [neuerHai()];
   punkte = 0;
-  gold = 0;
+  gold = gespeichertesGold; // Gold vom letzten Mal
   schiffStufe = 0;
   waffenStufe = 0;
   ladenHinweis = null;
@@ -888,7 +898,7 @@ function zeichnen() {
       "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
       "Jeder Schatz schenkt dir ein Leben ❤️  –  Shop mit Taste B 🏪",
       "Leertaste oder Klick zum Starten",
-      `🏆 Rekord: ${highscore}`,
+      `🏆 Rekord: ${highscore}     💰 Dein Gold: ${gespeichertesGold}`,
     ]);
     return;
   }
@@ -946,6 +956,7 @@ function schleife(jetzt) {
   letzteZeit = jetzt;
   uhr += dt;
   aktualisieren(dt);
+  if (zustand !== "start") speichereGold();
   zeichnen();
   requestAnimationFrame(schleife);
 }
