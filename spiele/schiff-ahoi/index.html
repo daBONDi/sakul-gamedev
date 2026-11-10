@@ -28,8 +28,10 @@ groesseAnpassen();
 
 // ----- Einstellungen (hier kannst du rumprobieren!) -----
 const SCHIFF_TEMPO = 4;      // wie schnell das Schiff fährt
-const ANZAHL_SCHAETZE = 3;   // wie viele Schätze gleichzeitig in deiner Nähe sind
+const ANZAHL_SCHAETZE = 1;   // wie viele Schätze gleichzeitig in deiner Nähe sind
 const LEBEN = 3;
+const MAX_LEBEN = 5;         // mehr Leben kann man nicht haben
+const LEBEN_PRO_SCHATZ = 1;  // so viele Leben bekommst du für jeden Schatz
 const UNENDLICH_MUNITION = true; // true = unendlich viele Kanonenkugeln, false = nur so viele wie bei KANONEN_SCHUSS
 const KANONEN_SCHUSS = 3;    // wie viele Kanonenkugeln du hast (nur wenn UNENDLICH_MUNITION = false)
 const KUGEL_TEMPO = 9;       // wie schnell die Kanonenkugeln fliegen
@@ -250,6 +252,11 @@ function aktualisieren(dt) {
     s.zeit += dt;
     if (abstand(schiff, s) < 35) {
       punkte += s.wert;
+      // Jeder Schatz schenkt dir ein Leben!
+      leben = Math.min(leben + LEBEN_PRO_SCHATZ, MAX_LEBEN);
+      for (let k = 0; k < 8; k++) {
+        funken.push({ x: schiff.x, y: schiff.y, vx: zufall(-2, 2), vy: zufall(-3, -1), leben: 1, farbe: "255,80,140", groesse: 5 });
+      }
       for (let k = 0; k < 15; k++) {
         funken.push({ x: s.x, y: s.y, vx: zufall(-3, 3), vy: zufall(-3, 3), leben: 1, farbe: "255,215,0", groesse: 5 });
       }
@@ -630,6 +637,7 @@ function zeichnen() {
       "Pass auf die Haie auf! 🦈  Schieß mit deinen Kanonen 💣",
       `Alle ${BOSS_ALLE_PUNKTE} Punkte kommt ein BOSS-HAI! 🦈👑`,
       "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
+      "Jeder Schatz schenkt dir ein Leben ❤️",
       "Leertaste oder Klick zum Starten",
       `🏆 Rekord: ${highscore}`,
     ]);
