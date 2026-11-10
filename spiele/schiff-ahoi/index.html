@@ -380,7 +380,7 @@ function aktualisieren(dt) {
       }
       if (s.beute) { schaetze.splice(i, 1); i--; } // Boss-Beute verschwindet einfach
       else schaetze[i] = neuerSchatz();
-      ton(800, 0.1); setTimeout(() => ton(1200, 0.15), 90);
+      kaChing();
     } else if (abstand(schiff, s) > 1200 && !s.beute) {
       // Zu weit weg? Dann versteckt sich ein neuer Schatz in deiner Nähe
       schaetze[i] = neuerSchatz();
@@ -589,6 +589,38 @@ function spielEnde() {
 
 // ----- Kleiner Sound mit Web Audio -----
 let audio = null;
+// "KA-CHING!" wie bei einer Kasse – für Schätze
+function kaChing() {
+  try {
+    if (!audio) audio = new AudioContext();
+    const jetzt = audio.currentTime;
+    // "KA": ein kurzes Klacken (Rauschen)
+    const laenge = Math.floor(audio.sampleRate * 0.05);
+    const rauschen = audio.createBuffer(1, laenge, audio.sampleRate);
+    const daten = rauschen.getChannelData(0);
+    for (let i = 0; i < laenge; i++) daten[i] = (Math.random() * 2 - 1) * (1 - i / laenge);
+    const klack = audio.createBufferSource();
+    klack.buffer = rauschen;
+    const klackLaut = audio.createGain();
+    klackLaut.gain.value = 0.25;
+    klack.connect(klackLaut).connect(audio.destination);
+    klack.start(jetzt);
+    // "CHING": eine helle Glocke aus mehreren Tönen, die lange nachklingt
+    for (const [frequenz, lautstaerke] of [[2093, 0.12], [2637, 0.08], [3136, 0.06], [4186, 0.04]]) {
+      const osz = audio.createOscillator();
+      const laut = audio.createGain();
+      osz.type = "sine";
+      osz.frequency.value = frequenz;
+      laut.gain.setValueAtTime(0.0001, jetzt + 0.06);
+      laut.gain.exponentialRampToValueAtTime(lautstaerke, jetzt + 0.07);
+      laut.gain.exponentialRampToValueAtTime(0.0001, jetzt + 0.8);
+      osz.connect(laut).connect(audio.destination);
+      osz.start(jetzt + 0.06);
+      osz.stop(jetzt + 0.85);
+    }
+  } catch (e) {}
+}
+
 function ton(frequenz, dauer, art = "sine") {
   try {
     if (!audio) audio = new AudioContext();
