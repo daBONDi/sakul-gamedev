@@ -30,7 +30,8 @@ groesseAnpassen();
 const SCHIFF_TEMPO = 4;      // wie schnell das Schiff fährt
 const ANZAHL_SCHAETZE = 5;   // wie viele Schätze gleichzeitig in deiner Nähe sind
 const LEBEN = 3;
-const KANONEN_SCHUSS = 3;    // wie viele Kanonenkugeln du hast
+const UNENDLICH_MUNITION = true; // true = unendlich viele Kanonenkugeln, false = nur so viele wie bei KANONEN_SCHUSS
+const KANONEN_SCHUSS = 3;    // wie viele Kanonenkugeln du hast (nur wenn UNENDLICH_MUNITION = false)
 const KUGEL_TEMPO = 9;       // wie schnell die Kanonenkugeln fliegen
 const INSEL_CHANCE = 0.6;    // wie viele Inseln es gibt (0 = keine, 1 = ganz viele)
 
@@ -187,8 +188,10 @@ function kanonenKnopf() {
 }
 
 function schiessen() {
-  if (schuss <= 0) { ton(200, 0.1, "square"); return; } // Klick – leer!
-  schuss--;
+  if (!UNENDLICH_MUNITION) {
+    if (schuss <= 0) { ton(200, 0.1, "square"); return; } // Klick – leer!
+    schuss--;
+  }
   // Die Kugel fliegt in die Richtung, in die das Schiff schaut
   const vx = Math.cos(schiff.winkel), vy = Math.sin(schiff.winkel);
   kugeln.push({ x: schiff.x + vx * 32, y: schiff.y + vy * 32, vx: vx * KUGEL_TEMPO, vy: vy * KUGEL_TEMPO, weg: 0 });
@@ -461,14 +464,15 @@ function zeichneAnzeige() {
   ctx.fillText(`💰 ${punkte}`, 20, 28);
   // Wie viele Schuss noch übrig sind
   ctx.textAlign = "center";
-  ctx.fillText("💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss), canvas.width / 2, 28);
+  const munition = UNENDLICH_MUNITION ? "💣 ∞" : "💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss);
+  ctx.fillText(munition, canvas.width / 2, 28);
   ctx.textAlign = "right";
   ctx.fillText("❤️".repeat(leben), canvas.width - 20, 28);
 }
 
 function zeichneKanonenKnopf() {
   const k = kanonenKnopf();
-  ctx.fillStyle = schuss > 0 ? "rgba(200,40,40,0.75)" : "rgba(80,80,80,0.6)";
+  ctx.fillStyle = (UNENDLICH_MUNITION || schuss > 0) ? "rgba(200,40,40,0.75)" : "rgba(80,80,80,0.6)";
   ctx.beginPath(); ctx.arc(k.x, k.y, k.r, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
   ctx.font = "34px serif";
@@ -476,7 +480,7 @@ function zeichneKanonenKnopf() {
   ctx.fillText("💣", k.x, k.y - 4);
   ctx.font = "bold 14px system-ui";
   ctx.fillStyle = "#fff";
-  ctx.fillText(`${schuss}`, k.x, k.y + 26);
+  ctx.fillText(UNENDLICH_MUNITION ? "∞" : `${schuss}`, k.x, k.y + 26);
 }
 
 function zeichneText(zeilen) {
@@ -497,7 +501,7 @@ function zeichnen() {
     zeichneText([
       "⛵ Schiff Ahoi! ⛵",
       "Fahr übers unendliche Meer und finde Schätze: 🪙 = 1   💎 = 3   👑 = 5",
-      "Pass auf die Haie auf! 🦈  Du hast 3 Kanonenschüsse 💣",
+      "Pass auf die Haie auf! 🦈  Schieß mit deinen Kanonen 💣",
       "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
       "Leertaste oder Klick zum Starten",
       `🏆 Rekord: ${highscore}`,
