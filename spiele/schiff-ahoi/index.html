@@ -14,7 +14,7 @@
 <script>
 // ===== Schiff Ahoi! =====
 // Steuere dein Schiff mit den Pfeiltasten (oder WASD) oder tippe/klicke dorthin, wo es hinfahren soll.
-// Sammle Schätze ein und pass auf die Haie auf!
+// Das Meer ist unendlich groß! Sammle Schätze ein, schieß auf Haie und pass auf deine Leben auf!
 
 const canvas = document.getElementById("spiel");
 const ctx = canvas.getContext("2d");
@@ -28,15 +28,21 @@ groesseAnpassen();
 
 // ----- Einstellungen (hier kannst du rumprobieren!) -----
 const SCHIFF_TEMPO = 4;      // wie schnell das Schiff fährt
-const SPIELZEIT = 60;        // Sekunden pro Runde
-const ANZAHL_SCHAETZE = 4;   // wie viele Schätze gleichzeitig im Meer sind
+const ANZAHL_SCHAETZE = 5;   // wie viele Schätze gleichzeitig in deiner Nähe sind
 const LEBEN = 3;
-const KANONEN_SCHUSS = 3;  // wie viele Kanonenkugeln du pro Runde hast
-const KUGEL_TEMPO = 9;     // wie schnell die Kanonenkugeln fliegen
+const KANONEN_SCHUSS = 3;    // wie viele Kanonenkugeln du hast
+const KUGEL_TEMPO = 9;       // wie schnell die Kanonenkugeln fliegen
+const INSEL_CHANCE = 0.6;    // wie viele Inseln es gibt (0 = keine, 1 = ganz viele)
+
+// So funktioniert das unendliche Meer:
+// Das Meer ist in große Felder (Kacheln) aufgeteilt. Immer wenn das Schiff
+// in die Nähe einer neuen Kachel kommt, wird sie erfunden – mit Inseln drauf.
+// Schätze und Haie, die zu weit weg sind, tauchen wieder in deiner Nähe auf.
+const KACHEL = 500;
 
 // ----- Spielzustand -----
 let zustand = "start"; // "start", "spielen", "ende"
-let schiff, schaetze, haie, inseln, punkte, leben, zeit, unverwundbar, funken, schuss, kugeln;
+let schiff, schaetze, haie, punkte, leben, unverwundbar, funken, schuss, kugeln, weltNummer, kacheln;
 let highscore = Number(ladeHighscore());
 
 function ladeHighscore() {
@@ -49,18 +55,61 @@ function speichereHighscore(wert) {
 function zufall(min, max) { return min + Math.random() * (max - min); }
 function abstand(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
-function neuesSpiel() {
-  schiff = { x: canvas.width / 2, y: canvas.height / 2, winkel: 0 };
-  inseln = [];
-  for (let i = 0; i < 3; i++) {
-    inseln.push(freierPlatz(70 + Math.random() * 30));
+// Ein "Würfel", der für dieselbe Kachel immer dieselben Zahlen würfelt.
+// So bleibt eine Insel an ihrem Platz, auch wenn du wegfährst und wiederkommst.
+function kachelWuerfel(kx, ky) {
+  let s = (kx * 374761393 + ky * 668265263 + weltNummer * 982451653) | 0;
+  return function () {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function inselnDerKachel(kx, ky) {
+  const name = kx + "," + ky;
+  if (!kacheln.has(name)) {
+    const wuerfel = kachelWuerfel(kx, ky);
+    const liste = [];
+    if (wuerfel() < INSEL_CHANCE) {
+      const r = 50 + wuerfel() * 50;
+      const insel = {
+        x: kx * KACHEL + r + 20 + wuerfel() * (KACHEL - 2 * r - 40),
+        y: ky * KACHEL + r + 20 + wuerfel() * (KACHEL - 2 * r - 40),
+        r: r,
+      };
+      // Keine Insel genau dort, wo das Schiff losfährt
+      if (Math.hypot(insel.x, insel.y) > insel.r + 120) liste.push(insel);
+    }
+    kacheln.set(name, liste);
   }
+  return kacheln.get(name);
+}
+
+// Alle Inseln rund um einen Punkt
+function inselnBei(x, y) {
+  const kx = Math.floor(x / KACHEL), ky = Math.floor(y / KACHEL);
+  const ergebnis = [];
+  for (let a = -1; a <= 1; a++) {
+    for (let b = -1; b <= 1; b++) ergebnis.push(...inselnDerKachel(kx + a, ky + b));
+  }
+  return ergebnis;
+}
+
+function aufInsel(x, y, extra) {
+  return inselnBei(x, y).some(i => Math.hypot(x - i.x, y - i.y) < i.r + extra);
+}
+
+function neuesSpiel() {
+  weltNummer = Math.floor(Math.random() * 100000); // jedes Spiel ein neues Meer
+  kacheln = new Map();
+  schiff = { x: 0, y: 0, winkel: 0 };
   schaetze = [];
   for (let i = 0; i < ANZAHL_SCHAETZE; i++) schaetze.push(neuerSchatz());
   haie = [neuerHai()];
   punkte = 0;
   leben = LEBEN;
-  zeit = SPIELZEIT;
   unverwundbar = 0;
   funken = [];
   schuss = KANONEN_SCHUSS;
@@ -68,19 +117,20 @@ function neuesSpiel() {
   zustand = "spielen";
 }
 
-// Sucht einen Platz im Meer, der nicht auf einer Insel oder beim Schiff ist
-function freierPlatz(radius) {
+// Sucht einen freien Platz im Meer rund ums Schiff (nicht zu nah, nicht zu weit)
+function platzInDerNaehe(minWeg, maxWeg) {
   for (let versuch = 0; versuch < 100; versuch++) {
-    const p = { x: zufall(radius + 20, canvas.width - radius - 20), y: zufall(radius + 70, canvas.height - radius - 20), r: radius };
-    const aufInsel = inseln.some(i => abstand(p, i) < i.r + radius + 20);
-    const amSchiff = schiff && abstand(p, schiff) < 150;
-    if (!aufInsel && !amSchiff) return p;
+    const w = zufall(0, Math.PI * 2);
+    const weg = zufall(minWeg, maxWeg);
+    const x = schiff.x + Math.cos(w) * weg;
+    const y = schiff.y + Math.sin(w) * weg;
+    if (!aufInsel(x, y, 30)) return { x, y };
   }
-  return { x: 60, y: 120, r: radius };
+  return { x: schiff.x + maxWeg, y: schiff.y };
 }
 
 function neuerSchatz() {
-  const p = freierPlatz(18);
+  const p = platzInDerNaehe(200, 700);
   // Manche Schätze sind mehr wert!
   const arten = [
     { emoji: "🪙", wert: 1 },
@@ -93,10 +143,20 @@ function neuerSchatz() {
 }
 
 function neuerHai() {
-  const p = freierPlatz(20);
-  const w = zufall(0, Math.PI * 2);
-  const tempo = zufall(1.2, 2.2);
-  return { x: p.x, y: p.y, vx: Math.cos(w) * tempo, vy: Math.sin(w) * tempo };
+  const p = platzInDerNaehe(450, 800);
+  const hai = { x: p.x, y: p.y, vx: 0, vy: 0, tempo: zufall(1.2, 2.2), denken: 0 };
+  haiDreht(hai);
+  return hai;
+}
+
+// Der Hai sucht sich eine neue Richtung – oft schwimmt er ungefähr auf dein Schiff zu!
+function haiDreht(h) {
+  let w = Math.atan2(schiff.y - h.y, schiff.x - h.x);
+  w += zufall(-1.2, 1.2);
+  if (Math.random() < 0.3) w = zufall(0, Math.PI * 2);
+  h.vx = Math.cos(w) * h.tempo;
+  h.vy = Math.sin(w) * h.tempo;
+  h.denken = zufall(2, 4); // Sekunden bis zur nächsten Drehung
 }
 
 // ----- Steuerung -----
@@ -109,7 +169,7 @@ window.addEventListener("keydown", e => {
 });
 window.addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
 
-let ziel = null; // wohin man getippt hat
+let ziel = null; // wohin man getippt hat (auf dem Bildschirm)
 canvas.addEventListener("pointerdown", e => {
   if (zustand !== "spielen") { neuesSpiel(); return; }
   // Auf den Kanonen-Knopf getippt?
@@ -143,8 +203,6 @@ function schiessen() {
 function aktualisieren(dt) {
   if (zustand !== "spielen") return;
 
-  zeit -= dt;
-  if (zeit <= 0) { zeit = 0; spielEnde(); return; }
   if (unverwundbar > 0) unverwundbar -= dt;
 
   // Schiff bewegen
@@ -154,7 +212,8 @@ function aktualisieren(dt) {
   if (tasten["arrowup"] || tasten["w"]) dy -= 1;
   if (tasten["arrowdown"] || tasten["s"]) dy += 1;
   if (ziel) {
-    const zx = ziel.x - schiff.x, zy = ziel.y - schiff.y;
+    // Das Schiff ist immer in der Mitte des Bildschirms
+    const zx = ziel.x - canvas.width / 2, zy = ziel.y - canvas.height / 2;
     if (Math.hypot(zx, zy) > 10) { dx = zx; dy = zy; }
   }
   const laenge = Math.hypot(dx, dy);
@@ -162,8 +221,7 @@ function aktualisieren(dt) {
     const neuX = schiff.x + dx / laenge * SCHIFF_TEMPO;
     const neuY = schiff.y + dy / laenge * SCHIFF_TEMPO;
     // Nicht auf Inseln fahren
-    const stoesst = inseln.some(i => Math.hypot(neuX - i.x, neuY - i.y) < i.r + 15);
-    if (!stoesst) { schiff.x = neuX; schiff.y = neuY; }
+    if (!aufInsel(neuX, neuY, 15)) { schiff.x = neuX; schiff.y = neuY; }
     // Schiff dreht sich sanft in Fahrtrichtung
     const zielWinkel = Math.atan2(dy, dx);
     let diff = zielWinkel - schiff.winkel;
@@ -175,8 +233,6 @@ function aktualisieren(dt) {
       funken.push({ x: schiff.x - Math.cos(schiff.winkel) * 25, y: schiff.y - Math.sin(schiff.winkel) * 25, leben: 1, farbe: "255,255,255", groesse: 4 });
     }
   }
-  schiff.x = Math.max(20, Math.min(canvas.width - 20, schiff.x));
-  schiff.y = Math.max(70, Math.min(canvas.height - 20, schiff.y));
 
   // Schätze einsammeln
   for (let i = 0; i < schaetze.length; i++) {
@@ -189,19 +245,23 @@ function aktualisieren(dt) {
       }
       schaetze[i] = neuerSchatz();
       ton(800, 0.1); setTimeout(() => ton(1200, 0.15), 90);
-      // Alle 10 Punkte kommt ein neuer Hai dazu – es wird schwerer!
-      if (haie.length < 1 + Math.floor(punkte / 10)) haie.push(neuerHai());
+    } else if (abstand(schiff, s) > 1200) {
+      // Zu weit weg? Dann versteckt sich ein neuer Schatz in deiner Nähe
+      schaetze[i] = neuerSchatz();
     }
   }
 
+  // Alle 10 Punkte kommt ein Hai dazu – es wird schwerer!
+  while (haie.length < 1 + Math.floor(punkte / 10)) haie.push(neuerHai());
+
   // Haie schwimmen herum
   for (const h of haie) {
+    h.denken -= dt;
+    if (h.denken <= 0) haiDreht(h);
     h.x += h.vx; h.y += h.vy;
-    if (h.x < 20 || h.x > canvas.width - 20) h.vx *= -1;
-    if (h.y < 70 || h.y > canvas.height - 20) h.vy *= -1;
-    for (const i of inseln) {
-      if (Math.hypot(h.x - i.x, h.y - i.y) < i.r + 10) { h.vx *= -1; h.vy *= -1; h.x += h.vx * 2; h.y += h.vy * 2; }
-    }
+    if (aufInsel(h.x, h.y, 10)) { h.x -= h.vx * 2; h.y -= h.vy * 2; h.vx *= -1; h.vy *= -1; }
+    // Zu weit weggeschwommen? Dann taucht der Hai woanders in deiner Nähe auf
+    if (abstand(schiff, h) > 1300) Object.assign(h, neuerHai());
     if (unverwundbar <= 0 && abstand(schiff, h) < 32) {
       leben--;
       unverwundbar = 2;
@@ -227,10 +287,10 @@ function aktualisieren(dt) {
       }
     }
     // Auf eine Insel geprallt?
-    if (inseln.some(i => abstand(kugel, i) < i.r)) kugel.weg = 9999;
+    if (aufInsel(kugel.x, kugel.y, 0)) kugel.weg = 9999;
   }
   // Kugeln, die zu weit geflogen sind oder getroffen haben, verschwinden
-  kugeln = kugeln.filter(k => k.weg < 600 && k.x > 0 && k.x < canvas.width && k.y > 0 && k.y < canvas.height);
+  kugeln = kugeln.filter(k => k.weg < 600);
   haie = haie.filter(h => !h.getroffen);
 
   // Funken und Wellen
@@ -266,6 +326,8 @@ function ton(frequenz, dauer, art = "sine") {
 
 // ----- Zeichnen -----
 let uhr = 0;
+// Die Kamera schaut immer auf das Schiff
+let kamera = { x: 0, y: 0 };
 
 function zeichneMeer() {
   const verlauf = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -274,14 +336,16 @@ function zeichneMeer() {
   ctx.fillStyle = verlauf;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Wellen
+  // Wellen – sie bewegen sich mit der Kamera mit, damit man sieht, dass das Schiff fährt
+  const links = kamera.x - canvas.width / 2, oben = kamera.y - canvas.height / 2;
   ctx.strokeStyle = "rgba(255,255,255,0.15)";
   ctx.lineWidth = 2;
-  for (let y = 40; y < canvas.height; y += 50) {
+  for (let y = Math.floor(oben / 50) * 50; y < oben + canvas.height + 50; y += 50) {
     ctx.beginPath();
-    for (let x = 0; x <= canvas.width; x += 10) {
+    for (let x = Math.floor(links / 10) * 10; x <= links + canvas.width + 10; x += 10) {
       const wy = y + Math.sin(x / 40 + uhr * 2 + y) * 5;
-      if (x === 0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+      const sx = x - links, sy = wy - oben;
+      if (x === Math.floor(links / 10) * 10) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
     }
     ctx.stroke();
   }
@@ -298,6 +362,16 @@ function zeichneInsel(i) {
   ctx.font = `${i.r * 0.8}px serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText("🌴", i.x, i.y);
+}
+
+function sichtbareInseln() {
+  const liste = [];
+  const k1x = Math.floor((kamera.x - canvas.width / 2) / KACHEL), k2x = Math.floor((kamera.x + canvas.width / 2) / KACHEL);
+  const k1y = Math.floor((kamera.y - canvas.height / 2) / KACHEL), k2y = Math.floor((kamera.y + canvas.height / 2) / KACHEL);
+  for (let kx = k1x; kx <= k2x; kx++) {
+    for (let ky = k1y; ky <= k2y; ky++) liste.push(...inselnDerKachel(kx, ky));
+  }
+  return liste;
 }
 
 function zeichneSchiff() {
@@ -344,6 +418,28 @@ function zeichneSchatz(s) {
   ctx.fillText(s.emoji, s.x, s.y + huepf);
 }
 
+// Kleine gelbe Pfeile am Rand zeigen, wo Schätze sind, die man noch nicht sieht
+function zeichneSchatzPfeile() {
+  const mx = canvas.width / 2, my = canvas.height / 2;
+  for (const s of schaetze) {
+    const sx = s.x - kamera.x + mx, sy = s.y - kamera.y + my;
+    if (sx > 0 && sx < canvas.width && sy > 60 && sy < canvas.height) continue; // schon sichtbar
+    const w = Math.atan2(sy - my, sx - mx);
+    // Pfeil an den Bildschirmrand setzen
+    const rand = 30;
+    const fx = Math.cos(w), fy = Math.sin(w);
+    const tx = fx !== 0 ? (mx - rand) / Math.abs(fx) : Infinity;
+    const ty = fy !== 0 ? (my - rand - 30) / Math.abs(fy) : Infinity;
+    const t = Math.min(tx, ty);
+    ctx.save();
+    ctx.translate(mx + fx * t, my + 15 + fy * t);
+    ctx.rotate(w);
+    ctx.fillStyle = "rgba(255,215,0,0.85)";
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -10); ctx.lineTo(-8, 10); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
 function zeichneHai(h) {
   ctx.save();
   ctx.translate(h.x, h.y);
@@ -363,13 +459,11 @@ function zeichneAnzeige() {
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
   ctx.fillText(`💰 ${punkte}`, 20, 28);
+  // Wie viele Schuss noch übrig sind
   ctx.textAlign = "center";
-  ctx.fillText(`⏱️ ${Math.ceil(zeit)}`, canvas.width / 2, 28);
+  ctx.fillText("💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss), canvas.width / 2, 28);
   ctx.textAlign = "right";
   ctx.fillText("❤️".repeat(leben), canvas.width - 20, 28);
-  // Wie viele Schuss noch übrig sind
-  ctx.textAlign = "left";
-  ctx.fillText("💣".repeat(schuss) + "⚪".repeat(KANONEN_SCHUSS - schuss), 110, 28);
 }
 
 function zeichneKanonenKnopf() {
@@ -397,11 +491,12 @@ function zeichneText(zeilen) {
 }
 
 function zeichnen() {
+  if (zustand !== "start") kamera = { x: schiff.x, y: schiff.y };
   zeichneMeer();
   if (zustand === "start") {
     zeichneText([
       "⛵ Schiff Ahoi! ⛵",
-      "Finde Schätze im Meer: 🪙 = 1   💎 = 3   👑 = 5",
+      "Fahr übers unendliche Meer und finde Schätze: 🪙 = 1   💎 = 3   👑 = 5",
       "Pass auf die Haie auf! 🦈  Du hast 3 Kanonenschüsse 💣",
       "Steuern: Pfeiltasten / WASD oder tippen – Schießen: Leertaste",
       "Leertaste oder Klick zum Starten",
@@ -409,7 +504,11 @@ function zeichnen() {
     ]);
     return;
   }
-  inseln.forEach(zeichneInsel);
+
+  // Alles in der Welt wird relativ zur Kamera gezeichnet
+  ctx.save();
+  ctx.translate(canvas.width / 2 - kamera.x, canvas.height / 2 - kamera.y);
+  sichtbareInseln().forEach(zeichneInsel);
   for (const f of funken) {
     ctx.fillStyle = `rgba(${f.farbe},${f.leben * 0.7})`;
     ctx.beginPath(); ctx.arc(f.x, f.y, f.groesse * f.leben + 1, 0, Math.PI * 2); ctx.fill();
@@ -421,11 +520,15 @@ function zeichnen() {
     ctx.fillStyle = "#222";
     ctx.beginPath(); ctx.arc(kugel.x, kugel.y, 6, 0, Math.PI * 2); ctx.fill();
   }
+  ctx.restore();
+
+  // Anzeigen bleiben fest auf dem Bildschirm
+  zeichneSchatzPfeile();
   zeichneAnzeige();
   zeichneKanonenKnopf();
   if (zustand === "ende") {
     zeichneText([
-      leben <= 0 ? "🦈 Oh nein! 🦈" : "⏱️ Zeit um!",
+      "🦈 Oh nein! 🦈",
       `Du hast ${punkte} Schatz-Punkte gefunden!`,
       punkte >= highscore && punkte > 0 ? "🎉 Neuer Rekord! 🎉" : `🏆 Rekord: ${highscore}`,
       "Leertaste oder Klick für eine neue Runde",
