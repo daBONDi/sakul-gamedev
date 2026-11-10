@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schiff Ahoi</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b3d5c; overflow: hidden; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  </style>
+</head>
+<body>
+<canvas id="spiel"></canvas>
+<script>
+// ===== Schiff Ahoi! =====
+// Steuere dein Schiff mit den Pfeiltasten (oder WASD) oder tippe/klicke dorthin, wo es hinfahren soll.
+// Sammle Schätze ein und pass auf die Haie auf!
+
+const canvas = document.getElementById("spiel");
+const ctx = canvas.getContext("2d");
+
+function groesseAnpassen() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", groesseAnpassen);
+groesseAnpassen();
+
+// ----- Einstellungen (hier kannst du rumprobieren!) -----
+const SCHIFF_TEMPO = 4;      // wie schnell das Schiff fährt
+const SPIELZEIT = 60;        // Sekunden pro Runde
+const ANZAHL_SCHAETZE = 4;   // wie viele Schätze gleichzeitig im Meer sind
+const LEBEN = 3;
+
+// ----- Spielzustand -----
+let zustand = "start"; // "start", "spielen", "ende"
+let schiff, schaetze, haie, inseln, punkte, leben, zeit, unverwundbar, funken;
+let highscore = Number(ladeHighscore());
+
+function ladeHighscore() {
+  try { return localStorage.getItem("schiffAhoiHighscore") || 0; } catch (e) { return 0; }
+}
+function speichereHighscore(wert) {
+  try { localStorage.setItem("schiffAhoiHighscore", wert); } catch (e) {}
+}
+
+function zufall(min, max) { return min + Math.random() * (max - min); }
+function abstand(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function neuesSpiel() {
+  schiff = { x: canvas.width / 2, y: canvas.height / 2, winkel: 0 };
+  inseln = [];
+  for (let i = 0; i < 3; i++) {
+    inseln.push(freierPlatz(70 + Math.random() * 30));
+  }
+  schaetze = [];
+  for (let i = 0; i < ANZAHL_SCHAETZE; i++) schaetze.push(neuerSchatz());
+  haie = [neuerHai()];
+  punkte = 0;
+  leben = LEBEN;
+  zeit = SPIELZEIT;
+  unverwundbar = 0;
+  funken = [];
+  zustand = "spielen";
+}
+
+// Sucht einen Platz im Meer, der nicht auf einer Insel oder beim Schiff ist
+function freierPlatz(radius) {
+  for (let versuch = 0; versuch < 100; versuch++) {
+    const p = { x: zufall(radius + 20, canvas.width - radius - 20), y: zufall(radius + 70, canvas.height - radius - 20), r: radius };
+    const aufInsel = inseln.some(i => abstand(p, i) < i.r + radius + 20);
+    const amSchiff = schiff && abstand(p, schiff) < 150;
+    if (!aufInsel && !amSchiff) return p;
+  }
+  return { x: 60, y: 120, r: radius };
+}
+
+function neuerSchatz() {
+  const p = freierPlatz(18);
+  // Manche Schätze sind mehr wert!
+  const arten = [
+    { emoji: "🪙", wert: 1 },
+    { emoji: "🪙", wert: 1 },
+    { emoji: "💎", wert: 3 },
+    { emoji: "👑", wert: 5 },
+  ];
+  const art = arten[Math.floor(Math.random() * arten.length)];
+  return { x: p.x, y: p.y, emoji: art.emoji, wert: art.wert, zeit: Math.random() * 10 };
+}
+
+function neuerHai() {
+  const p = freierPlatz(20);
+  const w = zufall(0, Math.PI * 2);
+  const tempo = zufall(1.2, 2.2);
+  return { x: p.x, y: p.y, vx: Math.cos(w) * tempo, vy: Math.sin(w) * tempo };
+}
+
+// ----- Steuerung -----
+const tasten = {};
+window.addEventListener("keydown", e => {
+  tasten[e.key.toLowerCase()] = true;
+  if ((e.key === " " || e.key === "Enter") && zustand !== "spielen") neuesSpiel();
+  if (e.key.startsWith("Arrow") || e.key === " ") e.preventDefault();
+});
+window.addEventListener("keyup", e => { tasten[e.key.toLowerCase()] = false; });
+
+let ziel = null; // wohin man getippt hat
+canvas.addEventListener("pointerdown", e => {
+  if (zustand !== "spielen") { neuesSpiel(); return; }
+  ziel = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener("pointermove", e => { if (ziel) ziel = { x: e.clientX, y: e.clientY }; });
+window.addEventListener("pointerup", () => { ziel = null; });
+
+// ----- Spiel-Logik -----
+function aktualisieren(dt) {
+  if (zustand !== "spielen") return;
+
+  zeit -= dt;
+  if (zeit <= 0) { zeit = 0; spielEnde(); return; }
+  if (unverwundbar > 0) unverwundbar -= dt;
+
+  // Schiff bewegen
+  let dx = 0, dy = 0;
+  if (tasten["arrowleft"] || tasten["a"]) dx -= 1;
+  if (tasten["arrowright"] || tasten["d"]) dx += 1;
+  if (tasten["arrowup"] || tasten["w"]) dy -= 1;
+  if (tasten["arrowdown"] || tasten["s"]) dy += 1;
+  if (ziel) {
+    const zx = ziel.x - schiff.x, zy = ziel.y - schiff.y;
+    if (Math.hypot(zx, zy) > 10) { dx = zx; dy = zy; }
+  }
+  const laenge = Math.hypot(dx, dy);
+  if (laenge > 0) {
+    const neuX = schiff.x + dx / laenge * SCHIFF_TEMPO;
+    const neuY = schiff.y + dy / laenge * SCHIFF_TEMPO;
+    // Nicht auf Inseln fahren
+    const stoesst = inseln.some(i => Math.hypot(neuX - i.x, neuY - i.y) < i.r + 15);
+    if (!stoesst) { schiff.x = neuX; schiff.y = neuY; }
+    // Schiff dreht sich sanft in Fahrtrichtung
+    const zielWinkel = Math.atan2(dy, dx);
+    let diff = zielWinkel - schiff.winkel;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    schiff.winkel += diff * 0.2;
+    // Kleine Wellen hinter dem Schiff
+    if (Math.random() < 0.5) {
+      funken.push({ x: schiff.x - Math.cos(schiff.winkel) * 25, y: schiff.y - Math.sin(schiff.winkel) * 25, leben: 1, farbe: "255,255,255", groesse: 4 });
+    }
+  }
+  schiff.x = Math.max(20, Math.min(canvas.width - 20, schiff.x));
+  schiff.y = Math.max(70, Math.min(canvas.height - 20, schiff.y));
+
+  // Schätze einsammeln
+  for (let i = 0; i < schaetze.length; i++) {
+    const s = schaetze[i];
+    s.zeit += dt;
+    if (abstand(schiff, s) < 35) {
+      punkte += s.wert;
+      for (let k = 0; k < 15; k++) {
+        funken.push({ x: s.x, y: s.y, vx: zufall(-3, 3), vy: zufall(-3, 3), leben: 1, farbe: "255,215,0", groesse: 5 });
+      }
+      schaetze[i] = neuerSchatz();
+      ton(800, 0.1); setTimeout(() => ton(1200, 0.15), 90);
+      // Alle 10 Punkte kommt ein neuer Hai dazu – es wird schwerer!
+      if (haie.length < 1 + Math.floor(punkte / 10)) haie.push(neuerHai());
+    }
+  }
+
+  // Haie schwimmen herum
+  for (const h of haie) {
+    h.x += h.vx; h.y += h.vy;
+    if (h.x < 20 || h.x > canvas.width - 20) h.vx *= -1;
+    if (h.y < 70 || h.y > canvas.height - 20) h.vy *= -1;
+    for (const i of inseln) {
+      if (Math.hypot(h.x - i.x, h.y - i.y) < i.r + 10) { h.vx *= -1; h.vy *= -1; h.x += h.vx * 2; h.y += h.vy * 2; }
+    }
+    if (unverwundbar <= 0 && abstand(schiff, h) < 32) {
+      leben--;
+      unverwundbar = 2;
+      ton(150, 0.3, "sawtooth");
+      if (leben <= 0) { spielEnde(); return; }
+    }
+  }
+
+  // Funken und Wellen
+  for (const f of funken) {
+    f.x += f.vx || 0; f.y += f.vy || 0;
+    f.leben -= dt * 1.5;
+  }
+  funken = funken.filter(f => f.leben > 0);
+}
+
+function spielEnde() {
+  zustand = "ende";
+  if (punkte > highscore) { highscore = punkte; speichereHighscore(punkte); }
+  ton(400, 0.2); setTimeout(() => ton(300, 0.3), 200);
+}
+
+// ----- Kleiner Sound mit Web Audio -----
+let audio = null;
+function ton(frequenz, dauer, art = "sine") {
+  try {
+    if (!audio) audio = new AudioContext();
+    const osz = audio.createOscillator();
+    const laut = audio.createGain();
+    osz.type = art;
+    osz.frequency.value = frequenz;
+    laut.gain.setValueAtTime(0.15, audio.currentTime);
+    laut.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dauer);
+    osz.connect(laut).connect(audio.destination);
+    osz.start();
+    osz.stop(audio.currentTime + dauer);
+  } catch (e) {}
+}
+
+// ----- Zeichnen -----
+let uhr = 0;
+
+function zeichneMeer() {
+  const verlauf = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  verlauf.addColorStop(0, "#1a8fc4");
+  verlauf.addColorStop(1, "#0b4f7a");
+  ctx.fillStyle = verlauf;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Wellen
+  ctx.strokeStyle = "rgba(255,255,255,0.15)";
+  ctx.lineWidth = 2;
+  for (let y = 40; y < canvas.height; y += 50) {
+    ctx.beginPath();
+    for (let x = 0; x <= canvas.width; x += 10) {
+      const wy = y + Math.sin(x / 40 + uhr * 2 + y) * 5;
+      if (x === 0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+  }
+}
+
+function zeichneInsel(i) {
+  // Sand
+  ctx.fillStyle = "#f2d38b";
+  ctx.beginPath(); ctx.arc(i.x, i.y, i.r, 0, Math.PI * 2); ctx.fill();
+  // Gras
+  ctx.fillStyle = "#4caf50";
+  ctx.beginPath(); ctx.arc(i.x, i.y, i.r * 0.65, 0, Math.PI * 2); ctx.fill();
+  // Palme
+  ctx.font = `${i.r * 0.8}px serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("🌴", i.x, i.y);
+}
+
+function zeichneSchiff() {
+  // Blinkt, wenn es gerade getroffen wurde
+  if (unverwundbar > 0 && Math.floor(uhr * 10) % 2 === 0) return;
+  ctx.save();
+  ctx.translate(schiff.x, schiff.y + Math.sin(uhr * 3) * 2);
+  ctx.rotate(schiff.winkel);
+  // Rumpf
+  ctx.fillStyle = "#8b4513";
+  ctx.beginPath();
+  ctx.moveTo(30, 0);
+  ctx.lineTo(10, -14);
+  ctx.lineTo(-25, -12);
+  ctx.lineTo(-25, 12);
+  ctx.lineTo(10, 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a2d0c"; ctx.lineWidth = 3; ctx.stroke();
+  // Deck
+  ctx.fillStyle = "#c68642";
+  ctx.fillRect(-18, -7, 30, 14);
+  // Mast und Segel
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(-2, -22); ctx.quadraticCurveTo(8, 0, -2, 22); ctx.lineTo(-6, 22); ctx.lineTo(-6, -22);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#5a2d0c";
+  ctx.beginPath(); ctx.arc(-4, 0, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // Flagge oben drauf
+  ctx.font = "16px serif";
+  ctx.textAlign = "center";
+  ctx.fillText("🏴‍☠️", schiff.x, schiff.y - 30);
+}
+
+function zeichneSchatz(s) {
+  const huepf = Math.sin(s.zeit * 4) * 4;
+  // Glitzer-Kreis
+  ctx.fillStyle = `rgba(255,230,100,${0.25 + Math.sin(s.zeit * 6) * 0.15})`;
+  ctx.beginPath(); ctx.arc(s.x, s.y, 24, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "28px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(s.emoji, s.x, s.y + huepf);
+}
+
+function zeichneHai(h) {
+  ctx.save();
+  ctx.translate(h.x, h.y);
+  if (h.vx < 0) ctx.scale(-1, 1);
+  ctx.font = "34px serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.scale(-1, 1); // Emoji-Hai schaut nach links, wir drehen ihn
+  ctx.fillText("🦈", 0, 0);
+  ctx.restore();
+}
+
+function zeichneAnzeige() {
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(0, 0, canvas.width, 55);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 24px system-ui";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillText(`💰 ${punkte}`, 20, 28);
+  ctx.textAlign = "center";
+  ctx.fillText(`⏱️ ${Math.ceil(zeit)}`, canvas.width / 2, 28);
+  ctx.textAlign = "right";
+  ctx.fillText("❤️".repeat(leben), canvas.width - 20, 28);
+}
+
+function zeichneText(zeilen) {
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  zeilen.forEach((z, n) => {
+    ctx.font = n === 0 ? "bold 56px system-ui" : "24px system-ui";
+    ctx.fillText(z, canvas.width / 2, canvas.height / 2 - 80 + n * 50 + (n > 0 ? 20 : 0));
+  });
+}
+
+function zeichnen() {
+  zeichneMeer();
+  if (zustand === "start") {
+    zeichneText([
+      "⛵ Schiff Ahoi! ⛵",
+      "Finde Schätze im Meer: 🪙 = 1   💎 = 3   👑 = 5",
+      "Pass auf die Haie auf! 🦈",
+      "Steuern: Pfeiltasten / WASD oder tippen",
+      "Leertaste oder Klick zum Starten",
+      `🏆 Rekord: ${highscore}`,
+    ]);
+    return;
+  }
+  inseln.forEach(zeichneInsel);
+  for (const f of funken) {
+    ctx.fillStyle = `rgba(${f.farbe},${f.leben * 0.7})`;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.groesse * f.leben + 1, 0, Math.PI * 2); ctx.fill();
+  }
+  schaetze.forEach(zeichneSchatz);
+  haie.forEach(zeichneHai);
+  zeichneSchiff();
+  zeichneAnzeige();
+  if (zustand === "ende") {
+    zeichneText([
+      leben <= 0 ? "🦈 Oh nein! 🦈" : "⏱️ Zeit um!",
+      `Du hast ${punkte} Schatz-Punkte gefunden!`,
+      punkte >= highscore && punkte > 0 ? "🎉 Neuer Rekord! 🎉" : `🏆 Rekord: ${highscore}`,
+      "Leertaste oder Klick für eine neue Runde",
+    ]);
+  }
+}
+
+// ----- Spiel-Schleife -----
+let letzteZeit = performance.now();
+function schleife(jetzt) {
+  const dt = Math.min((jetzt - letzteZeit) / 1000, 0.05);
+  letzteZeit = jetzt;
+  uhr += dt;
+  aktualisieren(dt);
+  zeichnen();
+  requestAnimationFrame(schleife);
+}
+requestAnimationFrame(schleife);
+</script>
+</body>
+</html>
