@@ -21,9 +21,14 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
-// Spieler 1: WASD + Leertaste, Spieler 2: Pfeiltasten + Enter
+// Maus: Taste gedrückt halten = spritzen
+addEventListener('pointerdown', e => { if (e.button === 0 || e.button === 2) { keys.Mouse = true; initAudio(); } });
+addEventListener('pointerup', () => { keys.Mouse = false; });
+addEventListener('contextmenu', e => e.preventDefault());
+
+// Spieler 1: A/D + Leertaste/W springen + Maus spritzen, Spieler 2: Pfeiltasten + Enter
 const CTRL = [
-  { left: ['KeyA'], right: ['KeyD'], jump: ['KeyW'], dive: ['KeyS'], shoot: ['Space'] },
+  { left: ['KeyA'], right: ['KeyD'], jump: ['KeyW', 'Space'], dive: ['KeyS'], shoot: ['Mouse'] },
   { left: ['ArrowLeft'], right: ['ArrowRight'], jump: ['ArrowUp'], dive: ['ArrowDown'], shoot: ['Enter', 'NumpadEnter'] },
 ];
 
@@ -939,7 +944,7 @@ function drawTitle() {
   const blink = Math.floor(t * 2) % 2 ? '#ffe04a' : '#fff';
   text('[1] Allein spielen      [2] Zu zweit spielen', W / 2, 335, 26, blink);
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.roundRect(110, 370, W - 220, 128, 14); ctx.fill();
-  text('Krakel:  A / D laufen  ·  W springen  ·  S abtauchen  ·  Leertaste spritzen', W / 2, 395, 16, '#ffb870', 'center', false);
+  text('Krakel:  A / D laufen  ·  Leertaste springen  ·  S abtauchen  ·  Maus spritzen', W / 2, 395, 16, '#ffb870', 'center', false);
   text('Klecksi:  ← / → laufen  ·  ↑ springen  ·  ↓ abtauchen  ·  Enter spritzen', W / 2, 420, 16, '#dda6ff', 'center', false);
   text('Abtauchen füllt deine Tinte schnell wieder auf!  ·  Esc = Pause', W / 2, 448, 15, '#fff', 'center', false);
   text('Ist dein Freund ein Geist? Berühr ihn, dann lebt er wieder!', W / 2, 474, 15, '#fff', 'center', false);
