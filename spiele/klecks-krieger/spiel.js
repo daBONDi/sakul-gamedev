@@ -127,17 +127,55 @@ const LEVEL2 = {
   flyers: [900, 1900, 2600, 3300, 4000, 4500, 4800],
   hearts: [[1660, 220], [3160, 210]],
 };
+const LEVEL3 = {
+  width: 5600, goal: 5450,
+  ground: [[0, 800], [950, 1500], [1650, 2100], [2250, 2900], [3050, 3500], [3700, 4300], [4450, 5600]],
+  plats: [[300, 350, 140], [600, 280, 120], [1100, 340, 140], [1300, 270, 120], [1800, 330, 140], [2400, 350, 140],
+          [2600, 280, 140], [3200, 340, 140], [3560, 390, 90], [3900, 330, 140], [4100, 260, 120], [4700, 340, 140], [5000, 280, 140]],
+  movers: [
+    { x: 2130, y: 400, w: 100, ax: 'y', range: 60, speed: 1.4 },
+  ],
+  walkers: [600, 1200, 1400, 1900, 2500, 2700, 3300, 3900, 4200, 4800, 5200],
+  flyers: [1000, 2000, 2800, 3600, 4400, 5000],
+  spitters: [1250, 2750, 3950, 5100],   // NEU: Spucker
+  hearts: [[1340, 230], [4140, 220]],
+};
+const LEVEL4 = {
+  width: 6000, goal: 5850,
+  ground: [[0, 700], [900, 1300], [1600, 2000], [2200, 2600], [2900, 3300], [3500, 4000], [4300, 4700], [4900, 6000]],
+  plats: [[400, 340, 140], [1000, 330, 140], [1750, 320, 120], [2350, 330, 140], [3000, 320, 140], [3650, 340, 140],
+          [3850, 270, 120], [4450, 330, 140], [5200, 340, 140], [5500, 280, 140]],
+  movers: [
+    { x: 740, y: 400, w: 120, ax: 'x', range: 40, speed: 1.2 },
+    { x: 1390, y: 400, w: 120, ax: 'x', range: 80, speed: 1.1 },
+    { x: 2040, y: 390, w: 110, ax: 'y', range: 60, speed: 1.5 },
+    { x: 2690, y: 400, w: 120, ax: 'x', range: 80, speed: 1.3 },
+    { x: 3340, y: 390, w: 110, ax: 'y', range: 70, speed: 1.6 },
+    { x: 4090, y: 400, w: 120, ax: 'x', range: 80, speed: 1.4 },
+    { x: 4740, y: 390, w: 110, ax: 'y', range: 60, speed: 1.7 },
+  ],
+  walkers: [500, 1100, 1200, 1800, 2400, 2500, 3100, 3700, 3900, 4500, 5100, 5400, 5700],
+  flyers: [800, 1500, 2200, 2800, 3400, 4000, 4600, 5200, 5600],
+  spitters: [1900, 3200, 4600, 5300],
+  hearts: [[1800, 280], [3900, 230], [5560, 240]],
+};
 
 // map: [x, y] = wo das Level auf der Weltkarte liegt
 const STAGES = [
-  { type: 'level', name: 'Level 1: Farbwiesen', level: LEVEL1, map: [150, 390],
+  { type: 'level', name: 'Level 1: Farbwiesen', level: LEVEL1, map: [130, 410],
     sky: ['#6ec6ff', '#dff4ff'], hill2: '#9ad7a5', hill: '#6cc47f', dirt: '#8a5a3b', top: '#55b85f', plat: '#c98b4f' },
-  { type: 'boss', name: 'Boss: Wackel-Pudding', boss: 'pudding', map: [370, 270],
+  { type: 'boss', name: 'Boss: Wackel-Pudding', boss: 'pudding', map: [300, 420],
     sky: ['#ff9cc4', '#fff0f6'], hill2: '#f7c6dc', hill: '#f29bc0', dirt: '#b5651d', top: '#ffd27f', plat: '#e889b3' },
-  { type: 'level', name: 'Level 2: Wolkenberge', level: LEVEL2, map: [600, 380],
+  { type: 'level', name: 'Level 2: Wolkenberge', level: LEVEL2, map: [470, 405],
     sky: ['#ff8f5a', '#ffd7a8'], hill2: '#c8a2d8', hill: '#9d7bc4', dirt: '#6b4a7a', top: '#f0e8ff', plat: '#f5f0ff' },
-  { type: 'boss', name: 'Boss: Turbo-Toaster', boss: 'toaster', night: true, map: [810, 250],
+  { type: 'boss', name: 'Boss: Turbo-Toaster', boss: 'toaster', night: true, map: [650, 420],
     sky: ['#141842', '#4a3f8a'], hill2: '#2a2a62', hill: '#36347a', dirt: '#3d3d48', top: '#9aa0b0', plat: '#8a90a0' },
+  { type: 'level', name: 'Level 3: Zuckerwatte-Wald', level: LEVEL3, map: [820, 320],
+    sky: ['#ffb3e6', '#fff0fa'], hill2: '#ffd1f0', hill: '#ff9ed8', dirt: '#c45c9a', top: '#fff5fb', plat: '#7fd6ff' },
+  { type: 'level', name: 'Level 4: Lava-Land', level: LEVEL4, map: [640, 235], lava: true,
+    sky: ['#5a1a1a', '#ff7a3a'], hill2: '#7a2a20', hill: '#4a1a18', dirt: '#3a2420', top: '#6a4a40', plat: '#8a6a60' },
+  { type: 'boss', name: 'Endboss: Staubsauger-König', boss: 'king', map: [400, 215],
+    sky: ['#2d2840', '#7a6f9a'], hill2: '#4a4560', hill: '#3a3550', dirt: '#4a4458', top: '#bfb8d8', plat: '#9a92b8' },
 ];
 
 // ---------- Spielzustand ----------
@@ -159,6 +197,8 @@ try {
   const p = JSON.parse(localStorage.getItem('klecks-krieger-karte'));
   if (p && p.unlocked) progress = p;
 } catch (e) { }
+// Falls neue Level dazugekommen sind: hinter dem letzten geschafften Level aufmachen
+while (progress.cleared[progress.unlocked - 1] && progress.unlocked < STAGES.length) progress.unlocked++;
 function saveProgress() {
   try { localStorage.setItem('klecks-krieger-karte', JSON.stringify(progress)); } catch (e) { }
 }
@@ -236,6 +276,7 @@ function loadStage(i) {
       bx: m.x, by: m.y, ax: m.ax, range: m.range, speed: m.speed, t: 0, dx: 0, dy: 0 });
     for (const x of L.walkers) enemies.push(makeWalker(x));
     for (const x of L.flyers) enemies.push(makeFlyer(x));
+    for (const x of (L.spitters || [])) enemies.push(makeSpitter(x));
     // Farbtropfen zum Einsammeln
     for (const [a, b] of L.ground)
       for (let x = a + 150; x < b - 80; x += 260) if (x < goalX - 100) pickups.push({ kind: 'drop', x: x - 10, y: GROUND_Y - 50, w: 20, h: 24 });
@@ -246,7 +287,7 @@ function loadStage(i) {
     solids.push({ x: -50, y: ARENA_Y, w: W + 100, h: H - ARENA_Y, kind: 'ground' });
     solids.push({ x: 120, y: 340, w: 170, h: 18, oneWay: true, kind: 'plat' });
     solids.push({ x: W - 290, y: 340, w: 170, h: 18, oneWay: true, kind: 'plat' });
-    boss = st.boss === 'pudding' ? makePudding() : makeToaster();
+    boss = { pudding: makePudding, toaster: makeToaster, king: makeKing }[st.boss]();
   }
   players.forEach((p, k) => resetPlayer(p, 80 + k * 50, 300));
   bannerTimer = 2.5;
@@ -356,6 +397,11 @@ function makeFlyer(x) {
   const y = rand(200, 300);
   return { type: 'flyer', x, y, by: y, w: 38, h: 30, hp: 2, flash: 0, active: false, t: rand(0, 6) };
 }
+// Spucker: bleibt stehen und spuckt grauen Schleim
+function makeSpitter(x) {
+  return { type: 'spitter', x, y: GROUND_Y - 44, w: 40, h: 44, vx: 0, vy: 0, hp: 3, flash: 0, active: false, t: rand(0, 6),
+    cool: rand(1, 2.5), look: -1, spit: 0 };
+}
 
 function updateEnemies(dt) {
   for (const e of enemies) {
@@ -368,6 +414,22 @@ function updateEnemies(dt) {
       else if (e.onGround) {
         const fx = e.vx > 0 ? e.x + e.w + 3 : e.x - 3;
         if (!solidAt(fx, e.y + e.h + 6)) e.vx = -e.vx;
+      }
+      if (e.y > H + 100) e.dead = true;
+      // in der Boss-Arena nicht aus dem Bild laufen
+      if (boss && (e.x < 0 || e.x > W - e.w)) { e.x = clamp(e.x, 0, W - e.w); e.vx = e.x <= 0 ? Math.abs(e.vx) : -Math.abs(e.vx); }
+    } else if (e.type === 'spitter') {
+      e.vy = Math.min(900, e.vy + GRAV * dt);
+      moveAndCollide(e, dt);
+      e.cool -= dt; e.spit -= dt;
+      const tp = nearestPlayer(e);
+      if (tp) e.look = tp.x > e.x ? 1 : -1;
+      if (tp && Math.abs(tp.x - e.x) < 550 && e.cool <= 0) {
+        const sx = e.x + e.w / 2, sy = e.y + 4;
+        const v = lob(sx, sy, tp.x + tp.w / 2, tp.y + tp.h, 1.0, 700);
+        enemyShots.push({ type: 'slime', x: sx, y: sy, vx: v.vx, vy: v.vy, r: 10, g: 700, life: 3 });
+        e.cool = rand(2, 2.8); e.spit = 0.3;
+        tone(250, 120, 0.15, 'sawtooth', 0.04);
       }
       if (e.y > H + 100) e.dead = true;
     } else {
@@ -392,6 +454,24 @@ function makeToaster() {
   const hp = bossHp(80);
   return { kind: 'toaster', name: 'Turbo-Toaster', x: W / 2 - 80, y: -150, w: 160, h: 110, vy: 0,
     hp, maxHp: hp, timer: 2.5, act: 'fly', baseY: 210, flash: 0, t: 0, splats: [], dying: 0, tx: 0 };
+}
+
+// Endboss: rollt hin und her, saugt die Spieler an und spuckt Staubbälle
+function makeKing() {
+  const hp = bossHp(110);
+  return { kind: 'king', name: 'Staubsauger-König', x: W - 280, y: ARENA_Y - 120, w: 190, h: 120, face: -1,
+    hp, maxHp: hp, timer: 2, act: 'idle', tx: 0, flash: 0, t: 0, splats: [], dying: 0 };
+}
+function kingNozzle(b) {
+  return { x: b.face > 0 ? b.x + b.w + 45 : b.x - 45, y: ARENA_Y - 25 };
+}
+function kingSpit(b, tp, n) {
+  const nz = kingNozzle(b);
+  for (let i = 0; i < n; i++) {
+    const v = lob(nz.x, nz.y, tp.x + tp.w / 2 + (i - (n - 1) / 2) * 100, ARENA_Y - 10, 1.0, 700);
+    enemyShots.push({ type: 'slime', x: nz.x, y: nz.y, vx: v.vx, vy: v.vy, r: 12, g: 700, life: 4 });
+  }
+  tone(300, 100, 0.25, 'sawtooth', 0.06);
 }
 
 // Wurf, der nach T Sekunden bei (tx, ty) ankommt
@@ -444,6 +524,48 @@ function updateBoss(b, dt) {
           }
           b.squish = 0.6; b.timer = phase2 ? 1.2 : 1.8;
           tone(200, 500, 0.15, 'triangle', 0.08);
+        }
+      }
+    }
+  } else if (b.kind === 'king') {
+    if (b.act === 'roll') {
+      // auf die andere Seite rollen – schnell auf eine Plattform!
+      const d = b.tx - b.x;
+      b.face = Math.sign(d) || b.face;
+      b.x += Math.sign(d) * Math.min(Math.abs(d), (phase2 ? 320 : 230) * dt);
+      if (Math.abs(d) < 2) { b.act = 'idle'; b.timer = phase2 ? 0.6 : 1.0; }
+    } else if (b.act === 'idle') {
+      b.timer -= dt;
+      if (tp) b.face = tp.x + tp.w / 2 > b.x + b.w / 2 ? 1 : -1;
+      if (b.timer <= 0 && tp) {
+        const r = Math.random();
+        if (r < 0.35) {
+          b.act = 'roll'; b.tx = b.x < W / 2 - b.w / 2 ? W - b.w - 20 : 20;
+          tone(120, 220, 0.4, 'sawtooth', 0.06);
+        } else if (r < 0.7) {
+          b.act = 'suck'; b.timer = 2.2;
+          tone(150, 600, 2, 'sawtooth', 0.03);
+        } else {
+          kingSpit(b, tp, phase2 ? 5 : 3);
+          b.timer = phase2 ? 1.0 : 1.5;
+        }
+      }
+    } else if (b.act === 'suck') {
+      // Saugen! Lauf weg, sonst wirst du reingezogen
+      b.timer -= dt;
+      const nz = kingNozzle(b);
+      for (const p of players) {
+        if (p.down) continue;
+        const dx = nz.x - (p.x + p.w / 2);
+        if (Math.abs(dx) < 650) p.x += Math.sign(dx) * (phase2 ? 170 : 130) * dt;
+      }
+      if (b.timer <= 0) {
+        b.act = 'idle'; b.timer = 0.8;
+        if (tp) kingSpit(b, tp, phase2 ? 4 : 2);
+        if (phase2) {   // spuckt einen Grauschleimer aus
+          const e = makeWalker(clamp(nz.x - 21, 10, W - 52));
+          e.y = ARENA_Y - 80; e.vx = b.face * 90; e.active = true;
+          enemies.push(e);
         }
       }
     }
@@ -528,7 +650,11 @@ function updateShots(dt) {
       burst(s.x, s.y, s.color, 3);
       boss.splats.push({ ox: s.x - boss.x + s.vx * 0.01, oy: s.y - boss.y, r: rand(7, 13), color: s.color });
       if (boss.splats.length > 80) boss.splats.shift();
-      if (boss.hp <= 0) { boss.hp = 0; boss.dying = 2; score += 1000; shake = 0.6; sfx.boom(); enemyShots = []; }
+      if (boss.hp <= 0) {
+        boss.hp = 0; boss.dying = 2; score += 1000; shake = 0.6; sfx.boom(); enemyShots = [];
+        for (const e of enemies) burst(e.x + e.w / 2, e.y + e.h / 2, s.color, 15);
+        enemies = [];
+      }
     }
     if (s.life <= 0 || s.x < camX - 50 || s.x > camX + W + 50) s.dead = true;
   }
@@ -732,6 +858,21 @@ function drawBackground(st) {
   hills(st.hill, 0.45, 380, 30, 12);
 }
 
+// Blubbernde Lava ganz unten (sieht man in den Löchern)
+function drawLava() {
+  const g = ctx.createLinearGradient(0, 470, 0, H);
+  g.addColorStop(0, '#ffcf3a'); g.addColorStop(1, '#ff3a1a');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 20) ctx.lineTo(x, 490 + Math.sin((x + camX) * 0.03 + t * 3) * 6);
+  ctx.lineTo(W, H); ctx.fill();
+  ctx.fillStyle = 'rgba(255,240,150,0.8)';
+  for (let i = 0; i < 12; i++) {
+    const bx = ((i * 233 - camX) % W + W) % W, ph = (t * 0.8 + i * 0.37) % 1;
+    circle(bx, 505 - ph * 25, 5 * (1 - ph));
+  }
+}
+
 function drawSolids(st) {
   for (const s of solids) {
     const x = s.x - camX;
@@ -853,8 +994,16 @@ function drawEnemies() {
     const x = e.x - camX, y = e.y;
     if (x < -60 || x > W + 60) continue;
     const body = e.flash > 0 ? '#fff' : '#6f6a86';
-    const dir = e.type === 'walker' ? Math.sign(e.vx) : 1;
-    if (e.type === 'walker') {
+    const dir = e.type === 'walker' ? Math.sign(e.vx) : e.type === 'spitter' ? e.look : 1;
+    if (e.type === 'spitter') {
+      // dicker Schleimturm mit Spuck-Mund oben
+      const puff = e.spit > 0 ? 4 : Math.sin(e.t * 4) * 1.5;
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.moveTo(x - 2, y + e.h); ctx.quadraticCurveTo(x - 4 - puff, y + 6, x + e.w / 2, y - puff);
+      ctx.quadraticCurveTo(x + e.w + 4 + puff, y + 6, x + e.w + 2, y + e.h); ctx.fill();
+      ctx.fillStyle = '#3d3852'; ellipse(x + e.w / 2, y + 30, 7, e.spit > 0 ? 7 : 4);
+      ctx.fillStyle = '#58536e'; circle(x + 6, y + e.h - 3, 5); circle(x + e.w - 6, y + e.h - 2, 4);
+    } else if (e.type === 'walker') {
       const sq = Math.sin(e.t * 10) * 2;
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.moveTo(x, y + e.h); ctx.quadraticCurveTo(x - 2, y - sq, x + e.w / 2, y - sq); ctx.quadraticCurveTo(x + e.w + 2, y - sq, x + e.w, y + e.h); ctx.fill();
@@ -875,9 +1024,9 @@ function drawEnemies() {
   }
 }
 
-function bossEyes(b, cx, cy, gap) {
+function bossEyes(b, cx, cy, gap, flip = 1) {
   const tp = nearestPlayer(b);
-  const lx = tp ? clamp((tp.x - b.x - b.w / 2) / 200, -1, 1) * 4 : 0;
+  const lx = tp ? clamp((tp.x - b.x - b.w / 2) / 200, -1, 1) * 4 * flip : 0;
   ctx.fillStyle = '#fff'; ellipse(cx - gap, cy, 13, 15); ellipse(cx + gap, cy, 13, 15);
   ctx.fillStyle = '#111'; circle(cx - gap + lx, cy + 3, 6); circle(cx + gap + lx, cy + 3, 6);
   ctx.strokeStyle = '#2a1000'; ctx.lineWidth = 5; ctx.lineCap = 'round';
@@ -919,6 +1068,47 @@ function drawBoss(b) {
     // Mund
     ctx.fillStyle = '#5a1a0a'; ctx.beginPath(); ctx.ellipse(75, 102, 24, 8 + b.squish * 8 + (phase2 ? 4 : 0), 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.fillRect(62, 95, 8, 6); ctx.fillRect(80, 95, 8, 6);
+  } else if (b.kind === 'king') {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ellipse(b.x + b.w / 2, ARENA_Y + 4, b.w / 2 + 10, 8);
+    const flip = b.face < 0 ? -1 : 1;
+    ctx.translate(b.x + (flip < 0 ? b.w : 0), b.y); ctx.scale(flip, 1);
+    const bob = b.act === 'roll' ? Math.sin(t * 20) * 2 : 0;
+    const nzx = b.w + 45, nzy = b.h - 25, cx = b.w / 2;
+    // Saug-Wirbel: Luft fliegt in die Düse
+    if (b.act === 'suck') {
+      for (let i = 0; i < 12; i++) {
+        const d = (t * 2.5 + i / 12) % 1;
+        ctx.fillStyle = `rgba(255,255,255,${0.7 * d})`;
+        circle(nzx + 20 + (1 - d) * 280, nzy + Math.sin(i * 2.3) * 80 * (1 - d), 3 + 4 * (1 - d));
+      }
+    }
+    // Schlauch und Düse
+    ctx.strokeStyle = '#4a4560'; ctx.lineWidth = 14; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(b.w - 20, 50 + bob); ctx.quadraticCurveTo(b.w + 50, 30, nzx, nzy - 14); ctx.stroke();
+    ctx.fillStyle = '#2f2b40';
+    ctx.beginPath(); ctx.moveTo(nzx - 12, nzy - 18); ctx.lineTo(nzx + 12, nzy - 18); ctx.lineTo(nzx + 24, nzy + 14); ctx.lineTo(nzx - 24, nzy + 14); ctx.fill();
+    // Räder
+    for (const wx of [40, b.w - 40]) {
+      ctx.fillStyle = '#222'; circle(wx, b.h - 14, 14);
+      ctx.fillStyle = '#888'; circle(wx + Math.cos(b.x * 0.1) * 6, b.h - 14 + Math.sin(b.x * 0.1) * 6, 3);
+    }
+    // Körper
+    const body = new Path2D(); body.roundRect(0, bob, b.w, b.h - 20, 34);
+    ctx.fillStyle = b.flash > 0 ? '#fff' : (phase2 ? '#a86a9a' : '#7d7896');
+    ctx.fill(body);
+    ctx.save(); ctx.clip(body);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(0, 66 + bob, b.w, 12);
+    drawBossSplats(b);
+    ctx.restore();
+    // Krone
+    ctx.fillStyle = '#ffd23f'; ctx.beginPath();
+    ctx.moveTo(cx - 40, 8 + bob); ctx.lineTo(cx - 40, -22 + bob); ctx.lineTo(cx - 20, -6 + bob); ctx.lineTo(cx, -32 + bob);
+    ctx.lineTo(cx + 20, -6 + bob); ctx.lineTo(cx + 40, -22 + bob); ctx.lineTo(cx + 40, 8 + bob); ctx.fill();
+    ctx.fillStyle = '#e0123f'; circle(cx, -6 + bob, 5);
+    ctx.fillStyle = '#3ad1c4'; circle(cx - 26, 0 + bob, 3.5); circle(cx + 26, 0 + bob, 3.5);
+    // Gesicht
+    bossEyes(b, cx + 12, 40 + bob, 26, flip);
+    ctx.fillStyle = '#2a2540'; ctx.beginPath(); ctx.roundRect(cx - 10, 72 + bob, 44, 10 + (b.act === 'suck' ? 12 : 0), 5); ctx.fill();
   } else {
     // Toaster
     const warn = b.act === 'warn' && Math.floor(t * 12) % 2;
@@ -961,6 +1151,9 @@ function drawShots() {
     } else if (s.type === 'blob') {
       ctx.fillStyle = '#8b4a1c'; circle(x, s.y, s.r);
       ctx.fillStyle = '#c47a3a'; circle(x - 4, s.y - 4, 4);
+    } else if (s.type === 'slime') {
+      ctx.fillStyle = '#6f6a86'; circle(x, s.y, s.r);
+      ctx.fillStyle = '#a7a2bd'; circle(x - 3, s.y - 3, 3);
     } else {
       ctx.save(); ctx.translate(x, s.y); ctx.rotate(s.rot);
       ctx.fillStyle = '#9c5a1f'; ctx.beginPath(); ctx.roundRect(-15, -15, 30, 30, 8); ctx.fill();
@@ -1044,6 +1237,11 @@ function drawBossIcon(kind, x, y) {
     ctx.beginPath(); ctx.roundRect(x - 12, y - 17, 9, 9, 3); ctx.roundRect(x + 3, y - 17, 9, 9, 3); ctx.fill();
     ctx.fillStyle = '#c9d1dc'; ctx.beginPath(); ctx.roundRect(x - 17, y - 10, 34, 24, 6); ctx.fill();
     ctx.fillStyle = '#4a4f5c'; ctx.fillRect(x - 13, y - 9, 10, 3); ctx.fillRect(x + 3, y - 9, 10, 3);
+  } else if (kind === 'king') {
+    ctx.fillStyle = '#7d7896'; ctx.beginPath(); ctx.roundRect(x - 18, y - 6, 36, 22, 9); ctx.fill();
+    ctx.fillStyle = '#ffd23f'; ctx.beginPath();
+    ctx.moveTo(x - 12, y - 4); ctx.lineTo(x - 12, y - 18); ctx.lineTo(x - 6, y - 10); ctx.lineTo(x, y - 20);
+    ctx.lineTo(x + 6, y - 10); ctx.lineTo(x + 12, y - 18); ctx.lineTo(x + 12, y - 4); ctx.fill();
   } else {
     text('!', x, y, 26, '#fff');
     return;
@@ -1067,11 +1265,11 @@ function drawMap() {
   ctx.fillStyle = '#6cc47f'; ellipse(480, 315, 430, 180);
   // farbige Gebiete um jedes Level
   STAGES.forEach(st => {
-    ctx.globalAlpha = 0.85; ctx.fillStyle = st.hill; ellipse(st.map[0], st.map[1] + 8, 90, 58);
+    ctx.globalAlpha = 0.85; ctx.fillStyle = st.hill; ellipse(st.map[0], st.map[1] + 8, 75, 50);
   });
   ctx.globalAlpha = 1;
   // Bäume
-  for (const [x, y] of [[260, 430], [480, 205], [720, 455], [270, 230], [890, 340], [500, 470], [120, 280]]) {
+  for (const [x, y] of [[200, 260], [540, 320], [870, 430], [95, 300], [780, 185], [215, 345], [500, 150]]) {
     ctx.fillStyle = '#7a4a26'; ctx.fillRect(x - 3, y, 6, 14);
     ctx.fillStyle = '#3f9a52'; circle(x, y - 4, 13); circle(x - 8, y + 3, 9); circle(x + 8, y + 3, 9);
   }
@@ -1131,6 +1329,7 @@ function draw() {
   ctx.save();
   if (shake > 0) ctx.translate(rand(-1, 1) * shake * 14, rand(-1, 1) * shake * 14);
   drawBackground(st);
+  if (st.lava) drawLava();
   drawSolids(st);
   if (st.type === 'level') drawGoal();
   drawPickups();
