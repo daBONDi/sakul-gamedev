@@ -37,9 +37,9 @@ addEventListener('pointermove', e => {
 });
 addEventListener('contextmenu', e => e.preventDefault());
 
-// Spieler 1: A/D + Leertaste/W springen + Maus spritzen, Spieler 2: Pfeiltasten + Enter
+// Spieler 1: A/D + Leertaste/W springen + Maus (oder Q/E) zielen + Maus spritzen, Spieler 2: Pfeiltasten + Enter
 const CTRL = [
-  { left: ['KeyA'], right: ['KeyD'], jump: ['KeyW', 'Space'], dive: ['KeyS'], shoot: ['Mouse'], aimUp: [], aimDown: [] },
+  { left: ['KeyA'], right: ['KeyD'], jump: ['KeyW', 'Space'], dive: ['KeyS'], shoot: ['Mouse'], aimUp: ['KeyQ'], aimDown: ['KeyE'] },
   { left: ['ArrowLeft'], right: ['ArrowRight'], jump: ['ArrowUp'], dive: ['ArrowDown'], shoot: ['Enter', 'NumpadEnter'],
     aimUp: ['ShiftRight'], aimDown: ['ControlRight'] },
 ];
@@ -1257,7 +1257,7 @@ function drawTitle() {
   const blink = Math.floor(t * 2) % 2 ? '#ffe04a' : '#fff';
   text('[1] Allein spielen      [2] Zu zweit spielen', W / 2, 335, 26, blink);
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.roundRect(110, 370, W - 220, 128, 14); ctx.fill();
-  text('Krakel:  A / D laufen  ·  Leertaste springen  ·  S abtauchen  ·  Maus zielen + klicken = spritzen', W / 2, 395, 15, '#ffb870', 'center', false);
+  text('Krakel:  A / D laufen  ·  Leertaste springen  ·  S abtauchen  ·  Maus oder Q/E zielen + klicken = spritzen', W / 2, 395, 15, '#ffb870', 'center', false);
   text('Klecksi:  ← / → laufen  ·  ↑ springen  ·  ↓ abtauchen  ·  Enter spritzen  ·  Shift/Strg rechts zielen', W / 2, 420, 15, '#dda6ff', 'center', false);
   text('Abtauchen füllt deine Tinte schnell wieder auf!  ·  Esc = Pause', W / 2, 448, 15, '#fff', 'center', false);
   text('Ist dein Freund ein Geist? Berühr ihn, dann lebt er wieder!', W / 2, 474, 15, '#fff', 'center', false);
@@ -1387,6 +1387,7 @@ function draw() {
   drawShots();
   ctx.restore();
   drawHUD(st);
+  drawCrosshair();
 
   if (paused) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
@@ -1410,6 +1411,28 @@ function draw() {
     text('Punkte: ' + score + '    Highscore: ' + highscore, W / 2, H / 2 + 30, 24, '#ff7a00');
     text('Enter = zur Weltkarte', W / 2, H / 2 + 80, 18, '#fff');
   }
+}
+
+// Fadenkreuz: zeigt, wohin Krakel mit der Maus zielt
+function drawCrosshair() {
+  const p = players[0];
+  const show = state === 'play' && !paused && p && !p.down && p.aimMode === 'mouse';
+  cv.style.cursor = show ? 'none' : 'crosshair';   // echten Mauszeiger verstecken
+  if (!show) return;
+  const x = mouse.x, y = mouse.y, r = 13 + Math.sin(t * 6) * 1.5;   // pulsiert ein bisschen
+  ctx.save();
+  ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,0.35)';   // dunkler Rand, damit man es überall sieht
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 3; ctx.strokeStyle = p.color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  // vier kleine Striche
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
+    ctx.beginPath(); ctx.moveTo(x + c * (r - 6), y + s * (r - 6)); ctx.lineTo(x + c * (r + 7), y + s * (r + 7)); ctx.stroke();
+  }
+  ctx.fillStyle = p.light; circle(x, y, 2.5);   // Punkt in der Mitte
+  ctx.restore();
 }
 
 // ---------- Spiel-Schleife ----------
