@@ -16,13 +16,16 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.code)) e.preventDefault();
   initAudio();
-  onKey(e.code);
+  if (!e.repeat) onKey(e.code);   // gedrückt halten zählt nur einmal
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
 // Maus: Taste gedrückt halten = spritzen
-addEventListener('pointerdown', e => { if (e.button === 0 || e.button === 2) { keys.Mouse = true; initAudio(); } });
+addEventListener('pointerdown', e => {
+  if (e.button === 0 || e.button === 2) { keys.Mouse = true; initAudio(); }
+  if (state === 'map' && e.button === 0) mapClick(e);
+});
 addEventListener('pointerup', () => { keys.Mouse = false; });
 addEventListener('contextmenu', e => e.preventDefault());
 
@@ -125,19 +128,20 @@ const LEVEL2 = {
   hearts: [[1660, 220], [3160, 210]],
 };
 
+// map: [x, y] = wo das Level auf der Weltkarte liegt
 const STAGES = [
-  { type: 'level', name: 'Level 1: Farbwiesen', level: LEVEL1,
+  { type: 'level', name: 'Level 1: Farbwiesen', level: LEVEL1, map: [150, 390],
     sky: ['#6ec6ff', '#dff4ff'], hill2: '#9ad7a5', hill: '#6cc47f', dirt: '#8a5a3b', top: '#55b85f', plat: '#c98b4f' },
-  { type: 'boss', name: 'Boss: Wackel-Pudding', boss: 'pudding',
+  { type: 'boss', name: 'Boss: Wackel-Pudding', boss: 'pudding', map: [370, 270],
     sky: ['#ff9cc4', '#fff0f6'], hill2: '#f7c6dc', hill: '#f29bc0', dirt: '#b5651d', top: '#ffd27f', plat: '#e889b3' },
-  { type: 'level', name: 'Level 2: Wolkenberge', level: LEVEL2,
+  { type: 'level', name: 'Level 2: Wolkenberge', level: LEVEL2, map: [600, 380],
     sky: ['#ff8f5a', '#ffd7a8'], hill2: '#c8a2d8', hill: '#9d7bc4', dirt: '#6b4a7a', top: '#f0e8ff', plat: '#f5f0ff' },
-  { type: 'boss', name: 'Boss: Turbo-Toaster', boss: 'toaster', night: true,
+  { type: 'boss', name: 'Boss: Turbo-Toaster', boss: 'toaster', night: true, map: [810, 250],
     sky: ['#141842', '#4a3f8a'], hill2: '#2a2a62', hill: '#36347a', dirt: '#3d3d48', top: '#9aa0b0', plat: '#8a90a0' },
 ];
 
 // ---------- Spielzustand ----------
-let state = 'title';     // title, play, clear, gameover, win
+let state = 'title';     // title, map, play, clear, gameover, win
 let paused = false;
 let numPlayers = 1, stageIndex = 0, score = 0, stageStartScore = 0;
 let highscore = 0;
@@ -148,6 +152,43 @@ let shake = 0, bannerTimer = 0, clearTimer = 0, t = 0;
 const clouds = Array.from({ length: 8 }, (_, i) => ({ x: i * 150 + rand(0, 80), y: rand(40, 180), s: rand(0.7, 1.4) }));
 const stars = Array.from({ length: 60 }, () => ({ x: rand(0, W), y: rand(0, 300), r: rand(0.5, 2) }));
 let titleSplats = [];
+
+// ---------- Weltkarte: welche Level sind frei? (wird im Browser gespeichert) ----------
+let progress = { unlocked: 1, cleared: [] };
+try {
+  const p = JSON.parse(localStorage.getItem('klecks-krieger-karte'));
+  if (p && p.unlocked) progress = p;
+} catch (e) { }
+function saveProgress() {
+  try { localStorage.setItem('klecks-krieger-karte', JSON.stringify(progress)); } catch (e) { }
+}
+let mapSel = 0, mapLock = 0, mapUnlockTimer = 0, mapFace = 1;
+let mapPos = { x: STAGES[0].map[0], y: STAGES[0].map[1] };
+
+function goToMap(sel, fromIndex = sel) {
+  state = 'map';
+  mapSel = sel;
+  const from = STAGES[fromIndex].map;
+  mapPos = { x: from[0], y: from[1] };
+  mapLock = 0.5;
+}
+function mapMove(dir) {
+  const n = clamp(mapSel + dir, 0, Math.min(progress.unlocked, STAGES.length) - 1);
+  if (n !== mapSel) { mapSel = n; tone(500, 750, 0.07, 'triangle', 0.06); }
+}
+function startStage(i) {
+  if (mapLock > 0 || i >= progress.unlocked) return;
+  sfx.coin();
+  loadStage(i);
+  state = 'play';
+}
+function mapClick(e) {
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * W / r.width, my = (e.clientY - r.top) * H / r.height;
+  STAGES.forEach((st, i) => {
+    if (Math.hypot(mx - st.map[0], my - st.map[1]) < 42 && i < progress.unlocked) { mapSel = i; startStage(i); }
+  });
+}
 
 function saveHighscore() {
   if (score > highscore) {
@@ -176,8 +217,8 @@ function start(n) {
   players = [];
   for (let k = 0; k < n; k++) players.push(makePlayer(k));
   score = 0;
-  loadStage(0);
-  state = 'play';
+  const last = Math.min(progress.unlocked, STAGES.length) - 1;
+  goToMap(last);
 }
 
 function loadStage(i) {
@@ -551,9 +592,25 @@ function update(dt) {
     if (Math.random() < dt * 4) burst(camX + rand(100, W - 100), rand(80, 300), `hsl(${rand(0, 360)},90%,60%)`, 12);
     clearTimer -= dt;
     if (clearTimer <= 0) {
-      if (stageIndex + 1 < STAGES.length) { loadStage(stageIndex + 1); state = 'play'; }
-      else { state = 'win'; saveHighscore(); }
+      // geschafft merken und nächstes Level freischalten
+      progress.cleared[stageIndex] = true;
+      const before = progress.unlocked;
+      progress.unlocked = Math.max(progress.unlocked, Math.min(STAGES.length, stageIndex + 2));
+      saveProgress();
+      saveHighscore();
+      if (stageIndex + 1 < STAGES.length) {
+        goToMap(stageIndex + 1, stageIndex);
+        if (progress.unlocked > before) { mapUnlockTimer = 2.5; sfx.revive(); }
+      } else { state = 'win'; }
     }
+    return;
+  }
+  if (state === 'map') {
+    const [tx, ty] = STAGES[mapSel].map;
+    if (Math.abs(tx - mapPos.x) > 2) mapFace = Math.sign(tx - mapPos.x);
+    mapPos.x += (tx - mapPos.x) * Math.min(1, dt * 4);
+    mapPos.y += (ty - mapPos.y) * Math.min(1, dt * 4);
+    mapLock -= dt; mapUnlockTimer -= dt;
     return;
   }
   if (state !== 'play' || paused) return;
@@ -589,28 +646,43 @@ function onKey(code) {
   if (state === 'title') {
     if (code === 'Digit1' || code === 'Numpad1') start(1);
     if (code === 'Digit2' || code === 'Numpad2') start(2);
+  } else if (state === 'map') {
+    if (code === 'KeyA' || code === 'ArrowLeft') mapMove(-1);
+    if (code === 'KeyD' || code === 'ArrowRight') mapMove(1);
+    if (code === 'Space' || code === 'Enter' || code === 'NumpadEnter') startStage(mapSel);
+    if (code === 'Escape') state = 'title';
   } else if (state === 'gameover') {
     if (code === 'Space' || code === 'Enter') { score = stageStartScore; loadStage(stageIndex); state = 'play'; }
-    if (code === 'Escape') state = 'title';
+    if (code === 'Escape') { score = stageStartScore; goToMap(stageIndex); }
   } else if (state === 'win') {
-    if (code === 'Space' || code === 'Enter') state = 'title';
+    if (code === 'Space' || code === 'Enter') goToMap(STAGES.length - 1);
   } else if (state === 'play') {
     if (code === 'Escape' || code === 'KeyP') paused = !paused;
-    if (paused && code === 'KeyQ') { paused = false; state = 'title'; }
+    if (paused && code === 'KeyQ') { paused = false; score = stageStartScore; goToMap(stageIndex); }
   }
 }
 
 // Controller-Knopf A / Start im Menü
-let padPrev = false;
+let padPrev = false, padPrevDir = 0;
 function pollPadMenu() {
   const pads = getPads();
   const btn = pads.some(gp => (gp.buttons[0] && gp.buttons[0].pressed) || (gp.buttons[9] && gp.buttons[9].pressed));
   if (btn && !padPrev) {
     if (state === 'title') start(clamp(pads.length, 1, 2));
+    else if (state === 'map') startStage(mapSel);
     else if (state === 'gameover') onKey('Enter');
     else if (state === 'win') onKey('Enter');
   }
   padPrev = btn;
+  // Steuerkreuz / Stick links-rechts auf der Weltkarte
+  let dir = 0;
+  for (const gp of pads) {
+    const ax = gp.axes[0] || 0;
+    if (ax < -0.5 || (gp.buttons[14] && gp.buttons[14].pressed)) dir = -1;
+    if (ax > 0.5 || (gp.buttons[15] && gp.buttons[15].pressed)) dir = 1;
+  }
+  if (state === 'map' && dir && dir !== padPrevDir) mapMove(dir);
+  padPrevDir = dir;
 }
 
 // =====================================================
@@ -951,8 +1023,110 @@ function drawTitle() {
   text('Highscore: ' + highscore, W / 2, 520, 18, '#ffe04a');
 }
 
+// ---------- Weltkarte zeichnen ----------
+function star(x, y, r, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.fill();
+}
+function drawBossIcon(kind, x, y) {
+  if (kind === 'pudding') {
+    ctx.fillStyle = '#f7cf6a';
+    ctx.beginPath(); ctx.moveTo(x - 16, y + 14); ctx.lineTo(x - 11, y - 8); ctx.lineTo(x + 11, y - 8); ctx.lineTo(x + 16, y + 14); ctx.fill();
+    ctx.fillStyle = '#8b4a1c';
+    ctx.beginPath(); ctx.moveTo(x - 11, y - 8); ctx.lineTo(x + 11, y - 8); ctx.lineTo(x + 12, y - 1); ctx.lineTo(x - 12, y - 1); ctx.fill();
+    ctx.fillStyle = '#e0123f'; circle(x, y - 12, 5);
+  } else if (kind === 'toaster') {
+    ctx.fillStyle = '#d99a4e';
+    ctx.beginPath(); ctx.roundRect(x - 12, y - 17, 9, 9, 3); ctx.roundRect(x + 3, y - 17, 9, 9, 3); ctx.fill();
+    ctx.fillStyle = '#c9d1dc'; ctx.beginPath(); ctx.roundRect(x - 17, y - 10, 34, 24, 6); ctx.fill();
+    ctx.fillStyle = '#4a4f5c'; ctx.fillRect(x - 13, y - 9, 10, 3); ctx.fillRect(x + 3, y - 9, 10, 3);
+  } else {
+    text('!', x, y, 26, '#fff');
+    return;
+  }
+  // kleine böse Augen
+  ctx.fillStyle = '#111'; circle(x - 5, y + 4, 2.2); circle(x + 5, y + 4, 2.2);
+}
+
+function drawMap() {
+  // Meer
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#4cb4f0'); g.addColorStop(1, '#1d5fa8');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  for (let i = 0; i < 16; i++) {
+    const x = ((i * 137 + t * 15) % (W + 60)) - 30, y = 30 + (i * 71) % 500;
+    ctx.beginPath(); ctx.arc(x, y, 10, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  }
+  // Insel
+  ctx.fillStyle = '#f3d98b'; ellipse(480, 320, 455, 200);
+  ctx.fillStyle = '#6cc47f'; ellipse(480, 315, 430, 180);
+  // farbige Gebiete um jedes Level
+  STAGES.forEach(st => {
+    ctx.globalAlpha = 0.85; ctx.fillStyle = st.hill; ellipse(st.map[0], st.map[1] + 8, 90, 58);
+  });
+  ctx.globalAlpha = 1;
+  // Bäume
+  for (const [x, y] of [[260, 430], [480, 205], [720, 455], [270, 230], [890, 340], [500, 470], [120, 280]]) {
+    ctx.fillStyle = '#7a4a26'; ctx.fillRect(x - 3, y, 6, 14);
+    ctx.fillStyle = '#3f9a52'; circle(x, y - 4, 13); circle(x - 8, y + 3, 9); circle(x + 8, y + 3, 9);
+  }
+  // Weg zwischen den Leveln
+  ctx.lineWidth = 8; ctx.setLineDash([2, 16]);
+  for (let i = 1; i < STAGES.length; i++) {
+    const [ax, ay] = STAGES[i - 1].map, [bx, by] = STAGES[i].map;
+    ctx.strokeStyle = i < progress.unlocked ? '#fff3c4' : 'rgba(60,60,70,0.45)';
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, Math.min(ay, by) - 50, bx, by); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // Level-Punkte
+  STAGES.forEach((st, i) => {
+    const [x, y] = st.map;
+    const open = i < progress.unlocked, sel = i === mapSel;
+    const isNew = mapUnlockTimer > 0 && i === progress.unlocked - 1;
+    let r = st.type === 'boss' ? 34 : 28;
+    if (sel || isNew) r += Math.sin(t * 6) * 2.5;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ellipse(x, y + r - 2, r, 8);
+    ctx.fillStyle = open ? st.sky[0] : '#8a8799'; circle(x, y, r);
+    ctx.strokeStyle = sel ? '#ffe04a' : '#fff'; ctx.lineWidth = sel ? 7 : 5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    if (!open) {
+      // Schloss
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y - 4, 7, Math.PI, 0); ctx.stroke();
+      ctx.fillStyle = '#444'; ctx.beginPath(); ctx.roundRect(x - 10, y - 4, 20, 15, 3); ctx.fill();
+    } else if (st.type === 'boss') {
+      drawBossIcon(st.boss, x, y + 2);
+    } else {
+      text(String(STAGES.slice(0, i + 1).filter(s => s.type === 'level').length), x, y + 1, 26, '#fff');
+    }
+    if (progress.cleared[i]) star(x + r * 0.75, y - r * 0.75, 13, '#ffe04a');
+    if (isNew) text('NEU!', x, y - r - 45, 20, '#ffe04a');
+  });
+  // Krakel (und Klecksi) laufen auf der Karte
+  const moving = Math.abs(STAGES[mapSel].map[0] - mapPos.x) > 3;
+  const hop = moving ? -Math.abs(Math.sin(t * 14)) * 8 : 0;
+  players.forEach((p, k) => {
+    const off = players.length > 1 ? (k ? 14 : -14) : 0;
+    drawKrakel({ ...p, face: mapFace, dive: false, onGround: true, vx: moving ? 1 : 0, anim: t + k * 0.3 },
+      mapPos.x + off, mapPos.y - 12 + hop, 1.1);
+  });
+  // Überschrift und Infos
+  text('WELTKARTE', W / 2, 38, 40, '#ffe04a');
+  text('Punkte: ' + score, 20, 38, 18, '#fff', 'left');
+  text('Highscore: ' + highscore, W - 20, 38, 18, '#fff', 'right');
+  ctx.fillStyle = 'rgba(20,12,40,0.7)'; ctx.beginPath(); ctx.roundRect(W / 2 - 330, H - 74, 660, 62, 14); ctx.fill();
+  text(STAGES[mapSel].name, W / 2, H - 52, 22, '#fff');
+  text('← → aussuchen  ·  Enter / Leertaste / Klick = Los!  ·  Esc = zurück', W / 2, H - 26, 15, '#ffe04a', 'center', false);
+}
+
 function draw() {
   if (state === 'title') { drawTitle(); return; }
+  if (state === 'map') { drawMap(); return; }
   const st = STAGES[stageIndex];
   ctx.save();
   if (shake > 0) ctx.translate(rand(-1, 1) * shake * 14, rand(-1, 1) * shake * 14);
@@ -970,7 +1144,7 @@ function draw() {
   if (paused) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
     text('PAUSE', W / 2, H / 2 - 20, 56, '#fff');
-    text('Esc = weiter   ·   Q = zum Startbildschirm', W / 2, H / 2 + 30, 18, '#ffe04a');
+    text('Esc = weiter   ·   Q = zur Weltkarte', W / 2, H / 2 + 30, 18, '#ffe04a');
   }
   if (state === 'clear') {
     text(st.type === 'boss' ? 'BOSS BESIEGT!' : 'GESCHAFFT!', W / 2, H / 2 - 30, 64, '#ffe04a');
@@ -980,14 +1154,14 @@ function draw() {
     ctx.fillStyle = 'rgba(20,12,40,0.7)'; ctx.fillRect(0, 0, W, H);
     text('OH NEIN!', W / 2, H / 2 - 50, 64, '#ff3b5c');
     text('Die Grauschleimer haben gewonnen... diesmal!', W / 2, H / 2 + 5, 22, '#fff');
-    text('Leertaste / Enter = nochmal versuchen   ·   Esc = Startbildschirm', W / 2, H / 2 + 50, 18, '#ffe04a');
+    text('Leertaste / Enter = nochmal versuchen   ·   Esc = zur Weltkarte', W / 2, H / 2 + 50, 18, '#ffe04a');
   }
   if (state === 'win') {
     ctx.fillStyle = 'rgba(20,12,40,0.75)'; ctx.fillRect(0, 0, W, H);
     text('DU HAST GEWONNEN!', W / 2, H / 2 - 80, 56, '#ffe04a');
     text('Die Welt ist wieder bunt! 🎨', W / 2, H / 2 - 20, 26, '#fff');
     text('Punkte: ' + score + '    Highscore: ' + highscore, W / 2, H / 2 + 30, 24, '#ff7a00');
-    text('Enter = zum Startbildschirm', W / 2, H / 2 + 80, 18, '#fff');
+    text('Enter = zur Weltkarte', W / 2, H / 2 + 80, 18, '#fff');
   }
 }
 
