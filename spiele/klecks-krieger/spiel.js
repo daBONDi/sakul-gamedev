@@ -27,12 +27,21 @@ addEventListener('pointerdown', e => {
   if (state === 'map' && e.button === 0) mapClick(e);
 });
 addEventListener('pointerup', () => { keys.Mouse = false; });
+// Wo ist die Maus? (in Spiel-Koordinaten)
+const mouse = { x: 0, y: 0, moved: false };
+addEventListener('pointermove', e => {
+  const r = cv.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left) * W / r.width;
+  mouse.y = (e.clientY - r.top) * H / r.height;
+  mouse.moved = true;
+});
 addEventListener('contextmenu', e => e.preventDefault());
 
 // Spieler 1: A/D + Leertaste/W springen + Maus spritzen, Spieler 2: Pfeiltasten + Enter
 const CTRL = [
-  { left: ['KeyA'], right: ['KeyD'], jump: ['KeyW', 'Space'], dive: ['KeyS'], shoot: ['Mouse'] },
-  { left: ['ArrowLeft'], right: ['ArrowRight'], jump: ['ArrowUp'], dive: ['ArrowDown'], shoot: ['Enter', 'NumpadEnter'] },
+  { left: ['KeyA'], right: ['KeyD'], jump: ['KeyW', 'Space'], dive: ['KeyS'], shoot: ['Mouse'], aimUp: [], aimDown: [] },
+  { left: ['ArrowLeft'], right: ['ArrowRight'], jump: ['ArrowUp'], dive: ['ArrowDown'], shoot: ['Enter', 'NumpadEnter'],
+    aimUp: ['ShiftRight'], aimDown: ['ControlRight'] },
 ];
 
 function getPads() {
@@ -44,9 +53,13 @@ function getInput(i) {
   // Allein spielen: beide Tastenbelegungen steuern Krakel
   const sets = numPlayers === 1 ? CTRL : [CTRL[i]];
   const h = k => sets.some(c => c[k].some(code => keys[code]));
-  const r = { left: h('left'), right: h('right'), jump: h('jump'), dive: h('dive'), shoot: h('shoot') };
+  const r = { left: h('left'), right: h('right'), jump: h('jump'), dive: h('dive'), shoot: h('shoot'),
+    aimUp: h('aimUp'), aimDown: h('aimDown'), stick: null };
   const gp = getPads()[i];
   if (gp) {
+    // rechter Stick = zielen
+    const sx = gp.axes[2] || 0, sy = gp.axes[3] || 0;
+    if (Math.hypot(sx, sy) > 0.4) r.stick = Math.atan2(sy, sx);
     const b = n => gp.buttons[n] && gp.buttons[n].pressed;
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
     r.left = r.left || ax < -0.4 || b(14);
@@ -245,6 +258,7 @@ function makePlayer(k) {
     x: 0, y: 0, w: 32, h: 44, vx: 0, vy: 0, face: 1, hp: 3, ink: 100, inv: 0, cool: 0,
     dive: false, down: false, onGround: false, standOn: null, coyote: 0, prevJump: false,
     lastSafe: { x: 0, y: 0 }, anim: 0,
+    aim: 0, tilt: 0, aimMode: 'keys',   // aim = Richtung der Spritze (Winkel), tilt = Neigung per Tasten
   };
 }
 function resetPlayer(p, x, y) {
@@ -356,7 +370,24 @@ function updatePlayer(p, dt) {
   const dir = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
   p.dive = inp.dive && p.onGround;
   p.vx = dir * (p.dive ? 340 : 240);
-  if (dir) p.face = dir;
+
+  // ---- Zielen ----
+  if (inp.aimUp || inp.aimDown) p.aimMode = 'keys';
+  else if (inp.stick !== null) p.aimMode = 'stick';
+  else if (p.k === 0 && mouse.moved && mouse.x + mouse.y !== p.lastMouse) p.aimMode = 'mouse';   // Maus bewegt
+  if (p.k === 0) p.lastMouse = mouse.x + mouse.y;
+  if (p.aimMode === 'stick' && inp.stick !== null) {
+    p.aim = inp.stick;
+    p.face = Math.cos(p.aim) >= 0 ? 1 : -1;
+  } else if (p.aimMode === 'mouse') {
+    const gx = p.x + p.w / 2 + p.face * 8 - camX, gy = p.y + 27;
+    p.aim = Math.atan2(mouse.y - gy, mouse.x - gx);
+    p.face = Math.cos(p.aim) >= 0 ? 1 : -1;   // schaut immer zur Maus
+  } else {
+    if (dir) p.face = dir;
+    p.tilt = clamp(p.tilt + ((inp.aimUp ? 1 : 0) - (inp.aimDown ? 1 : 0)) * 2.5 * dt, -1.3, 1.3);
+    p.aim = Math.atan2(-Math.sin(p.tilt), p.face * Math.cos(p.tilt));
+  }
 
   p.coyote = p.onGround ? 0.1 : p.coyote - dt;
   if (inp.jump && !p.prevJump && p.coyote > 0) {
@@ -376,7 +407,10 @@ function updatePlayer(p, dt) {
   p.ink = Math.min(100, p.ink + (p.dive ? 75 : 18) * dt);
   p.cool -= dt;
   if (inp.shoot && !p.dive && p.cool <= 0 && p.ink >= 5) {
-    shots.push({ x: p.x + p.w / 2 + p.face * 22, y: p.y + 22, vx: p.face * 720, vy: -40, r: 7, color: p.color, life: 1.3 });
+    // Schuss fliegt in Zielrichtung aus der Spritzen-Spitze
+    const ca = Math.cos(p.aim), sa = Math.sin(p.aim);
+    shots.push({ x: p.x + p.w / 2 + p.face * 8 + ca * 26, y: p.y + 27 + sa * 26, vx: ca * 720, vy: sa * 720 - 40,
+      r: 7, color: p.color, life: 1.3 });
     p.ink -= 5; p.cool = 0.12;
     sfx.shoot();
   }
@@ -963,10 +997,13 @@ function drawKrakel(p, x, y, scale = 1) {
   // Mund
   ctx.strokeStyle = '#3a1a00'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(9, -22, 4, 0.2, Math.PI - 0.2); ctx.stroke();
-  // Farbspritze
-  ctx.fillStyle = '#3b3b4f'; ctx.beginPath(); ctx.roundRect(8, -21, 20, 8, 3); ctx.fill();
-  ctx.fillStyle = c; ctx.beginPath(); ctx.roundRect(10, -27, 10, 7, 3); ctx.fill();
-  ctx.fillStyle = '#222'; ctx.fillRect(27, -19, 5, 4);
+  // Farbspritze (dreht sich in Zielrichtung)
+  const aim = p.aim || 0;
+  ctx.save(); ctx.translate(8, -17); ctx.rotate(Math.atan2(Math.sin(aim), Math.abs(Math.cos(aim))));
+  ctx.fillStyle = '#3b3b4f'; ctx.beginPath(); ctx.roundRect(0, -4, 20, 8, 3); ctx.fill();
+  ctx.fillStyle = c; ctx.beginPath(); ctx.roundRect(2, -10, 10, 7, 3); ctx.fill();
+  ctx.fillStyle = '#222'; ctx.fillRect(19, -2, 5, 4);
+  ctx.restore();
   // Farbtank auf dem Rücken
   ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.roundRect(-24, -40, 9, 22, 4); ctx.fill();
   ctx.fillStyle = c; ctx.fillRect(-23, -19 - 20 * (p.ink / 100), 7, 20 * (p.ink / 100));
@@ -983,6 +1020,16 @@ function drawPlayers() {
       ctx.restore();
       if (players.some(o => !o.down)) text('Berühr mich!', x, y - 82, 13, '#fff');
       continue;
+    }
+    // Ziel-Pünktchen zeigen, wohin du spritzt
+    if (!p.dive) {
+      const gx = p.x + p.w / 2 + p.face * 8 - camX, gy = p.y + 27;
+      ctx.fillStyle = p.light;
+      for (let i = 1; i <= 3; i++) {
+        ctx.globalAlpha = 0.8 - i * 0.2;
+        circle(gx + Math.cos(p.aim) * (30 + i * 16), gy + Math.sin(p.aim) * (30 + i * 16), 4 - i * 0.6);
+      }
+      ctx.globalAlpha = 1;
     }
     if (p.inv > 0 && Math.floor(p.inv * 15) % 2) continue;   // blinken
     drawKrakel(p, x, y);
@@ -1141,7 +1188,8 @@ function drawShots() {
   for (const s of shots) {
     ctx.fillStyle = s.color; circle(s.x - camX, s.y, s.r);
     ctx.fillStyle = 'rgba(255,255,255,0.6)'; circle(s.x - camX - 2, s.y - 2, 2.5);
-    ctx.fillStyle = s.color; circle(s.x - camX - Math.sign(s.vx) * 10, s.y, 4);
+    const sp = Math.hypot(s.vx, s.vy) || 1;
+    ctx.fillStyle = s.color; circle(s.x - camX - s.vx / sp * 10, s.y - s.vy / sp * 10, 4);
   }
   for (const s of enemyShots) {
     const x = s.x - camX;
@@ -1209,8 +1257,8 @@ function drawTitle() {
   const blink = Math.floor(t * 2) % 2 ? '#ffe04a' : '#fff';
   text('[1] Allein spielen      [2] Zu zweit spielen', W / 2, 335, 26, blink);
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.roundRect(110, 370, W - 220, 128, 14); ctx.fill();
-  text('Krakel:  A / D laufen  ·  Leertaste springen  ·  S abtauchen  ·  Maus spritzen', W / 2, 395, 16, '#ffb870', 'center', false);
-  text('Klecksi:  ← / → laufen  ·  ↑ springen  ·  ↓ abtauchen  ·  Enter spritzen', W / 2, 420, 16, '#dda6ff', 'center', false);
+  text('Krakel:  A / D laufen  ·  Leertaste springen  ·  S abtauchen  ·  Maus zielen + klicken = spritzen', W / 2, 395, 15, '#ffb870', 'center', false);
+  text('Klecksi:  ← / → laufen  ·  ↑ springen  ·  ↓ abtauchen  ·  Enter spritzen  ·  Shift/Strg rechts zielen', W / 2, 420, 15, '#dda6ff', 'center', false);
   text('Abtauchen füllt deine Tinte schnell wieder auf!  ·  Esc = Pause', W / 2, 448, 15, '#fff', 'center', false);
   text('Ist dein Freund ein Geist? Berühr ihn, dann lebt er wieder!', W / 2, 474, 15, '#fff', 'center', false);
   text('Highscore: ' + highscore, W / 2, 520, 18, '#ffe04a');
