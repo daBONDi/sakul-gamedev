@@ -1156,8 +1156,22 @@ function drawBackground(st) {
     for (let x = 0; x <= W; x += 16) { const wx = x + camX * par; ctx.lineTo(x, base + Math.sin(wx * 0.006) * a1 + Math.sin(wx * 0.017) * a2); }
     ctx.lineTo(W, H); ctx.fill();
   };
+  if (st.rainbow) {
+    const rc = ['#ff5a5a', '#ffa64a', '#ffe04a', '#6ee06e', '#4ab4ff', '#9a6aff'];
+    ctx.lineWidth = 18; ctx.globalAlpha = 0.55;
+    rc.forEach((c, i) => { ctx.strokeStyle = c; ctx.beginPath(); ctx.arc(W / 2 - camX * 0.05, 560, 420 - i * 18, Math.PI, 0); ctx.stroke(); });
+    ctx.globalAlpha = 1;
+  }
   hills(st.hill2, 0.2, 320, 40, 15);
   hills(st.hill, 0.45, 380, 30, 12);
+  if (st.snow) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (const s of stars) {
+      const y = (s.y + t * (30 + s.r * 25)) % H;
+      const x = ((s.x * 1.6 + Math.sin(t + s.y) * 20 - camX * 0.3) % W + W) % W;
+      circle(x, y, s.r + 1);
+    }
+  }
 }
 
 // Blubbernde Lava ganz unten (sieht man in den Löchern)
@@ -1309,7 +1323,7 @@ function drawEnemies() {
     const x = e.x - camX, y = e.y;
     if (x < -60 || x > W + 60) continue;
     const body = e.flash > 0 ? '#fff' : '#6f6a86';
-    const dir = e.type === 'walker' ? Math.sign(e.vx) : e.type === 'spitter' ? e.look : 1;
+    const dir = e.type === 'walker' ? Math.sign(e.vx) : (e.type === 'spitter' || e.type === 'hopper') ? e.look : 1;
     if (e.type === 'spitter') {
       // dicker Schleimturm mit Spuck-Mund oben
       const puff = e.spit > 0 ? 4 : Math.sin(e.t * 4) * 1.5;
@@ -1318,6 +1332,14 @@ function drawEnemies() {
       ctx.quadraticCurveTo(x + e.w + 4 + puff, y + 6, x + e.w + 2, y + e.h); ctx.fill();
       ctx.fillStyle = '#3d3852'; ellipse(x + e.w / 2, y + 30, 7, e.spit > 0 ? 7 : 4);
       ctx.fillStyle = '#58536e'; circle(x + 6, y + e.h - 3, 5); circle(x + e.w - 6, y + e.h - 2, 4);
+    } else if (e.type === 'hopper') {
+      // Schleimkugel auf einer Sprungfeder
+      const st = e.onGround ? Math.max(0, 1 - e.cool) * 5 : -3;
+      ctx.strokeStyle = '#3d3852'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x + e.w / 2, y + e.h);
+      for (let i = 1; i <= 4; i++) ctx.lineTo(x + e.w / 2 + (i % 2 ? 7 : -7), y + e.h - i * 4 + st * 0.3);
+      ctx.stroke();
+      ctx.fillStyle = body; ellipse(x + e.w / 2, y + 12 + st, e.w / 2 + st * 0.6, 14 - st * 0.5);
     } else if (e.type === 'walker') {
       const sq = Math.sin(e.t * 10) * 2;
       ctx.fillStyle = body;
@@ -1424,6 +1446,96 @@ function drawBoss(b) {
     // Gesicht
     bossEyes(b, cx + 12, 40 + bob, 26, flip);
     ctx.fillStyle = '#2a2540'; ctx.beginPath(); ctx.roundRect(cx - 10, 72 + bob, 44, 10 + (b.act === 'suck' ? 12 : 0), 5); ctx.fill();
+  } else if (b.kind === 'snowman') {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ellipse(b.x + b.w / 2, ARENA_Y + 4, b.w / 2 + 10, 8);
+    const hop = b.act === 'move' ? Math.abs(Math.sin(b.t * 10)) * 12 : 0;
+    const flip = b.face < 0 ? -1 : 1;
+    ctx.translate(b.x + b.w / 2, b.y - hop); ctx.scale(flip, 1);
+    // Stock-Arme (einer hebt sich beim Werfen)
+    ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    const up = b.throwT > 0;
+    ctx.beginPath(); ctx.moveTo(30, 90); ctx.lineTo(up ? 66 : 78, up ? 28 : 112);
+    ctx.moveTo(-30, 90); ctx.lineTo(-76, 70); ctx.stroke();
+    // drei Schneekugeln
+    const body = new Path2D();
+    body.moveTo(52, 148); body.arc(0, 148, 52, 0, Math.PI * 2);
+    body.moveTo(38, 88); body.arc(0, 88, 38, 0, Math.PI * 2);
+    body.moveTo(30, 36); body.arc(0, 36, 30, 0, Math.PI * 2);
+    ctx.fillStyle = b.flash > 0 ? '#bfe8ff' : (phase2 ? '#e3f1ff' : '#ffffff');
+    ctx.fill(body);
+    ctx.save(); ctx.clip(body);
+    ctx.fillStyle = 'rgba(120,160,210,0.25)'; ctx.fillRect(-60, 0, 22, 220);
+    ctx.scale(flip, 1); ctx.translate(-b.w / 2, 0); drawBossSplats(b);
+    ctx.restore();
+    // Schal
+    ctx.fillStyle = '#e0123f'; ctx.beginPath(); ctx.roundRect(-30, 60, 60, 12, 6); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(-26, 66, 12, 30, 5); ctx.fill();
+    // Kohle-Knöpfe
+    ctx.fillStyle = '#222'; circle(0, 90, 5); circle(0, 110, 5); circle(0, 135, 6);
+    // Hut
+    ctx.fillStyle = '#222'; ctx.fillRect(-28, 4, 56, 7); ctx.fillRect(-18, -24, 36, 30);
+    ctx.fillStyle = '#3a8fd6'; ctx.fillRect(-18, -2, 36, 6);
+    // Gesicht: Kohle-Augen, Karottennase, böse Augenbrauen
+    ctx.fillStyle = '#111'; circle(-8, 30, 5); circle(12, 30, 5);
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(-18, 18); ctx.lineTo(-3, 24); ctx.moveTo(22, 18); ctx.lineTo(7, 24); ctx.stroke();
+    ctx.fillStyle = '#ff8a1f'; ctx.beginPath(); ctx.moveTo(4, 36); ctx.lineTo(36, 41); ctx.lineTo(4, 46); ctx.fill();
+    ctx.fillStyle = '#111'; for (let i = 0; i < 5; i++) circle(-12 + i * 6, 54 + Math.abs(i - 2) * -1.5, 2.2);
+    if (phase2) { ctx.fillStyle = 'rgba(255,90,120,0.5)'; circle(-18, 42, 6); circle(22, 42, 6); }
+  } else if (b.kind === 'kraken') {
+    ctx.translate(b.x, b.y);
+    const col = b.flash > 0 ? '#fff' : (phase2 ? '#ff5fa8' : '#ff8fcf');
+    // Tentakel hängen runter
+    ctx.strokeStyle = col; ctx.lineWidth = 16; ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      const x0 = 22 + i * 23, wv = Math.sin(t * 4 + i) * 14;
+      ctx.beginPath(); ctx.moveTo(x0, 100); ctx.quadraticCurveTo(x0 + wv, 140, x0 - wv * 0.6 + (i - 2.5) * 10, 178); ctx.stroke();
+    }
+    const body = new Path2D(); body.ellipse(80, 62, 80, 66, 0, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill(body);
+    ctx.save(); ctx.clip(body);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ellipse(50, 25, 26, 14);
+    ctx.fillStyle = 'rgba(200,40,120,0.25)'; circle(120, 30, 7); circle(30, 70, 5); circle(130, 80, 6);
+    drawBossSplats(b);
+    ctx.restore();
+    bossEyes(b, 80, 58, 30);
+    ctx.fillStyle = '#7a1048'; ellipse(80, 102, 14, b.mouth > 0 ? 12 : 6);
+    if (b.mouth > 0) { ctx.fillStyle = 'rgba(255,170,220,0.8)'; circle(80, 112, 10 + (0.4 - b.mouth) * 20); }
+  } else if (b.kind === 'graf') {
+    ctx.globalAlpha *= clamp(b.fade, 0, 1);
+    if (b.act === 'vanish' || b.act === 'appear') {   // Zauber-Funken
+      ctx.fillStyle = '#d7a6ff';
+      for (let i = 0; i < 8; i++) circle(b.x + b.w / 2 + Math.cos(t * 6 + i) * 70, b.y + b.h / 2 + Math.sin(t * 6 + i) * 70, 4);
+    }
+    const bob = Math.sin(t * 3) * 6;
+    ctx.translate(b.x, b.y + bob);
+    // Umhang
+    ctx.fillStyle = '#4a1e66';
+    ctx.beginPath(); ctx.moveTo(14, 60); ctx.quadraticCurveTo(-24, 120, -14, 152); ctx.lineTo(b.w + 14, 152); ctx.quadraticCurveTo(b.w + 24, 120, b.w - 14, 60); ctx.fill();
+    ctx.fillStyle = '#b0203a';
+    ctx.beginPath(); ctx.moveTo(22, 70); ctx.quadraticCurveTo(-6, 120, 0, 148); ctx.lineTo(b.w, 148); ctx.quadraticCurveTo(b.w + 6, 120, b.w - 22, 70); ctx.fill();
+    // Schleim-Körper
+    const body = new Path2D();
+    body.moveTo(12, 150); body.quadraticCurveTo(0, 40, 60, 30); body.quadraticCurveTo(120, 40, 108, 150);
+    for (let i = 4; i >= 0; i--) body.quadraticCurveTo(12 + i * 24 + 12, 162 + (i % 2) * 6, 12 + i * 24, 150);
+    body.closePath();
+    ctx.fillStyle = b.flash > 0 ? '#fff' : (phase2 ? '#7d6a9e' : '#8a8799');
+    ctx.fill(body);
+    ctx.save(); ctx.clip(body); drawBossSplats(b); ctx.restore();
+    // Zylinder-Hut
+    ctx.fillStyle = '#1a1424'; ctx.fillRect(22, 26, 76, 8); ctx.fillRect(36, -26, 48, 54);
+    ctx.fillStyle = '#9a3ad6'; ctx.fillRect(36, 12, 48, 8);
+    bossEyes(b, 60, 70, 20);
+    // Monokel
+    ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(80, 73, 17, 0, Math.PI * 2); ctx.moveTo(80, 90); ctx.quadraticCurveTo(90, 110, 84, 125); ctx.stroke();
+    // fieses Grinsen
+    ctx.strokeStyle = '#2a2540'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(60, 98, 18, 0.3, Math.PI - 0.3); ctx.stroke();
+    // Zauberstab
+    ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(104, 110); ctx.lineTo(138, 70); ctx.stroke();
+    star(140, 66, b.cast > 0 ? 16 : 10, b.cast > 0 ? '#fff' : '#ffd23f');
   } else {
     // Toaster
     const warn = b.act === 'warn' && Math.floor(t * 12) % 2;
@@ -1467,6 +1579,38 @@ function drawShots() {
     } else if (s.type === 'blob') {
       ctx.fillStyle = '#8b4a1c'; circle(x, s.y, s.r);
       ctx.fillStyle = '#c47a3a'; circle(x - 4, s.y - 4, 4);
+    } else if (s.type === 'snow') {
+      ctx.fillStyle = '#fff'; circle(x, s.y, s.r);
+      ctx.fillStyle = '#cfe3f5'; circle(x + 3, s.y + 3, s.r * 0.55);
+    } else if (s.type === 'roll') {
+      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ellipse(x, ARENA_Y + 3, s.r, 6);
+      ctx.save(); ctx.translate(x, s.y); ctx.rotate(s.x / s.r);
+      ctx.fillStyle = '#fff'; circle(0, 0, s.r);
+      ctx.strokeStyle = '#cfe3f5'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(0, 0, s.r * 0.6, 0, 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, s.r * 0.6, 3, 4.6); ctx.stroke();
+      ctx.restore();
+    } else if (s.type === 'icicle') {
+      if (s.y < ARENA_Y - 40) { ctx.fillStyle = `rgba(30,60,120,${clamp(0.15 + (s.y + 300) / 1200, 0.1, 0.45)})`; ellipse(x, ARENA_Y + 2, 16, 5); }
+      ctx.fillStyle = '#bfeaff'; ctx.beginPath(); ctx.moveTo(x - 10, s.y - 22); ctx.lineTo(x + 10, s.y - 22); ctx.lineTo(x, s.y + 14); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(x - 6, s.y - 22, 3, 14);
+    } else if (s.type === 'bubble') {
+      ctx.fillStyle = 'rgba(255,143,207,0.75)'; circle(x, s.y, s.r + Math.sin(t * 8 + s.x) * 1.5);
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; circle(x - 6, s.y - 6, 4);
+    } else if (s.type === 'orb') {
+      ctx.fillStyle = 'rgba(180,120,255,0.35)'; circle(x, s.y, s.r + 6);
+      ctx.fillStyle = '#7a4ab0'; circle(x, s.y, s.r);
+      ctx.fillStyle = '#e0c8ff'; circle(x - 3, s.y - 3, 3.5);
+    } else if (s.type === 'tentacle') {
+      const cx = x + s.w / 2;
+      if (s.warn > 0) {
+        ctx.fillStyle = `rgba(255,60,150,${0.35 + 0.3 * Math.sin(t * 20)})`; ellipse(cx, ARENA_Y + 2, s.w * 0.8, 9);
+        text('!', cx, ARENA_Y - 28, 28, '#ff3b8d');
+      } else {
+        const hh = s.h * s.up, top = ARENA_Y - hh;
+        ctx.fillStyle = '#ff6fb8'; ctx.beginPath(); ctx.roundRect(x, top, s.w, hh + 10, [s.w / 2, s.w / 2, 0, 0]); ctx.fill();
+        ctx.fillStyle = '#ffc2e3'; for (let yy = top + 28; yy < ARENA_Y - 8; yy += 32) circle(cx + 9, yy, 6);
+      }
     } else if (s.type === 'slime') {
       ctx.fillStyle = '#6f6a86'; circle(x, s.y, s.r);
       ctx.fillStyle = '#a7a2bd'; circle(x - 3, s.y - 3, 3);
@@ -1506,6 +1650,7 @@ function drawHUD(st) {
     text(st.name, W / 2, H / 2 - 40, 44, '#fff');
     if (st.type === 'boss') text('Spritz ihn voll!', W / 2, H / 2 + 10, 22, '#ffe04a');
     else text('Lauf bis zur Zielflagge!', W / 2, H / 2 + 10, 22, '#ffe04a');
+    if (st.tip) text(st.tip, W / 2, H / 2 + 44, 20, '#fff');
     ctx.globalAlpha = 1;
   }
 }
@@ -1558,6 +1703,20 @@ function drawBossIcon(kind, x, y) {
     ctx.fillStyle = '#ffd23f'; ctx.beginPath();
     ctx.moveTo(x - 12, y - 4); ctx.lineTo(x - 12, y - 18); ctx.lineTo(x - 6, y - 10); ctx.lineTo(x, y - 20);
     ctx.lineTo(x + 6, y - 10); ctx.lineTo(x + 12, y - 18); ctx.lineTo(x + 12, y - 4); ctx.fill();
+  } else if (kind === 'snowman') {
+    ctx.fillStyle = '#fff'; circle(x, y + 8, 12); circle(x, y - 8, 9);
+    ctx.fillStyle = '#222'; ctx.fillRect(x - 7, y - 24, 14, 9);
+    ctx.fillStyle = '#ff8a1f'; ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x + 11, y - 5); ctx.lineTo(x, y - 3); ctx.fill();
+    ctx.fillStyle = '#111'; circle(x - 4, y - 10, 2); circle(x + 4, y - 10, 2);
+    return;
+  } else if (kind === 'kraken') {
+    ctx.strokeStyle = '#ff8fcf'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * 6, y + 2); ctx.lineTo(x + i * 8, y + 16); ctx.stroke(); }
+    ctx.fillStyle = '#ff8fcf'; ellipse(x, y - 3, 17, 13);
+  } else if (kind === 'graf') {
+    ctx.fillStyle = '#8a8799'; ctx.beginPath(); ctx.moveTo(x - 15, y + 15); ctx.quadraticCurveTo(x - 16, y - 8, x, y - 8); ctx.quadraticCurveTo(x + 16, y - 8, x + 15, y + 15); ctx.fill();
+    ctx.fillStyle = '#1a1424'; ctx.fillRect(x - 13, y - 10, 26, 4); ctx.fillRect(x - 8, y - 24, 16, 15);
+    ctx.fillStyle = '#9a3ad6'; ctx.fillRect(x - 8, y - 13, 16, 3);
   } else {
     text('!', x, y, 26, '#fff');
     return;
@@ -1579,13 +1738,17 @@ function drawMap() {
   // Insel
   ctx.fillStyle = '#f3d98b'; ellipse(480, 320, 455, 200);
   ctx.fillStyle = '#6cc47f'; ellipse(480, 315, 430, 180);
+  // Wolken-Insel (neue Welt oben)
+  ctx.fillStyle = '#e8f0ff'; ellipse(610, 100, 345, 80);
+  ctx.fillStyle = '#c9d8f5'; ellipse(610, 96, 325, 66);
   // farbige Gebiete um jedes Level
-  STAGES.forEach(st => {
-    ctx.globalAlpha = 0.85; ctx.fillStyle = st.hill; ellipse(st.map[0], st.map[1] + 8, 75, 50);
+  STAGES.forEach((st, i) => {
+    ctx.globalAlpha = 0.85; ctx.fillStyle = st.hill;
+    if (i >= 7) ellipse(st.map[0], st.map[1] + 6, 58, 38); else ellipse(st.map[0], st.map[1] + 8, 75, 50);
   });
   ctx.globalAlpha = 1;
   // Bäume
-  for (const [x, y] of [[200, 260], [540, 320], [870, 430], [95, 300], [780, 185], [215, 345], [500, 150]]) {
+  for (const [x, y] of [[200, 260], [540, 320], [870, 430], [95, 300], [780, 185], [215, 345], [530, 185]]) {
     ctx.fillStyle = '#7a4a26'; ctx.fillRect(x - 3, y, 6, 14);
     ctx.fillStyle = '#3f9a52'; circle(x, y - 4, 13); circle(x - 8, y + 3, 9); circle(x + 8, y + 3, 9);
   }
@@ -1619,7 +1782,7 @@ function drawMap() {
       text(String(STAGES.slice(0, i + 1).filter(s => s.type === 'level').length), x, y + 1, 26, '#fff');
     }
     if (progress.cleared[i]) star(x + r * 0.75, y - r * 0.75, 13, '#ffe04a');
-    if (isNew) text('NEU!', x, y - r - 45, 20, '#ffe04a');
+    if (isNew) text('NEU!', x, y - r - 45 < 20 ? y + r + 26 : y - r - 45, 20, '#ffe04a');
   });
   // Krakel (und Klecksi) laufen auf der Karte
   const moving = Math.abs(STAGES[mapSel].map[0] - mapPos.x) > 3;
