@@ -173,6 +173,68 @@ const LEVEL4 = {
   hearts: [[1800, 280], [3900, 230], [5560, 240]],
 };
 
+// ===== NEUE WELT: die Wolken-Insel =====
+// Level 5: Glatteis! Man rutscht auf dem Boden.
+const LEVEL5 = {
+  width: 5400, goal: 5250,
+  ground: [[0, 800], [950, 1400], [1550, 2100], [2300, 2800], [3000, 3500], [3700, 4200], [4400, 5400]],
+  plats: [[350, 350, 140], [600, 280, 120], [1050, 340, 140], [1700, 330, 140], [1900, 260, 120], [2450, 340, 140],
+          [2650, 270, 120], [3150, 330, 140], [3800, 340, 140], [4000, 270, 120], [4600, 340, 140], [4900, 280, 140]],
+  movers: [
+    { x: 2140, y: 400, w: 110, ax: 'x', range: 40, speed: 1.2 },
+    { x: 2845, y: 400, w: 110, ax: 'y', range: 50, speed: 1.3 },
+    { x: 3550, y: 400, w: 110, ax: 'y', range: 60, speed: 1.4 },
+    { x: 4250, y: 400, w: 110, ax: 'x', range: 40, speed: 1.3 },
+  ],
+  walkers: [600, 1100, 1300, 1800, 2500, 2700, 3200, 3900, 4500, 4800, 5100],
+  flyers: [1200, 2200, 3000, 3800, 4700],
+  spitters: [3400],
+  hoppers: [1700, 2600, 3300, 4100, 5000],   // NEU: Hüpfer
+  hearts: [[1940, 220], [4040, 230]],
+};
+// Level 6: dunkle Höhle mit vielen Gegnern
+const LEVEL6 = {
+  width: 5800, goal: 5650,
+  ground: [[0, 700], [850, 1300], [1500, 1900], [2100, 2700], [2900, 3300], [3500, 4000], [4200, 4600], [4800, 5800]],
+  plats: [[300, 340, 140], [1000, 330, 140], [1150, 260, 120], [1600, 340, 140], [2250, 330, 140], [2450, 260, 120],
+          [3000, 340, 140], [3650, 330, 140], [3850, 260, 120], [4300, 340, 140], [5000, 330, 140], [5300, 270, 140]],
+  movers: [
+    { x: 1345, y: 400, w: 110, ax: 'y', range: 60, speed: 1.4 },
+    { x: 1945, y: 400, w: 110, ax: 'x', range: 40, speed: 1.2 },
+    { x: 2745, y: 390, w: 110, ax: 'y', range: 70, speed: 1.6 },
+    { x: 3345, y: 400, w: 110, ax: 'x', range: 40, speed: 1.5 },
+    { x: 4045, y: 400, w: 110, ax: 'y', range: 60, speed: 1.7 },
+    { x: 4645, y: 400, w: 110, ax: 'x', range: 40, speed: 1.6 },
+  ],
+  walkers: [500, 1000, 1200, 1700, 2300, 2500, 3100, 3700, 3900, 4400, 5100, 5400],
+  flyers: [900, 1600, 2200, 2800, 3400, 4000, 4500, 5000, 5500],
+  spitters: [1800, 3200, 4500, 5500],
+  hoppers: [1100, 2600, 3800, 5200],
+  hearts: [[1190, 220], [2490, 220], [3890, 220]],
+};
+// Level 7: hoch oben im Himmel – große Lücken, viele fliegende Plattformen
+const LEVEL7 = {
+  width: 6200, goal: 6050,
+  ground: [[0, 700], [1000, 1300], [1700, 2000], [2400, 2700], [3100, 3400], [3800, 4100], [4500, 4800], [5200, 6200]],
+  plats: [[300, 340, 140], [1080, 330, 120], [1780, 330, 120], [2480, 330, 140], [2840, 380, 120], [3180, 330, 120],
+          [3880, 330, 120], [4580, 330, 120], [5400, 340, 140], [5700, 280, 140]],
+  movers: [
+    { x: 790, y: 400, w: 120, ax: 'x', range: 60, speed: 1.2 },
+    { x: 1445, y: 400, w: 110, ax: 'x', range: 70, speed: 1.3 },
+    { x: 2040, y: 400, w: 100, ax: 'y', range: 60, speed: 1.5 },
+    { x: 2250, y: 380, w: 100, ax: 'y', range: 60, speed: 1.1 },
+    { x: 3545, y: 400, w: 110, ax: 'x', range: 80, speed: 1.4 },
+    { x: 4140, y: 390, w: 100, ax: 'y', range: 70, speed: 1.7 },
+    { x: 4350, y: 390, w: 100, ax: 'y', range: 70, speed: 1.2 },
+    { x: 4945, y: 400, w: 110, ax: 'x', range: 90, speed: 1.6 },
+  ],
+  walkers: [500, 1100, 1800, 1900, 2500, 2600, 3200, 3900, 4000, 4600, 5500, 5800],
+  flyers: [1000, 1700, 2300, 2900, 3500, 4200, 4800, 5400, 5900],
+  spitters: [1250, 2650, 4050, 5900],
+  hoppers: [3300, 4700, 5600],
+  hearts: [[1120, 280], [3220, 280], [5740, 240]],
+};
+
 // map: [x, y] = wo das Level auf der Weltkarte liegt
 const STAGES = [
   { type: 'level', name: 'Level 1: Farbwiesen', level: LEVEL1, map: [130, 410],
@@ -187,8 +249,21 @@ const STAGES = [
     sky: ['#ffb3e6', '#fff0fa'], hill2: '#ffd1f0', hill: '#ff9ed8', dirt: '#c45c9a', top: '#fff5fb', plat: '#7fd6ff' },
   { type: 'level', name: 'Level 4: Lava-Land', level: LEVEL4, map: [640, 235], lava: true,
     sky: ['#5a1a1a', '#ff7a3a'], hill2: '#7a2a20', hill: '#4a1a18', dirt: '#3a2420', top: '#6a4a40', plat: '#8a6a60' },
-  { type: 'boss', name: 'Endboss: Staubsauger-König', boss: 'king', map: [400, 215],
+  { type: 'boss', name: 'Boss: Staubsauger-König', boss: 'king', map: [400, 215],
     sky: ['#2d2840', '#7a6f9a'], hill2: '#4a4560', hill: '#3a3550', dirt: '#4a4458', top: '#bfb8d8', plat: '#9a92b8' },
+  // ----- Wolken-Insel (neue Welt) -----
+  { type: 'level', name: 'Level 5: Eis-Gipfel', level: LEVEL5, map: [340, 112], ice: true, snow: true, tip: 'Vorsicht, rutschig!',
+    sky: ['#8fd3ff', '#eaf8ff'], hill2: '#d6eefc', hill: '#b5dcf5', dirt: '#5f7f9e', top: '#f4fbff', plat: '#9fe0ff' },
+  { type: 'boss', name: 'Boss: Frosti der Schneemann', boss: 'snowman', map: [450, 82], snow: true, tip: 'Spring über die Riesen-Schneebälle!',
+    sky: ['#a8c8ff', '#f2f8ff'], hill2: '#dfeaff', hill: '#c4d8f5', dirt: '#6a7f9e', top: '#ffffff', plat: '#9fd0f0' },
+  { type: 'level', name: 'Level 6: Geister-Grotte', level: LEVEL6, map: [560, 115], night: true, tip: 'Hier ist es gruselig...',
+    sky: ['#0e0a24', '#3a2a5a'], hill2: '#241a40', hill: '#2e2050', dirt: '#2a2238', top: '#6be0a0', plat: '#7a6aa0' },
+  { type: 'boss', name: 'Boss: Kaugummi-Krake', boss: 'kraken', map: [670, 82], tip: 'Weich den Tentakeln aus! Blasen kannst du zerplatzen!',
+    sky: ['#2ab0d0', '#bff3ff'], hill2: '#7fd6e6', hill: '#4cbfd6', dirt: '#d9b56a', top: '#f3e2a0', plat: '#ff9ed8' },
+  { type: 'level', name: 'Level 7: Regenbogen-Himmel', level: LEVEL7, map: [780, 115], rainbow: true, tip: 'Nicht runterfallen!',
+    sky: ['#7a8cff', '#ffe0f5'], hill2: 'rgba(255,255,255,0.7)', hill: '#ffffff', dirt: '#e8e4ff', top: '#ffffff', plat: '#ffd6f0' },
+  { type: 'boss', name: 'Endboss: Graf Grauschleim', boss: 'graf', map: [880, 95], night: true, tip: 'Der Chef der Grauschleimer! Er kann zaubern!',
+    sky: ['#1a1028', '#4a2a5a'], hill2: '#2a1a3a', hill: '#3a2448', dirt: '#3a3040', top: '#8a7aa0', plat: '#6a5a80' },
 ];
 
 // ---------- Spielzustand ----------
@@ -291,6 +366,7 @@ function loadStage(i) {
     for (const x of L.walkers) enemies.push(makeWalker(x));
     for (const x of L.flyers) enemies.push(makeFlyer(x));
     for (const x of (L.spitters || [])) enemies.push(makeSpitter(x));
+    for (const x of (L.hoppers || [])) enemies.push(makeHopper(x));
     // Farbtropfen zum Einsammeln
     for (const [a, b] of L.ground)
       for (let x = a + 150; x < b - 80; x += 260) if (x < goalX - 100) pickups.push({ kind: 'drop', x: x - 10, y: GROUND_Y - 50, w: 20, h: 24 });
@@ -301,7 +377,8 @@ function loadStage(i) {
     solids.push({ x: -50, y: ARENA_Y, w: W + 100, h: H - ARENA_Y, kind: 'ground' });
     solids.push({ x: 120, y: 340, w: 170, h: 18, oneWay: true, kind: 'plat' });
     solids.push({ x: W - 290, y: 340, w: 170, h: 18, oneWay: true, kind: 'plat' });
-    boss = { pudding: makePudding, toaster: makeToaster, king: makeKing }[st.boss]();
+    boss = { pudding: makePudding, toaster: makeToaster, king: makeKing,
+      snowman: makeSnowman, kraken: makeKraken, graf: makeGraf }[st.boss]();
   }
   players.forEach((p, k) => resetPlayer(p, 80 + k * 50, 300));
   bannerTimer = 2.5;
@@ -369,7 +446,9 @@ function updatePlayer(p, dt) {
   const inp = getInput(p.k);
   const dir = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
   p.dive = inp.dive && p.onGround;
-  p.vx = dir * (p.dive ? 340 : 240);
+  const wantVx = dir * (p.dive ? 340 : 240);
+  if (STAGES[stageIndex].ice) p.vx += (wantVx - p.vx) * Math.min(1, dt * (p.onGround ? 2.2 : 5));   // Glatteis: rutschen!
+  else p.vx = wantVx;
 
   // ---- Zielen ----
   if (inp.aimUp || inp.aimDown) p.aimMode = 'keys';
@@ -437,6 +516,12 @@ function makeSpitter(x) {
     cool: rand(1, 2.5), look: -1, spit: 0 };
 }
 
+// Hüpfer: springt dir hinterher
+function makeHopper(x) {
+  return { type: 'hopper', x, y: GROUND_Y - 30, w: 36, h: 30, vx: 0, vy: 0, hp: 2, flash: 0, active: false, t: rand(0, 6),
+    cool: rand(0.5, 1.5), look: -1 };
+}
+
 function updateEnemies(dt) {
   for (const e of enemies) {
     if (!e.active) { if (e.x < camX + W + 60) e.active = true; else continue; }
@@ -452,6 +537,20 @@ function updateEnemies(dt) {
       if (e.y > H + 100) e.dead = true;
       // in der Boss-Arena nicht aus dem Bild laufen
       if (boss && (e.x < 0 || e.x > W - e.w)) { e.x = clamp(e.x, 0, W - e.w); e.vx = e.x <= 0 ? Math.abs(e.vx) : -Math.abs(e.vx); }
+    } else if (e.type === 'hopper') {
+      e.vy = Math.min(900, e.vy + GRAV * dt);
+      moveAndCollide(e, dt);
+      const tp = nearestPlayer(e);
+      if (e.onGround) {
+        e.vx = 0; e.cool -= dt;
+        if (tp) e.look = tp.x > e.x ? 1 : -1;
+        if (e.cool <= 0 && tp && Math.abs(tp.x - e.x) < 500) {
+          e.vy = -620; e.vx = e.look * 170; e.cool = rand(1, 1.8);
+          tone(300, 700, 0.08, 'triangle', 0.03);
+        }
+      }
+      if (boss) e.x = clamp(e.x, 0, W - e.w);
+      if (e.y > H + 100) e.dead = true;
     } else if (e.type === 'spitter') {
       e.vy = Math.min(900, e.vy + GRAV * dt);
       moveAndCollide(e, dt);
@@ -506,6 +605,26 @@ function kingSpit(b, tp, n) {
     enemyShots.push({ type: 'slime', x: nz.x, y: nz.y, vx: v.vx, vy: v.vy, r: 12, g: 700, life: 4 });
   }
   tone(300, 100, 0.25, 'sawtooth', 0.06);
+}
+
+// Frosti der Schneemann: wirft Schneebälle, rollt Riesenkugeln, lässt Eiszapfen fallen
+function makeSnowman() {
+  const hp = bossHp(100);
+  return { kind: 'snowman', name: 'Frosti der Schneemann', x: W - 250, y: ARENA_Y - 200, w: 130, h: 200, face: -1,
+    hp, maxHp: hp, timer: 2, act: 'idle', tx: 0, throwT: 0, flash: 0, t: 0, splats: [], dying: 0 };
+}
+// Kaugummi-Krake: schwebt oben, Tentakel kommen aus dem Boden, spuckt Kaugummiblasen
+function makeKraken() {
+  const hp = bossHp(120);
+  return { kind: 'kraken', name: 'Kaugummi-Krake', x: W / 2 - 80, y: 70, w: 160, h: 130, baseY: 70,
+    hp, maxHp: hp, timer: 2.2, mouth: 0, flash: 0, t: 0, splats: [], dying: 0 };
+}
+// Endboss Graf Grauschleim: zaubert sich weg, schießt Zauberkugeln, ruft Helfer
+const GRAF_SPOTS = [[120, ARENA_Y - 150], [W - 240, ARENA_Y - 150], [W / 2 - 60, 110], [170, 150], [W - 290, 150]];
+function makeGraf() {
+  const hp = bossHp(150);
+  return { kind: 'graf', name: 'Graf Grauschleim', x: W / 2 - 60, y: 110, w: 120, h: 150, spot: 2,
+    hp, maxHp: hp, timer: 2.2, act: 'hover', fade: 1, cast: 0, hidden: false, flash: 0, t: 0, splats: [], dying: 0 };
 }
 
 // Wurf, der nach T Sekunden bei (tx, ty) ankommt
@@ -603,6 +722,137 @@ function updateBoss(b, dt) {
         }
       }
     }
+  } else if (b.kind === 'snowman') {
+    b.throwT -= dt;
+    if (b.act === 'move') {
+      // hüpft auf die andere Seite
+      const d = b.tx - b.x;
+      b.face = Math.sign(d) || b.face;
+      b.x += Math.sign(d) * Math.min(Math.abs(d), (phase2 ? 260 : 190) * dt);
+      if (Math.abs(d) < 2) { b.act = 'idle'; b.timer = phase2 ? 0.7 : 1.1; }
+    } else {
+      b.timer -= dt;
+      if (tp) b.face = tp.x + tp.w / 2 > b.x + b.w / 2 ? 1 : -1;
+      if (b.timer <= 0 && tp) {
+        const r = Math.random();
+        const hx = b.face > 0 ? b.x + b.w + 10 : b.x - 10, hy = b.y + 60;
+        if (r < 0.4) {
+          // Schneebälle werfen
+          const n = phase2 ? 5 : 3;
+          for (let i = 0; i < n; i++) {
+            const v = lob(hx, hy, tp.x + tp.w / 2 + (i - (n - 1) / 2) * 90, ARENA_Y - 10, 1.0, 700);
+            enemyShots.push({ type: 'snow', x: hx, y: hy, vx: v.vx, vy: v.vy, r: 12, g: 700, life: 4, splat: '#ffffff' });
+          }
+          b.throwT = 0.35; b.timer = phase2 ? 1.0 : 1.5;
+          tone(500, 250, 0.12, 'triangle', 0.06);
+        } else if (r < 0.7) {
+          // Riesen-Schneeball rollen – drüberspringen!
+          const sx = b.face > 0 ? b.x + b.w + 40 : b.x - 40;
+          enemyShots.push({ type: 'roll', x: sx, y: ARENA_Y - 36, vx: b.face * (phase2 ? 400 : 300), vy: 0, g: 0, r: 34, life: 6, pierce: true });
+          b.throwT = 0.35; b.timer = phase2 ? 1.2 : 1.8;
+          tone(120, 80, 0.5, 'sawtooth', 0.05);
+        } else if (phase2 && r < 0.9) {
+          // Eiszapfen-Regen! Schau auf die Schatten am Boden
+          for (let i = 0; i < 7; i++) {
+            const x = i === 0 ? tp.x + tp.w / 2 : rand(40, W - 40);
+            enemyShots.push({ type: 'icicle', x, y: -30 - i * 70, vx: 0, vy: 0, r: 11, g: 700, life: 5, splat: '#cfefff' });
+          }
+          b.timer = 1.6;
+          tone(1200, 1800, 0.3, 'sine', 0.05);
+        } else {
+          b.act = 'move'; b.tx = b.x < W / 2 - b.w / 2 ? W - b.w - 40 : 40;
+        }
+      }
+    }
+  } else if (b.kind === 'kraken') {
+    const tx = W / 2 - b.w / 2 + Math.sin(b.t * (phase2 ? 0.9 : 0.6)) * 280;
+    b.x += (tx - b.x) * Math.min(1, dt * 2);
+    b.y = b.baseY + Math.sin(b.t * 1.7) * 18;
+    b.mouth -= dt;
+    b.timer -= dt;
+    if (b.timer <= 0 && tp) {
+      if (Math.random() < 0.5) {
+        // Tentakel aus dem Boden (einer genau unter dir!)
+        const n = phase2 ? 3 : 2;
+        for (let i = 0; i < n; i++) {
+          const x = i === 0 ? tp.x + tp.w / 2 : rand(60, W - 60);
+          enemyShots.push({ type: 'tentacle', x: x - 26, y: ARENA_Y - 190, w: 52, h: 190, warn: 0.9, up: 0, life: 1.9 });
+        }
+        b.timer = phase2 ? 1.6 : 2.2;
+        tone(200, 100, 0.4, 'triangle', 0.05);
+      } else {
+        // Kaugummiblasen spucken
+        const n = phase2 ? 3 : 1;
+        const mx = b.x + b.w / 2, my = b.y + b.h - 20;
+        const a0 = Math.atan2(tp.y + tp.h / 2 - my, tp.x + tp.w / 2 - mx);
+        for (let i = 0; i < n; i++) {
+          const a = a0 + (i - (n - 1) / 2) * 0.4;
+          enemyShots.push({ type: 'bubble', x: mx, y: my, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, r: 18, g: 0, life: 6, pop: true, splat: '#ff9ed8' });
+        }
+        b.mouth = 0.4; b.timer = phase2 ? 1.0 : 1.5;
+        tone(300, 600, 0.15, 'sine', 0.08);
+      }
+    }
+  } else if (b.kind === 'graf') {
+    b.cast -= dt;
+    if (b.act === 'vanish') {
+      b.fade -= dt * 2.5;
+      if (b.fade <= 0) {
+        // woanders wieder auftauchen
+        let n = b.spot;
+        while (n === b.spot) n = Math.floor(rand(0, GRAF_SPOTS.length));
+        b.spot = n; b.x = GRAF_SPOTS[n][0]; b.y = GRAF_SPOTS[n][1];
+        b.fade = 0; b.act = 'appear';
+      }
+    } else if (b.act === 'appear') {
+      b.fade += dt * 2.5;
+      if (b.fade >= 1) { b.fade = 1; b.act = 'hover'; b.timer = phase2 ? 0.6 : 1.0; }
+    } else {
+      b.timer -= dt;
+      if (b.timer <= 0 && tp) {
+        const r = Math.random();
+        const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+        b.cast = 0.4;
+        if (r < 0.22) {
+          b.act = 'vanish';
+          tone(900, 200, 0.4, 'sine', 0.06);
+        } else if (r < 0.47) {
+          // Ring aus Zauberkugeln
+          const n = phase2 ? 12 : 8, off = rand(0, 6.28);
+          for (let i = 0; i < n; i++) {
+            const a = off + i / n * Math.PI * 2;
+            enemyShots.push({ type: 'orb', x: cx, y: cy, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, r: 11, g: 0, life: 6, splat: '#8a5ab0' });
+          }
+          b.timer = phase2 ? 1.1 : 1.6;
+          tone(400, 900, 0.25, 'square', 0.04);
+        } else if (r < 0.72) {
+          // drei schnelle Kugeln direkt auf dich
+          const a0 = Math.atan2(tp.y + tp.h / 2 - cy, tp.x + tp.w / 2 - cx);
+          for (let i = -1; i <= 1; i++) {
+            const a = a0 + i * 0.22;
+            enemyShots.push({ type: 'orb', x: cx, y: cy, vx: Math.cos(a) * 290, vy: Math.sin(a) * 290, r: 11, g: 0, life: 6, splat: '#8a5ab0' });
+          }
+          b.timer = phase2 ? 0.9 : 1.4;
+          tone(700, 300, 0.2, 'square', 0.05);
+        } else if (r < 0.87 && enemies.length < (phase2 ? 4 : 3)) {
+          // Helfer rufen
+          const e = makeWalker(rand(40, W - 80)); e.y = 100; e.active = true; enemies.push(e);
+          if (phase2) { const f = makeFlyer(rand(100, W - 100)); f.active = true; enemies.push(f); }
+          else { const h = makeHopper(rand(40, W - 80)); h.y = 100; h.active = true; enemies.push(h); }
+          b.timer = 1.6;
+          tone(200, 400, 0.3, 'sawtooth', 0.05);
+        } else if (phase2) {
+          // Schleim-Regen!
+          for (let i = 0; i < 10; i++)
+            enemyShots.push({ type: 'slime', x: i === 0 ? tp.x + tp.w / 2 : rand(30, W - 30), y: -20 - i * 55, vx: 0, vy: 0, r: 10, g: 500, life: 5 });
+          b.timer = 1.8;
+          tone(300, 100, 0.4, 'sawtooth', 0.05);
+        } else {
+          b.act = 'vanish';
+        }
+      }
+    }
+    b.hidden = b.fade < 0.5;
   } else { // Toaster
     if (b.act === 'fly') {
       const tx = W / 2 - b.w / 2 + Math.sin(b.t * (phase2 ? 1.1 : 0.8)) * 300;
@@ -646,7 +896,7 @@ function updateBoss(b, dt) {
   }
   // Berührung tut weh
   const box = { x: b.x + 12, y: b.y + 12, w: b.w - 24, h: b.h - 12 };
-  for (const p of players) if (!p.down && overlap(p, box)) hurt(p);
+  if (!b.hidden) for (const p of players) if (!p.down && overlap(p, box)) hurt(p);
 }
 
 // ---------- Schüsse, Farbkleckse, Partikel ----------
@@ -679,7 +929,7 @@ function updateShots(dt) {
       }
       break;
     }
-    if (!s.dead && boss && boss.hp > 0 && circleRect(s, boss)) {
+    if (!s.dead && boss && boss.hp > 0 && !boss.hidden && circleRect(s, boss)) {
       s.dead = true; boss.hp--; boss.flash = 0.06; score += 5; sfx.hit();
       burst(s.x, s.y, s.color, 3);
       boss.splats.push({ ox: s.x - boss.x + s.vx * 0.01, oy: s.y - boss.y, r: rand(7, 13), color: s.color });
@@ -690,22 +940,40 @@ function updateShots(dt) {
         enemies = [];
       }
     }
+    // Kaugummiblasen kann man kaputtspritzen
+    if (!s.dead) for (const es of enemyShots) {
+      if (es.pop && !es.dead && Math.hypot(es.x - s.x, es.y - s.y) < es.r + s.r) {
+        es.dead = true; s.dead = true; score += 10; sfx.pop(); burst(es.x, es.y, '#ff8fcf', 10);
+        break;
+      }
+    }
     if (s.life <= 0 || s.x < camX - 50 || s.x > camX + W + 50) s.dead = true;
   }
   shots = shots.filter(s => !s.dead);
 
   for (const s of enemyShots) {
+    if (s.dead) continue;
     s.life -= dt;
-    if (s.type === 'wave') {
+    if (s.type === 'tentacle') {
+      // erst Warnung, dann kommt der Tentakel aus dem Boden
+      s.warn -= dt;
+      if (s.warn <= 0) {
+        if (!s.out) { s.out = true; shake = Math.max(shake, 0.2); tone(90, 50, 0.3, 'sawtooth', 0.06); }
+        s.up = s.life < 0.3 ? Math.max(0, s.life / 0.3) : Math.min(1, s.up + dt * 7);
+        const box = { x: s.x + 6, y: ARENA_Y - s.h * s.up, w: s.w - 12, h: s.h * s.up };
+        for (const p of players) if (!p.down && s.up > 0.3 && overlap(p, box)) hurt(p);
+      }
+    } else if (s.type === 'wave') {
       s.x += s.vx * dt;
       if (s.x < -60 || s.x > W + 60) s.dead = true;
       for (const p of players) if (!p.down && overlap(p, s)) { hurt(p); }
     } else {
       s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt;
       if (s.rot !== undefined) s.rot += dt * 8;
-      for (const p of players) if (!p.down && circleRect(s, p)) { hurt(p); s.dead = true; }
-      const so = solidAt(s.x, s.y + s.r);
-      if (so && !so.oneWay) { addSplat(so, s.x, so.y + 3, '#6d6a7c', 20); burst(s.x, s.y, '#8a8799', 6); s.dead = true; }
+      for (const p of players) if (!p.down && circleRect(s, p)) { hurt(p); if (!s.pierce) s.dead = true; }
+      const so = !s.pierce && solidAt(s.x, s.y + s.r);
+      if (so && !so.oneWay) { addSplat(so, s.x, so.y + 3, s.splat || '#6d6a7c', 20); burst(s.x, s.y, s.splat || '#8a8799', 6); s.dead = true; }
+      if (s.x < camX - 150 || s.x > camX + W + 150) s.dead = true;
     }
     if (s.life <= 0) s.dead = true;
   }
