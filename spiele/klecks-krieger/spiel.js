@@ -236,6 +236,41 @@ const LEVEL7 = {
   hearts: [[1120, 280], [3220, 280], [5740, 240]],
 };
 
+// ===== WELT 3: die Wilde Insel =====
+// bouncers: [x, y, Breite] = Hüpf-Pilze (draufspringen = hoch fliegen!)
+const LEVEL8 = {
+  width: 5600, goal: 5450,
+  ground: [[0, 800], [1100, 1600], [1950, 2500], [2800, 3300], [3700, 4200], [4500, 5600]],
+  plats: [[300, 340, 140], [560, 190, 140], [1250, 330, 140], [1450, 260, 120], [2050, 340, 140], [2250, 200, 140],
+          [2950, 330, 140], [3150, 260, 120], [3850, 330, 140], [4050, 190, 140], [4700, 340, 140], [5000, 280, 140]],
+  bouncers: [[905, 400, 90], [1730, 410, 90], [2605, 400, 90], [3380, 410, 80], [3560, 400, 80], [4305, 400, 90],
+             [480, GROUND_Y - 34, 80], [2150, GROUND_Y - 34, 80], [3950, GROUND_Y - 34, 80]],
+  movers: [],
+  walkers: [600, 1200, 1400, 2100, 2300, 2900, 3100, 3900, 4100, 4700, 5000, 5300],
+  flyers: [1000, 1800, 2600, 3500, 4300, 5100],
+  spitters: [1500, 3200, 4900],
+  hoppers: [2400, 3000, 4600, 5400],
+  hearts: [[610, 150], [2300, 160], [4100, 150]],
+};
+const LEVEL9 = {
+  width: 6000, goal: 5850,
+  ground: [[0, 700], [950, 1400], [1650, 2100], [2400, 2800], [3100, 3500], [3800, 4300], [4600, 5000], [5300, 6000]],
+  plats: [[300, 340, 140], [1050, 330, 140], [1250, 260, 120], [1750, 340, 140], [2500, 330, 140], [2650, 260, 120],
+          [3200, 340, 140], [3900, 330, 140], [4100, 260, 120], [4700, 330, 140], [5500, 340, 140], [5750, 280, 140]],
+  bouncers: [[1480, 400, 90], [2905, 400, 90], [5105, 400, 90]],
+  movers: [
+    { x: 770, y: 400, w: 110, ax: 'y', range: 60, speed: 1.6 },
+    { x: 2195, y: 400, w: 110, ax: 'x', range: 60, speed: 1.5 },
+    { x: 3595, y: 390, w: 110, ax: 'y', range: 70, speed: 1.8 },
+    { x: 4395, y: 400, w: 110, ax: 'x', range: 60, speed: 1.7 },
+  ],
+  walkers: [500, 1100, 1300, 1800, 2000, 2500, 2700, 3200, 3400, 3900, 4200, 4700, 5500, 5700],
+  flyers: [900, 1700, 2300, 2900, 3600, 4400, 5100, 5600],
+  spitters: [1350, 2050, 3450, 4250, 5650],
+  hoppers: [1900, 3300, 4800, 5400],
+  hearts: [[1290, 220], [2690, 220], [4140, 220]],
+};
+
 // map: [x, y] = wo das Level auf der Weltkarte liegt
 const STAGES = [
   { type: 'level', name: 'Level 1: Farbwiesen', level: LEVEL1, map: [130, 410],
@@ -263,8 +298,19 @@ const STAGES = [
     sky: ['#2ab0d0', '#bff3ff'], hill2: '#7fd6e6', hill: '#4cbfd6', dirt: '#d9b56a', top: '#f3e2a0', plat: '#ff9ed8' },
   { type: 'level', name: 'Level 7: Regenbogen-Himmel', level: LEVEL7, map: [780, 115], rainbow: true, tip: 'Nicht runterfallen!',
     sky: ['#7a8cff', '#ffe0f5'], hill2: 'rgba(255,255,255,0.7)', hill: '#ffffff', dirt: '#e8e4ff', top: '#ffffff', plat: '#ffd6f0' },
-  { type: 'boss', name: 'Endboss: Graf Grauschleim', boss: 'graf', map: [880, 95], night: true, tip: 'Der Chef der Grauschleimer! Er kann zaubern!',
+  { type: 'boss', name: 'Boss: Graf Grauschleim', boss: 'graf', map: [880, 95], night: true, tip: 'Der Chef der Grauschleimer! Er kann zaubern!',
     sky: ['#1a1028', '#4a2a5a'], hill2: '#2a1a3a', hill: '#3a2448', dirt: '#3a3040', top: '#8a7aa0', plat: '#6a5a80' },
+  // ----- Wilde Insel (Welt 3, zweite Seite der Karte) -----
+  { type: 'level', name: 'Level 8: Pilz-Dschungel', level: LEVEL8, page: 1, map: [150, 380], tip: 'Spring auf die Pilze!',
+    sky: ['#3aa86a', '#d8ffd0'], hill2: '#5cc77a', hill: '#2f8f52', dirt: '#6b4a2a', top: '#7ad04a', plat: '#c98b4f' },
+  { type: 'boss', name: 'Boss: Donner-Wolke', boss: 'cloud', page: 1, map: [320, 290], storm: true, tip: 'Pass auf die Blitze auf!',
+    sky: ['#4a5070', '#a0a8c0'], hill2: '#5a6080', hill: '#454a68', dirt: '#3a3a48', top: '#8a90a8', plat: '#b0b6cc' },
+  { type: 'level', name: 'Level 9: Robo-Fabrik', level: LEVEL9, page: 1, map: [500, 390], tip: 'Hier ist alles aus Metall!',
+    sky: ['#2a3040', '#6a7890'], hill2: '#3a4458', hill: '#2a3242', dirt: '#4a5060', top: '#b0bcc8', plat: '#e0a030' },
+  { type: 'boss', name: 'Boss: Robo-Mampfer', boss: 'robot', page: 1, map: [680, 320], tip: 'Spring über den Laser!',
+    sky: ['#1a2030', '#4a5a70'], hill2: '#2a3448', hill: '#222a3a', dirt: '#4a5060', top: '#b0bcc8', plat: '#e0a030' },
+  { type: 'boss', name: 'Endboss: Grau-Drache', boss: 'dragon', page: 1, map: [820, 190], tip: 'Der allerletzte Kampf!',
+    sky: ['#3a0a0a', '#ff6a3a'], hill2: '#5a2020', hill: '#3a1414', dirt: '#3a2420', top: '#6a4a40', plat: '#8a6a60' },
 ];
 
 // ---------- Spielzustand ----------
@@ -441,6 +487,7 @@ function loadStage(i) {
     for (const [x, y, w] of L.plats) solids.push({ x, y, w, h: 18, oneWay: true, kind: 'plat' });
     for (const m of L.movers) solids.push({ x: m.x, y: m.y, w: m.w, h: 18, oneWay: true, kind: 'mover',
       bx: m.x, by: m.y, ax: m.ax, range: m.range, speed: m.speed, t: 0, dx: 0, dy: 0 });
+    for (const [x, y, w] of (L.bouncers || [])) solids.push({ x, y, w, h: 18, oneWay: true, kind: 'bounce', squish: 0 });
     for (const x of L.walkers) enemies.push(makeWalker(x));
     for (const x of L.flyers) enemies.push(makeFlyer(x));
     for (const x of (L.spitters || [])) enemies.push(makeSpitter(x));
@@ -456,7 +503,8 @@ function loadStage(i) {
     solids.push({ x: 120, y: 340, w: 170, h: 18, oneWay: true, kind: 'plat' });
     solids.push({ x: W - 290, y: 340, w: 170, h: 18, oneWay: true, kind: 'plat' });
     boss = { pudding: makePudding, toaster: makeToaster, king: makeKing,
-      snowman: makeSnowman, kraken: makeKraken, graf: makeGraf }[st.boss]();
+      snowman: makeSnowman, kraken: makeKraken, graf: makeGraf,
+      cloud: makeCloud, robot: makeRobot, dragon: makeDragon }[st.boss]();
   }
   players.forEach((p, k) => resetPlayer(p, 80 + k * 50, 300));
   bannerTimer = 2.5;
@@ -737,6 +785,26 @@ function makeGraf() {
     hp, maxHp: hp, timer: 2.2, act: 'hover', fade: 1, cast: 0, hidden: false, flash: 0, t: 0, splats: [], dying: 0 };
 }
 
+// Donner-Wolke: Blitze, Regen und Sturm
+function makeCloud() {
+  const hp = bossHp(130);
+  return { kind: 'cloud', name: 'Donner-Wolke', x: W / 2 - 110, y: 60, w: 220, h: 110,
+    hp, maxHp: hp, timer: 2, act: 'float', actT: 0, rainT: 0, wind: 1, flash: 0, t: 0, splats: [], dying: 0 };
+}
+// Robo-Mampfer: rast durch die Arena, Boden-Laser, Lenkraketen
+function makeRobot() {
+  const hp = bossHp(140);
+  return { kind: 'robot', name: 'Robo-Mampfer', x: W - 260, y: ARENA_Y - 120, w: 170, h: 120, face: -1,
+    hp, maxHp: hp, timer: 2, act: 'idle', tx: 0, flash: 0, t: 0, splats: [], dying: 0 };
+}
+// Endboss Grau-Drache: Feuerbälle, Sturzflug, Meteore
+function makeDragon() {
+  const hp = bossHp(180);
+  return { kind: 'dragon', name: 'Grau-Drache', x: W / 2 - 110, y: 100, w: 220, h: 120, face: -1,
+    hp, maxHp: hp, timer: 2.2, act: 'fly', actT: 0, fireT: 0, dropT: 0, tx: 0, flash: 0, t: 0, splats: [], dying: 0 };
+}
+function dragonMouth(b) { return { x: b.face > 0 ? b.x + b.w + 20 : b.x - 20, y: b.y + 50 }; }
+
 // Wurf, der nach T Sekunden bei (tx, ty) ankommt
 function lob(sx, sy, tx, ty, T, g) {
   return { vx: (tx - sx) / T, vy: (ty - sy - 0.5 * g * T * T) / T };
@@ -963,6 +1031,143 @@ function updateBoss(b, dt) {
       }
     }
     b.hidden = b.fade < 0.5;
+  } else if (b.kind === 'cloud') {
+    if (b.act !== 'wind') {
+      const tx = W / 2 - b.w / 2 + Math.sin(b.t * (phase2 ? 0.9 : 0.6)) * 300;
+      b.x += (tx - b.x) * Math.min(1, dt * 2);
+    }
+    b.y = 60 + Math.sin(b.t * 1.3) * 15;
+    if (b.act === 'rain') {
+      b.actT -= dt; b.rainT -= dt;
+      if (b.rainT <= 0) {
+        b.rainT = phase2 ? 0.07 : 0.11;
+        enemyShots.push({ type: 'rain', x: b.x + rand(20, b.w - 20), y: b.y + b.h - 10, vx: 0, vy: 150, g: 600, r: 6, life: 3, splat: '#6ab4ff' });
+      }
+      if (b.actT <= 0) { b.act = 'float'; b.timer = 1; }
+    } else if (b.act === 'wind') {
+      // Sturm schiebt dich weg – lauf dagegen!
+      b.actT -= dt;
+      for (const p of players) if (!p.down) p.x += b.wind * (phase2 ? 170 : 130) * dt;
+      if (b.actT <= 0) { b.act = 'float'; b.timer = 1; }
+    } else {
+      b.timer -= dt;
+      if (b.timer <= 0 && tp) {
+        const r = Math.random();
+        if (r < 0.45) {
+          const n = phase2 ? 3 : 1;
+          for (let i = 0; i < n; i++) {
+            const x = i === 0 ? tp.x + tp.w / 2 : rand(40, W - 40);
+            enemyShots.push({ type: 'bolt', x: x - 22, w: 44, warn: 0.8, life: 1.15, out: false });
+          }
+          b.timer = phase2 ? 1.3 : 1.8;
+          tone(1500, 1000, 0.15, 'square', 0.03);
+        } else if (r < 0.75) {
+          b.act = 'rain'; b.actT = 2.5; b.rainT = 0;
+          tone(400, 200, 0.4, 'triangle', 0.05);
+        } else {
+          b.act = 'wind'; b.actT = 2.2; b.wind = Math.random() < 0.5 ? -1 : 1;
+          // Blitz an der Wand, wo der Wind hinbläst
+          enemyShots.push({ type: 'bolt', x: b.wind > 0 ? W - 70 : 26, w: 44, warn: 0.7, life: 2.1, out: false });
+          tone(200, 600, 1.5, 'sawtooth', 0.025);
+        }
+      }
+    }
+  } else if (b.kind === 'robot') {
+    if (b.act === 'dashWarn') {
+      b.timer -= dt;
+      if (b.timer <= 0) { b.act = 'dash'; tone(150, 400, 0.4, 'sawtooth', 0.06); }
+    } else if (b.act === 'dash') {
+      const d = b.tx - b.x;
+      b.x += Math.sign(d) * Math.min(Math.abs(d), (phase2 ? 700 : 560) * dt);
+      if (Math.abs(d) < 2) {
+        b.act = 'idle'; b.timer = phase2 ? 0.6 : 1.0; shake = 0.35; sfx.boom();
+        if (phase2) shockwaves(b, 330);
+      }
+    } else if (b.act === 'laserWarn') {
+      b.timer -= dt;
+      if (b.timer <= 0) {
+        b.act = 'laser'; b.timer = 0.6;
+        const x0 = b.face > 0 ? b.x + b.w : 0, x1 = b.face > 0 ? W : b.x;
+        enemyShots.push({ type: 'laser', x: x0, y: ARENA_Y - 26, w: x1 - x0, h: 14, life: 0.6 });
+        tone(1800, 900, 0.5, 'sawtooth', 0.05);
+      }
+    } else if (b.act === 'laser') {
+      b.timer -= dt;
+      if (b.timer <= 0) { b.act = 'idle'; b.timer = phase2 ? 0.7 : 1.1; }
+    } else {
+      b.timer -= dt;
+      if (tp) b.face = tp.x + tp.w / 2 > b.x + b.w / 2 ? 1 : -1;
+      if (b.timer <= 0 && tp) {
+        const r = Math.random();
+        if (r < 0.35) {
+          // Anlauf... und LOS! Schnell auf eine Plattform!
+          b.act = 'dashWarn'; b.timer = 0.7;
+          b.tx = b.x < W / 2 - b.w / 2 ? W - b.w - 20 : 20;
+          b.face = Math.sign(b.tx - b.x) || 1;
+        } else if (r < 0.65) {
+          b.act = 'laserWarn'; b.timer = 0.75;
+          tone(600, 1200, 0.7, 'sine', 0.03);
+        } else {
+          // Lenkraketen – die kannst du abschießen!
+          const n = phase2 ? 3 : 2;
+          for (let i = 0; i < n; i++)
+            enemyShots.push({ type: 'rocket', x: b.x + b.w / 2, y: b.y - 10, vx: (i - (n - 1) / 2) * 160, vy: -330, g: 0,
+              home: true, speed: phase2 ? 250 : 210, r: 12, life: 5, pop: true, splat: '#ff7a3a' });
+          b.timer = phase2 ? 1.4 : 1.9;
+          tone(300, 800, 0.3, 'square', 0.04);
+        }
+      }
+    }
+  } else if (b.kind === 'dragon') {
+    b.fireT -= dt;
+    if (b.act === 'fly') {
+      const tx = W / 2 - b.w / 2 + Math.sin(b.t * (phase2 ? 0.8 : 0.55)) * 300, ty = 90 + Math.sin(b.t * 1.3) * 40;
+      if (Math.abs(tx - b.x) > 3) b.face = tx > b.x ? 1 : -1;
+      b.x += (tx - b.x) * Math.min(1, dt * 2.5); b.y += (ty - b.y) * Math.min(1, dt * 2.5);
+      b.timer -= dt;
+      if (b.timer <= 0 && tp) {
+        const r = Math.random();
+        if (r < 0.4) {
+          // Feuerbälle – wo sie landen, brennt es kurz
+          const m = dragonMouth(b), n = phase2 ? 4 : 3;
+          for (let i = 0; i < n; i++) {
+            const v = lob(m.x, m.y, tp.x + tp.w / 2 + (i - (n - 1) / 2) * 110, ARENA_Y - 10, 1.1, 700);
+            enemyShots.push({ type: 'fire', x: m.x, y: m.y, vx: v.vx, vy: v.vy, r: 13, g: 700, life: 4, flame: true, splat: '#ff7a00' });
+          }
+          b.fireT = 0.4; b.timer = phase2 ? 1.3 : 1.8;
+          tone(200, 80, 0.4, 'sawtooth', 0.07);
+        } else if (r < 0.7) {
+          // Sturzflug über die Plattformen – bleib unten!
+          b.act = 'swoopIn'; b.actT = 0.9;
+          b.tx = tp.x < W / 2 ? W - b.w - 10 : 10;
+          tone(500, 200, 0.6, 'sawtooth', 0.05);
+        } else if (phase2) {
+          // Meteor-Regen
+          for (let i = 0; i < 8; i++)
+            enemyShots.push({ type: 'fire', x: i === 0 ? tp.x + tp.w / 2 : rand(30, W - 30), y: -20 - i * 60, vx: rand(-40, 40), vy: 0, r: 13, g: 500, life: 5, flame: true, splat: '#ff7a00' });
+          b.timer = 2;
+          tone(100, 50, 0.6, 'sawtooth', 0.06);
+        } else {
+          // ruft Grauschleimer-Vögel
+          if (enemies.length < 3) for (let i = 0; i < 2; i++) { const f = makeFlyer(rand(100, W - 100)); f.active = true; enemies.push(f); }
+          b.timer = 1.5;
+          tone(300, 500, 0.3, 'square', 0.04);
+        }
+      }
+    } else if (b.act === 'swoopIn') {
+      b.actT -= dt;
+      b.face = b.tx < W / 2 ? 1 : -1;
+      b.x += (b.tx - b.x) * Math.min(1, dt * 4); b.y += (220 - b.y) * Math.min(1, dt * 4);
+      if (b.actT <= 0) { b.act = 'swoop'; b.tx = b.tx < W / 2 ? W - b.w - 10 : 10; b.dropT = 0.3; }
+    } else if (b.act === 'swoop') {
+      const d = b.tx - b.x;
+      b.x += Math.sign(d) * Math.min(Math.abs(d), (phase2 ? 600 : 470) * dt);
+      if (phase2) {
+        b.dropT -= dt;
+        if (b.dropT <= 0) { b.dropT = 0.3; enemyShots.push({ type: 'fire', x: b.x + b.w / 2, y: b.y + b.h, vx: 0, vy: 50, r: 11, g: 700, life: 3, flame: true, splat: '#ff7a00' }); }
+      }
+      if (Math.abs(d) < 2) { b.act = 'fly'; b.timer = 1.2; }
+    }
   } else { // Toaster
     if (b.act === 'fly') {
       const tx = W / 2 - b.w / 2 + Math.sin(b.t * (phase2 ? 1.1 : 0.8)) * 300;
@@ -1101,16 +1306,42 @@ function updateShots(dt) {
         const box = { x: s.x + 6, y: ARENA_Y - s.h * s.up, w: s.w - 12, h: s.h * s.up };
         for (const p of players) if (!p.down && s.up > 0.3 && overlap(p, box)) hurt(p);
       }
+    } else if (s.type === 'bolt') {
+      // Blitz: erst Warnung, dann ZACK!
+      s.warn -= dt;
+      if (s.warn <= 0) {
+        if (!s.out) { s.out = true; shake = Math.max(shake, 0.25); tone(120, 40, 0.3, 'sawtooth', 0.08); }
+        const box = { x: s.x + 8, y: 0, w: s.w - 16, h: ARENA_Y };
+        for (const p of players) if (!p.down && overlap(p, box)) hurt(p);
+      }
+    } else if (s.type === 'laser' || s.type === 'flame') {
+      for (const p of players) if (!p.down && overlap(p, s)) hurt(p);
     } else if (s.type === 'wave') {
       s.x += s.vx * dt;
       if (s.x < -60 || s.x > W + 60) s.dead = true;
       for (const p of players) if (!p.down && overlap(p, s)) { hurt(p); }
     } else {
+      if (s.home) {
+        // Lenkrakete: dreht sich langsam zu dir
+        const tp = nearestPlayer(s);
+        let a = Math.atan2(s.vy, s.vx);
+        if (tp) {
+          let d = Math.atan2(tp.y + tp.h / 2 - s.y, tp.x + tp.w / 2 - s.x) - a;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          a += clamp(d, -2.4 * dt, 2.4 * dt);
+        }
+        const sp = Math.min(s.speed, Math.hypot(s.vx, s.vy) + 300 * dt);
+        s.vx = Math.cos(a) * sp; s.vy = Math.sin(a) * sp;
+      }
       s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt;
       if (s.rot !== undefined) s.rot += dt * 8;
       for (const p of players) if (!p.down && circleRect(s, p)) { hurt(p); if (!s.pierce) s.dead = true; }
       const so = !s.pierce && solidAt(s.x, s.y + s.r);
-      if (so && !so.oneWay) { addSplat(so, s.x, so.y + 3, s.splat || '#6d6a7c', 20); burst(s.x, s.y, s.splat || '#8a8799', 6); s.dead = true; }
+      if (so && !so.oneWay) {
+        addSplat(so, s.x, so.y + 3, s.splat || '#6d6a7c', 20); burst(s.x, s.y, s.splat || '#8a8799', 6); s.dead = true;
+        if (s.flame) enemyShots.push({ type: 'flame', x: s.x - 20, y: so.y - 30, w: 40, h: 30, life: 2.2 });
+      }
       if (s.x < camX - 150 || s.x > camX + W + 150) s.dead = true;
     }
     if (s.life <= 0) s.dead = true;
@@ -1336,6 +1567,13 @@ function drawBackground(st) {
   }
   hills(st.hill2, 0.2, 320, 40, 15);
   hills(st.hill, 0.45, 380, 30, 12);
+  if (st.storm) {
+    ctx.strokeStyle = 'rgba(200,220,255,0.35)'; ctx.lineWidth = 2;
+    for (const s of stars) {
+      const y = (s.y * 3 + t * 700) % H, x = (s.x * 1.6 + t * 80) % W;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 5, y + 16); ctx.stroke();
+    }
+  }
   if (st.snow) {
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     for (const s of stars) {
@@ -1370,6 +1608,13 @@ function drawSolids(st) {
       ctx.fillStyle = 'rgba(0,0,0,0.12)';
       for (let i = 20; i < s.w; i += 60) circle(x + i, s.y + 40 + (i % 3) * 10, 6);
       ctx.fillStyle = st.top; ctx.beginPath(); ctx.roundRect(x, s.y - 4, s.w, 16, 6); ctx.fill();
+    } else if (s.kind === 'bounce') {
+      s.squish = Math.max(0, s.squish - 1 / 30);
+      const sq = s.squish * 8;
+      ctx.fillStyle = '#f3e6c8'; ctx.fillRect(x + s.w / 2 - 12, s.y + 8, 24, H - s.y);
+      ctx.fillStyle = '#e0283f';
+      ctx.beginPath(); ctx.ellipse(x + s.w / 2, s.y + 12 + sq * 0.5, s.w / 2 + 8 + sq, 24 - sq, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#fff'; circle(x + s.w / 2 - 20, s.y + 2 + sq, 6); circle(x + s.w / 2 + 14, s.y - 2 + sq, 7); circle(x + s.w / 2 + 34, s.y + 8 + sq, 4);
     } else {
       ctx.fillStyle = s.kind === 'mover' ? '#ffd23f' : st.plat;
       ctx.beginPath(); ctx.roundRect(x, s.y, s.w, s.h, 8); ctx.fill();
@@ -2022,33 +2267,64 @@ function drawMap() {
     const x = ((i * 137 + t * 15) % (W + 60)) - 30, y = 30 + (i * 71) % 500;
     ctx.beginPath(); ctx.arc(x, y, 10, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
   }
-  // Insel
-  ctx.fillStyle = '#f3d98b'; ellipse(480, 320, 455, 200);
-  ctx.fillStyle = '#6cc47f'; ellipse(480, 315, 430, 180);
-  // Wolken-Insel (neue Welt oben)
-  ctx.fillStyle = '#e8f0ff'; ellipse(610, 100, 345, 80);
-  ctx.fillStyle = '#c9d8f5'; ellipse(610, 96, 325, 66);
+  const page = pageOf(mapSel);
+  if (page === 0) {
+    // Insel
+    ctx.fillStyle = '#f3d98b'; ellipse(480, 320, 455, 200);
+    ctx.fillStyle = '#6cc47f'; ellipse(480, 315, 430, 180);
+    // Wolken-Insel (Welt 2 oben)
+    ctx.fillStyle = '#e8f0ff'; ellipse(610, 100, 345, 80);
+    ctx.fillStyle = '#c9d8f5'; ellipse(610, 96, 325, 66);
+  } else {
+    // Wilde Insel mit Vulkan (Welt 3)
+    ctx.fillStyle = '#f3d98b'; ellipse(480, 315, 455, 195);
+    ctx.fillStyle = '#3aa86a'; ellipse(480, 310, 430, 175);
+    ctx.fillStyle = '#5a3a30';
+    ctx.beginPath(); ctx.moveTo(690, 270); ctx.lineTo(775, 110); ctx.lineTo(865, 110); ctx.lineTo(950, 270); ctx.fill();
+    ctx.fillStyle = '#ff6a2a'; ctx.beginPath(); ctx.ellipse(820, 112, 46, 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(120,110,130,0.6)';
+    for (let i = 0; i < 4; i++) { const ph = (t * 0.4 + i / 4) % 1; circle(820 + Math.sin(ph * 6 + i) * 12, 100 - ph * 90, 10 + ph * 18); }
+  }
   // farbige Gebiete um jedes Level
   STAGES.forEach((st, i) => {
+    if (pageOf(i) !== page) return;
     ctx.globalAlpha = 0.85; ctx.fillStyle = st.hill;
-    if (i >= 7) ellipse(st.map[0], st.map[1] + 6, 58, 38); else ellipse(st.map[0], st.map[1] + 8, 75, 50);
+    if (i >= 7 && i < 13) ellipse(st.map[0], st.map[1] + 6, 58, 38); else ellipse(st.map[0], st.map[1] + 8, 75, 50);
   });
   ctx.globalAlpha = 1;
   // Bäume
-  for (const [x, y] of [[200, 260], [540, 320], [870, 430], [95, 300], [780, 185], [215, 345], [530, 185]]) {
+  const trees = page === 0 ? [[200, 260], [540, 320], [870, 430], [95, 300], [780, 185], [215, 345], [530, 185]]
+    : [[90, 300], [240, 400], [420, 230], [600, 250], [400, 450], [860, 400], [560, 300], [250, 200]];
+  for (const [x, y] of trees) {
     ctx.fillStyle = '#7a4a26'; ctx.fillRect(x - 3, y, 6, 14);
-    ctx.fillStyle = '#3f9a52'; circle(x, y - 4, 13); circle(x - 8, y + 3, 9); circle(x + 8, y + 3, 9);
+    ctx.fillStyle = page ? '#1f7a40' : '#3f9a52'; circle(x, y - 4, 13); circle(x - 8, y + 3, 9); circle(x + 8, y + 3, 9);
+  }
+  // Shop-Hütte
+  {
+    const [sx, sy] = SHOP_SPOT;
+    ctx.fillStyle = '#f3d98b'; ellipse(sx, sy + 16, 50, 16);
+    ctx.fillStyle = '#c98b4f'; ctx.fillRect(sx - 26, sy - 14, 52, 32);
+    ctx.fillStyle = '#e0123f'; ctx.beginPath(); ctx.moveTo(sx - 34, sy - 12); ctx.lineTo(sx, sy - 38); ctx.lineTo(sx + 34, sy - 12); ctx.fill();
+    ctx.fillStyle = '#5a3a20'; ctx.fillRect(sx - 7, sy, 14, 18);
+    coinIcon(sx + 15, sy - 2, 6);
+    text('SHOP [S]', sx, sy - 50 + Math.sin(t * 4) * 2, 14, '#ffe04a');
   }
   // Weg zwischen den Leveln
   ctx.lineWidth = 8; ctx.setLineDash([2, 16]);
   for (let i = 1; i < STAGES.length; i++) {
+    if (pageOf(i) !== page || pageOf(i - 1) !== page) continue;
     const [ax, ay] = STAGES[i - 1].map, [bx, by] = STAGES[i].map;
     ctx.strokeStyle = i < progress.unlocked ? '#fff3c4' : 'rgba(60,60,70,0.45)';
     ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, Math.min(ay, by) - 50, bx, by); ctx.stroke();
   }
   ctx.setLineDash([]);
+  // Hinweis auf die andere Welt-Seite
+  const firstP1 = STAGES.findIndex(st => st.page === 1);
+  if (page === 0 && progress.unlocked > firstP1) text('→ WELT 3', 900, 165 + Math.sin(t * 4) * 3, 18, '#ffe04a');
+  if (page === 1) text('← Welt 1 + 2', 150, 322, 15, '#fff');
   // Level-Punkte
   STAGES.forEach((st, i) => {
+    if (pageOf(i) !== page) return;
     const [x, y] = st.map;
     const open = i < progress.unlocked, sel = i === mapSel;
     const isNew = mapUnlockTimer > 0 && i === progress.unlocked - 1;
@@ -2080,12 +2356,13 @@ function drawMap() {
       mapPos.x + off, mapPos.y - 12 + hop, 1.1);
   });
   // Überschrift und Infos
-  text('WELTKARTE', W / 2, 38, 40, '#ffe04a');
+  text(page ? 'WILDE INSEL' : 'WELTKARTE', W / 2, 38, 40, '#ffe04a');
   text('Punkte: ' + score, 20, 38, 18, '#fff', 'left');
+  coinIcon(28, 66, 9); text(String(shop.coins), 42, 66, 18, '#ffd23f', 'left');
   text('Highscore: ' + highscore, W - 20, 38, 18, '#fff', 'right');
   ctx.fillStyle = 'rgba(20,12,40,0.7)'; ctx.beginPath(); ctx.roundRect(W / 2 - 330, H - 74, 660, 62, 14); ctx.fill();
   text(STAGES[mapSel].name, W / 2, H - 52, 22, '#fff');
-  text('← → aussuchen  ·  Enter / Leertaste / Klick = Los!  ·  Esc = zurück', W / 2, H - 26, 15, '#ffe04a', 'center', false);
+  text('← → aussuchen  ·  Enter / Klick = Los!  ·  S = Shop  ·  Esc = zurück', W / 2, H - 26, 15, '#ffe04a', 'center', false);
 }
 
 function draw() {
