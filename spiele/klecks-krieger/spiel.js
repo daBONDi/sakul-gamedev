@@ -25,6 +25,7 @@ addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 addEventListener('pointerdown', e => {
   if (e.button === 0 || e.button === 2) { keys.Mouse = true; initAudio(); }
   if (state === 'map' && e.button === 0) mapClick(e);
+  else if (state === 'shop' && e.button === 0) shopClick(e);
 });
 addEventListener('pointerup', () => { keys.Mouse = false; });
 // Wo ist die Maus? (in Spiel-Koordinaten)
@@ -313,9 +314,57 @@ function startStage(i) {
 function mapClick(e) {
   const r = cv.getBoundingClientRect();
   const mx = (e.clientX - r.left) * W / r.width, my = (e.clientY - r.top) * H / r.height;
+  if (Math.hypot(mx - SHOP_SPOT[0], my - SHOP_SPOT[1]) < 45) { openShop(); return; }
+  const page = pageOf(mapSel);
   STAGES.forEach((st, i) => {
-    if (Math.hypot(mx - st.map[0], my - st.map[1]) < 42 && i < progress.unlocked) { mapSel = i; startStage(i); }
+    if (pageOf(i) === page && Math.hypot(mx - st.map[0], my - st.map[1]) < 42 && i < progress.unlocked) { mapSel = i; startStage(i); }
   });
+}
+// Welche Seite der Weltkarte? (0 = Welt 1+2, 1 = Wilde Insel)
+function pageOf(i) { return STAGES[i].page || 0; }
+let mapPageShown = 0;
+
+// ---------- Shop-Bildschirm ----------
+let shopRow = 0, shopCol = 0, shopMsg = '', shopMsgTimer = 0;
+const SHOP_SPOT = [64, 470];   // Shop-Hütte auf der Weltkarte
+function openShop() { state = 'shop'; shopMsg = ''; tone(600, 900, 0.1, 'triangle', 0.06); }
+function closeShop() { state = 'map'; mapLock = 0.3; }
+function shopItems(row) { return row ? GADGETS : WEAPONS; }
+function shopMove(dx, dy) {
+  shopCol = clamp(shopCol + dx, 0, 4); shopRow = clamp(shopRow + dy, 0, 1);
+  tone(500, 750, 0.05, 'triangle', 0.05);
+}
+function shopSay(msg) { shopMsg = msg; shopMsgTimer = 1.6; }
+function shopBuy() {
+  const it = shopItems(shopRow)[shopCol], isWeapon = shopRow === 0;
+  if (hasItem(it.id)) {
+    if (isWeapon && shop.weapon !== it.id) { shop.weapon = it.id; saveShop(); sfx.coin(); shopSay(it.name + ' ausgerüstet!'); }
+    else shopSay(isWeapon ? 'Hast du schon in der Hand!' : 'Hast du schon – ist immer an!');
+    return;
+  }
+  if (shop.coins < it.price) {
+    shopSay('Zu wenig Münzen! Sammle mehr Farbtropfen.');
+    tone(200, 140, 0.25, 'square', 0.05);
+    return;
+  }
+  shop.coins -= it.price;
+  shop.owned.push(it.id);
+  if (isWeapon) shop.weapon = it.id;
+  saveShop(); sfx.win();
+  shopSay('Gekauft: ' + it.name + '!');
+}
+function shopCardPos(row, col) { return { x: 40 + col * 180, y: row ? 300 : 110, w: 160, h: 150 }; }
+function shopClick(e) {
+  const r = cv.getBoundingClientRect();
+  const mx = (e.clientX - r.left) * W / r.width, my = (e.clientY - r.top) * H / r.height;
+  if (mx < 150 && my < 70) { closeShop(); return; }
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 5; col++) {
+    const c = shopCardPos(row, col);
+    if (mx > c.x && mx < c.x + c.w && my > c.y && my < c.y + c.h) {
+      if (shopRow === row && shopCol === col) shopBuy();   // zweimal klicken = kaufen
+      else { shopRow = row; shopCol = col; tone(500, 750, 0.05, 'triangle', 0.05); }
+    }
+  }
 }
 
 function saveHighscore() {
@@ -324,6 +373,34 @@ function saveHighscore() {
     try { localStorage.setItem('klecks-krieger-highscore', highscore); } catch (e) { }
   }
 }
+
+// ---------- Shop: Münzen, Waffen und Gadgets (wird im Browser gespeichert) ----------
+const WEAPONS = [
+  { id: 'spritze', name: 'Klecks-Spritze', price: 0, cool: 0.12, ink: 5, info: 'Die normale Farbspritze. Zuverlässig!' },
+  { id: 'dreifach', name: 'Dreifach-Spritze', price: 150, cool: 0.17, ink: 8, info: 'Spritzt 3 Kleckse auf einmal – wie ein Fächer!' },
+  { id: 'turbo', name: 'Turbo-Spritze', price: 120, cool: 0.06, ink: 3.5, info: 'Spritzt doppelt so schnell. Ratatatata!' },
+  { id: 'bombe', name: 'Farb-Bomber', price: 250, cool: 0.45, ink: 15, info: 'Wirft Farbbomben, die RIESIG explodieren!' },
+  { id: 'laser', name: 'Regenbogen-Strahl', price: 300, cool: 0.1, ink: 5, info: 'Fliegt kerzengerade und schießt durch alle Gegner durch!' },
+];
+const GADGETS = [
+  { id: 'doppelsprung', name: 'Sprung-Schuhe', price: 200, info: 'Doppelsprung! Drück in der Luft nochmal Springen.' },
+  { id: 'herz', name: 'Extra-Herz', price: 250, info: 'Du hast 4 Herzen statt 3.' },
+  { id: 'magnet', name: 'Tropfen-Magnet', price: 100, info: 'Farbtropfen fliegen von ganz allein zu dir.' },
+  { id: 'tank', name: 'Mega-Tank', price: 120, info: 'Deine Tinte lädt fast doppelt so schnell auf.' },
+  { id: 'schild', name: 'Blasen-Schild', price: 180, info: 'Eine Schutzblase hält in jedem Level einen Treffer ab.' },
+];
+let shop = { coins: 0, owned: ['spritze'], weapon: 'spritze' };
+try {
+  const sv = JSON.parse(localStorage.getItem('klecks-krieger-shop'));
+  if (sv && sv.owned) shop = sv;
+} catch (e) { }
+function saveShop() {
+  try { localStorage.setItem('klecks-krieger-shop', JSON.stringify(shop)); } catch (e) { }
+}
+const hasItem = id => shop.owned.includes(id);
+function addCoins(n) { shop.coins += n; saveShop(); }
+function maxHp() { return hasItem('herz') ? 4 : 3; }
+function currentWeapon() { return WEAPONS.find(w => w.id === shop.weapon) || WEAPONS[0]; }
 
 // ---------- Spieler ----------
 function makePlayer(k) {
@@ -337,7 +414,8 @@ function makePlayer(k) {
   };
 }
 function resetPlayer(p, x, y) {
-  Object.assign(p, { x, y, vx: 0, vy: 0, hp: 3, ink: 100, down: false, inv: 1, face: 1, standOn: null, dive: false });
+  Object.assign(p, { x, y, vx: 0, vy: 0, hp: maxHp(), ink: 100, down: false, inv: 1, face: 1, standOn: null, dive: false,
+    shield: hasItem('schild'), airJumps: 0, boost: false });
   p.lastSafe = { x, y };
 }
 
@@ -386,6 +464,13 @@ function loadStage(i) {
 
 function hurt(p, force) {
   if (p.down || (p.inv > 0 && !force)) return;
+  if (p.shield && !force) {
+    // Die Schutzblase platzt statt dass du ein Herz verlierst
+    p.shield = false; p.inv = 1.2;
+    burst(p.x + p.w / 2, p.y + p.h / 2, '#8fdcff', 20);
+    tone(900, 300, 0.25, 'sine', 0.08);
+    return;
+  }
   p.hp--;
   p.inv = 1.5;
   shake = 0.3;
@@ -469,30 +554,36 @@ function updatePlayer(p, dt) {
   }
 
   p.coyote = p.onGround ? 0.1 : p.coyote - dt;
+  if (p.onGround) p.airJumps = hasItem('doppelsprung') ? 1 : 0;
   if (inp.jump && !p.prevJump && p.coyote > 0) {
-    p.vy = -560; p.coyote = 0; p.dive = false;
+    p.vy = -560; p.coyote = 0; p.dive = false; p.boost = false;
     sfx.jump();
+  } else if (inp.jump && !p.prevJump && p.airJumps > 0) {
+    // Doppelsprung mit den Sprung-Schuhen
+    p.vy = -520; p.airJumps--; p.boost = false;
+    sfx.jump(); burst(p.x + p.w / 2, p.y + p.h, p.light, 8);
   }
-  if (!inp.jump && p.vy < -220) p.vy = -220;   // kurz drücken = kleiner Sprung
+  if (p.vy >= 0) p.boost = false;
+  if (!inp.jump && p.vy < -220 && !p.boost) p.vy = -220;   // kurz drücken = kleiner Sprung
   p.prevJump = inp.jump;
 
   p.vy = Math.min(900, p.vy + GRAV * dt);
   if (p.standOn && p.standOn.kind === 'mover') { p.x += p.standOn.dx; p.y += p.standOn.dy; }
   moveAndCollide(p, dt);
+  if (p.onGround && p.standOn && p.standOn.kind === 'bounce') {
+    // Pilz! Hui, hoch hinaus
+    p.vy = -1000; p.onGround = false; p.boost = true; p.coyote = 0;
+    p.standOn.squish = 1;
+    tone(250, 900, 0.2, 'sine', 0.08);
+  }
   p.x = clamp(p.x, Math.max(0, camX), Math.min(levelW, camX + W) - p.w);
   if (p.onGround && p.standOn && p.standOn.kind !== 'mover') p.lastSafe = { x: p.x, y: p.y };
 
   // Tinte: lädt sich auf, abtauchen lädt viel schneller
-  p.ink = Math.min(100, p.ink + (p.dive ? 75 : 18) * dt);
+  p.ink = Math.min(100, p.ink + (p.dive ? 75 : 18) * (hasItem('tank') ? 1.8 : 1) * dt);
   p.cool -= dt;
-  if (inp.shoot && !p.dive && p.cool <= 0 && p.ink >= 5) {
-    // Schuss fliegt in Zielrichtung aus der Spritzen-Spitze
-    const ca = Math.cos(p.aim), sa = Math.sin(p.aim);
-    shots.push({ x: p.x + p.w / 2 + p.face * 8 + ca * 26, y: p.y + 27 + sa * 26, vx: ca * 720, vy: sa * 720 - 40,
-      r: 7, color: p.color, life: 1.3 });
-    p.ink -= 5; p.cool = 0.12;
-    sfx.shoot();
-  }
+  const wp = currentWeapon();
+  if (inp.shoot && !p.dive && p.cool <= 0 && p.ink >= wp.ink) fireWeapon(p, wp);
   p.inv -= dt;
 
   // In ein Loch gefallen?
@@ -500,6 +591,25 @@ function updatePlayer(p, dt) {
     p.x = p.lastSafe.x; p.y = p.lastSafe.y - 40; p.vx = p.vy = 0;
     hurt(p, true);
   }
+}
+
+// Schießen – je nach Waffe aus dem Shop anders
+function fireWeapon(p, wp) {
+  const gx = p.x + p.w / 2 + p.face * 8, gy = p.y + 27;
+  const mk = (a, sp, extra) => {
+    const ca = Math.cos(a), sa = Math.sin(a);
+    shots.push({ x: gx + ca * 26, y: gy + sa * 26, vx: ca * sp, vy: sa * sp - 40, r: 7, color: p.color, life: 1.3,
+      dmg: 1, grav: 250, ...extra });
+  };
+  if (wp.id === 'dreifach') for (const d of [-0.16, 0, 0.16]) mk(p.aim + d, 700);
+  else if (wp.id === 'turbo') mk(p.aim + rand(-0.05, 0.05), 800, { r: 6 });
+  else if (wp.id === 'bombe') mk(p.aim, 560, { r: 12, grav: 800, bomb: true, life: 2.5 });
+  else if (wp.id === 'laser') mk(p.aim, 1100, { r: 6, grav: 0, vy: Math.sin(p.aim) * 1100, pierce: true, laser: true, hit: [], life: 1 });
+  else mk(p.aim, 720);
+  p.ink -= wp.ink; p.cool = wp.cool;
+  if (wp.id === 'bombe') tone(220, 110, 0.15, 'triangle', 0.08);
+  else if (wp.id === 'laser') tone(1200, 1600, 0.06, 'sine', 0.04);
+  else sfx.shoot();
 }
 
 // ---------- Gegner ----------
@@ -912,39 +1022,67 @@ function burst(x, y, color, n) {
   }
 }
 
+function hitEnemy(e, dmg, color) {
+  if (e.dead) return;
+  e.hp -= dmg; e.flash = 0.1; sfx.hit();
+  if (e.hp <= 0) {
+    e.dead = true; score += 100; addCoins(2); sfx.pop();
+    burst(e.x + e.w / 2, e.y + e.h / 2, color, 25);
+    const under = solidAt(e.x + e.w / 2, e.y + e.h + 4) || solidAt(e.x + e.w / 2, GROUND_Y + 2);
+    if (under) addSplat(under, e.x + e.w / 2, under.y + 4, color, 34);
+  }
+}
+function hitBoss(dmg, x, y, color) {
+  if (!boss || boss.hp <= 0 || boss.hidden) return;
+  boss.hp -= dmg; boss.flash = 0.06; score += 5 * dmg; sfx.hit();
+  burst(x, y, color, 3);
+  boss.splats.push({ ox: x - boss.x, oy: y - boss.y, r: rand(7, 13) * (dmg > 1 ? 1.6 : 1), color });
+  if (boss.splats.length > 80) boss.splats.shift();
+  if (boss.hp <= 0) {
+    boss.hp = 0; boss.dying = 2; score += 1000; addCoins(30); shake = 0.6; sfx.boom(); enemyShots = [];
+    for (const e of enemies) burst(e.x + e.w / 2, e.y + e.h / 2, color, 15);
+    enemies = [];
+  }
+}
+// Farbbombe: macht allen in der Nähe Schaden
+function explode(x, y, color) {
+  const R = 95;
+  shake = Math.max(shake, 0.25);
+  tone(160, 40, 0.35, 'sawtooth', 0.08);
+  burst(x, y, color, 30); burst(x, y, '#fff', 10);
+  const zone = { x, y, r: R };
+  for (const e of enemies) if (e.active && !e.dead && circleRect(zone, e)) hitEnemy(e, 3, color);
+  if (boss && circleRect(zone, boss)) hitBoss(4, clamp(x, boss.x + 10, boss.x + boss.w - 10), clamp(y, boss.y + 10, boss.y + boss.h - 10), color);
+  for (const es of enemyShots) if (es.pop && Math.hypot(es.x - x, es.y - y) < R) { es.dead = true; burst(es.x, es.y, es.splat || '#ff8fcf', 8); }
+  for (const so of solids) if (circleRect({ x, y, r: R * 0.6 }, so)) addSplat(so, clamp(x, so.x, so.x + so.w), so.y + 4, color, 40);
+}
+
 function updateShots(dt) {
   for (const s of shots) {
-    s.vy += 250 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    s.vy += s.grav * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
     const so = solidAt(s.x, s.y);
-    if (so) { addSplat(so, s.x, s.y, s.color, rand(14, 24)); s.dead = true; continue; }
+    if (so) {
+      if (s.bomb) explode(s.x, s.y, s.color); else addSplat(so, s.x, s.y, s.color, rand(14, 24));
+      s.dead = true; continue;
+    }
     for (const e of enemies) {
-      if (!e.active || !circleRect(s, e)) continue;
-      s.dead = true; e.hp--; e.flash = 0.1; sfx.hit();
+      if (!e.active || e.dead || !circleRect(s, e)) continue;
+      if (s.pierce) { if (s.hit.includes(e)) continue; s.hit.push(e); }
+      else s.dead = true;
       burst(s.x, s.y, s.color, 4);
-      if (e.hp <= 0) {
-        e.dead = true; score += 100; sfx.pop();
-        burst(e.x + e.w / 2, e.y + e.h / 2, s.color, 25);
-        const under = solidAt(e.x + e.w / 2, e.y + e.h + 4) || solidAt(e.x + e.w / 2, GROUND_Y + 2);
-        if (under) addSplat(under, e.x + e.w / 2, under.y + 4, s.color, 34);
-      }
-      break;
+      if (s.bomb) explode(s.x, s.y, s.color); else hitEnemy(e, s.dmg, s.color);
+      if (!s.pierce) break;
     }
-    if (!s.dead && boss && boss.hp > 0 && !boss.hidden && circleRect(s, boss)) {
-      s.dead = true; boss.hp--; boss.flash = 0.06; score += 5; sfx.hit();
-      burst(s.x, s.y, s.color, 3);
-      boss.splats.push({ ox: s.x - boss.x + s.vx * 0.01, oy: s.y - boss.y, r: rand(7, 13), color: s.color });
-      if (boss.splats.length > 80) boss.splats.shift();
-      if (boss.hp <= 0) {
-        boss.hp = 0; boss.dying = 2; score += 1000; shake = 0.6; sfx.boom(); enemyShots = [];
-        for (const e of enemies) burst(e.x + e.w / 2, e.y + e.h / 2, s.color, 15);
-        enemies = [];
-      }
+    if (!s.dead && boss && boss.hp > 0 && !boss.hidden && circleRect(s, boss) && !(s.pierce && s.hit.includes(boss))) {
+      if (s.pierce) s.hit.push(boss); else s.dead = true;
+      if (s.bomb) explode(s.x, s.y, s.color); else hitBoss(s.dmg, s.x, s.y, s.color);
     }
-    // Kaugummiblasen kann man kaputtspritzen
+    // Blasen und Raketen kann man kaputtspritzen
     if (!s.dead) for (const es of enemyShots) {
       if (es.pop && !es.dead && Math.hypot(es.x - s.x, es.y - s.y) < es.r + s.r) {
-        es.dead = true; s.dead = true; score += 10; sfx.pop(); burst(es.x, es.y, '#ff8fcf', 10);
-        break;
+        es.dead = true; score += 10; sfx.pop(); burst(es.x, es.y, es.splat || '#ff8fcf', 10);
+        if (s.bomb) explode(s.x, s.y, s.color);
+        if (!s.pierce) { s.dead = true; break; }
       }
     }
     if (s.life <= 0 || s.x < camX - 50 || s.x > camX + W + 50) s.dead = true;
@@ -983,12 +1121,20 @@ function updateShots(dt) {
   particles = particles.filter(q => q.life > 0);
 }
 
-function updatePickups() {
+function updatePickups(dt) {
   for (const it of pickups) {
+    if (it.kind === 'drop' && hasItem('magnet')) {
+      // Magnet zieht Tropfen an
+      const tp = nearestPlayer(it);
+      if (tp) {
+        const dx = tp.x + tp.w / 2 - (it.x + 10), dy = tp.y + tp.h / 2 - (it.y + 12), d = Math.hypot(dx, dy);
+        if (d < 190 && d > 1) { it.x += dx / d * 420 * dt; it.y += dy / d * 420 * dt; }
+      }
+    }
     for (const p of players) {
       if (p.down || it.taken || !overlap(p, it)) continue;
-      if (it.kind === 'drop') { score += 10; sfx.coin(); burst(it.x + 10, it.y + 12, `hsl(${(it.x * 0.3) % 360},90%,60%)`, 6); it.taken = true; }
-      else if (p.hp < 3) { p.hp++; sfx.revive(); burst(it.x + 13, it.y + 12, '#ff3b5c', 12); it.taken = true; }
+      if (it.kind === 'drop') { score += 10; addCoins(1); sfx.coin(); burst(it.x + 10, it.y + 12, `hsl(${(it.x * 0.3) % 360},90%,60%)`, 6); it.taken = true; }
+      else if (p.hp < maxHp()) { p.hp++; sfx.revive(); burst(it.x + 13, it.y + 12, '#ff3b5c', 12); it.taken = true; }
     }
   }
   pickups = pickups.filter(it => !it.taken);
@@ -997,7 +1143,7 @@ function updatePickups() {
 function stageClear() {
   if (state !== 'play') return;
   state = 'clear'; clearTimer = 3;
-  score += 500;
+  score += 500; addCoins(10);
   sfx.win();
   for (let i = 0; i < 6; i++) burst(camX + rand(100, W - 100), rand(100, 300), `hsl(${rand(0, 360)},90%,60%)`, 15);
 }
@@ -1039,8 +1185,10 @@ function update(dt) {
     mapPos.x += (tx - mapPos.x) * Math.min(1, dt * 4);
     mapPos.y += (ty - mapPos.y) * Math.min(1, dt * 4);
     mapLock -= dt; mapUnlockTimer -= dt;
+    if (pageOf(mapSel) !== mapPageShown) { mapPageShown = pageOf(mapSel); mapPos = { x: tx, y: ty }; }
     return;
   }
+  if (state === 'shop') { shopMsgTimer -= dt; return; }
   if (state !== 'play' || paused) return;
 
   // bewegliche Plattformen
@@ -1055,7 +1203,7 @@ function update(dt) {
   updateEnemies(dt);
   if (boss) updateBoss(boss, dt);
   updateShots(dt);
-  updatePickups();
+  updatePickups(dt);
 
   // Kamera folgt den Spielern
   const alive = players.filter(p => !p.down);
@@ -1078,7 +1226,15 @@ function onKey(code) {
     if (code === 'KeyA' || code === 'ArrowLeft') mapMove(-1);
     if (code === 'KeyD' || code === 'ArrowRight') mapMove(1);
     if (code === 'Space' || code === 'Enter' || code === 'NumpadEnter') startStage(mapSel);
+    if (code === 'KeyS' || code === 'KeyB') openShop();
     if (code === 'Escape') state = 'title';
+  } else if (state === 'shop') {
+    if (code === 'KeyA' || code === 'ArrowLeft') shopMove(-1, 0);
+    if (code === 'KeyD' || code === 'ArrowRight') shopMove(1, 0);
+    if (code === 'KeyW' || code === 'ArrowUp') shopMove(0, -1);
+    if (code === 'KeyS' || code === 'ArrowDown') shopMove(0, 1);
+    if (code === 'Space' || code === 'Enter' || code === 'NumpadEnter') shopBuy();
+    if (code === 'Escape' || code === 'KeyQ' || code === 'KeyB') closeShop();
   } else if (state === 'gameover') {
     if (code === 'Space' || code === 'Enter') { score = stageStartScore; loadStage(stageIndex); state = 'play'; }
     if (code === 'Escape') { score = stageStartScore; goToMap(stageIndex); }
@@ -1091,17 +1247,32 @@ function onKey(code) {
 }
 
 // Controller-Knopf A / Start im Menü
-let padPrev = false, padPrevDir = 0;
+let padPrev = false, padPrevDir = 0, padPrevY = false, padPrevB = false, padPrevDirY = 0;
 function pollPadMenu() {
   const pads = getPads();
   const btn = pads.some(gp => (gp.buttons[0] && gp.buttons[0].pressed) || (gp.buttons[9] && gp.buttons[9].pressed));
   if (btn && !padPrev) {
     if (state === 'title') start(clamp(pads.length, 1, 2));
     else if (state === 'map') startStage(mapSel);
+    else if (state === 'shop') shopBuy();
     else if (state === 'gameover') onKey('Enter');
     else if (state === 'win') onKey('Enter');
   }
   padPrev = btn;
+  // Y = Shop öffnen, B = Shop verlassen
+  const btnY = pads.some(gp => gp.buttons[3] && gp.buttons[3].pressed);
+  const btnB = pads.some(gp => gp.buttons[1] && gp.buttons[1].pressed);
+  if (btnY && !padPrevY && state === 'map') openShop();
+  if (btnB && !padPrevB && state === 'shop') closeShop();
+  padPrevY = btnY; padPrevB = btnB;
+  let dy = 0;
+  for (const gp of pads) {
+    const ay = gp.axes[1] || 0;
+    if (ay < -0.5 || (gp.buttons[12] && gp.buttons[12].pressed)) dy = -1;
+    if (ay > 0.5 || (gp.buttons[13] && gp.buttons[13].pressed)) dy = 1;
+  }
+  if (state === 'shop' && dy && dy !== padPrevDirY) shopMove(0, dy);
+  padPrevDirY = dy;
   // Steuerkreuz / Stick links-rechts auf der Weltkarte
   let dir = 0;
   for (const gp of pads) {
@@ -1110,6 +1281,7 @@ function pollPadMenu() {
     if (ax > 0.5 || (gp.buttons[15] && gp.buttons[15].pressed)) dir = 1;
   }
   if (state === 'map' && dir && dir !== padPrevDir) mapMove(dir);
+  if (state === 'shop' && dir && dir !== padPrevDir) shopMove(dir, 0);
   padPrevDir = dir;
 }
 
@@ -1315,6 +1487,10 @@ function drawPlayers() {
     }
     if (p.inv > 0 && Math.floor(p.inv * 15) % 2) continue;   // blinken
     drawKrakel(p, x, y);
+    if (p.shield) {
+      ctx.strokeStyle = 'rgba(140,220,255,0.8)'; ctx.lineWidth = 3; ctx.fillStyle = 'rgba(140,220,255,0.18)';
+      ctx.beginPath(); ctx.arc(x, y - 24, 34 + Math.sin(t * 5) * 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
   }
 }
 
@@ -1566,6 +1742,21 @@ function drawBoss(b) {
 
 function drawShots() {
   for (const s of shots) {
+    if (s.laser) {
+      const sp = Math.hypot(s.vx, s.vy) || 1;
+      ctx.lineCap = 'round';
+      ['#ff5a5a', '#ffe04a', '#4ab4ff'].forEach((c, i) => {
+        ctx.strokeStyle = c; ctx.lineWidth = 10 - i * 3;
+        ctx.beginPath(); ctx.moveTo(s.x - camX, s.y); ctx.lineTo(s.x - camX - s.vx / sp * 40, s.y - s.vy / sp * 40); ctx.stroke();
+      });
+      continue;
+    }
+    if (s.bomb) {
+      ctx.fillStyle = '#222'; circle(s.x - camX, s.y, s.r);
+      ctx.fillStyle = s.color; circle(s.x - camX, s.y, s.r - 4);
+      ctx.fillStyle = Math.floor(t * 20) % 2 ? '#fff' : '#ffe04a'; circle(s.x - camX + 4, s.y - s.r - 3, 3.5);
+      continue;
+    }
     ctx.fillStyle = s.color; circle(s.x - camX, s.y, s.r);
     ctx.fillStyle = 'rgba(255,255,255,0.6)'; circle(s.x - camX - 2, s.y - 2, 2.5);
     const sp = Math.hypot(s.vx, s.vy) || 1;
@@ -1633,11 +1824,13 @@ function drawHUD(st) {
     const x = k ? W - 196 : 14, y = 12;
     ctx.fillStyle = 'rgba(20,12,40,0.55)'; ctx.beginPath(); ctx.roundRect(x, y, 182, 58, 12); ctx.fill();
     text(p.name, x + 12, y + 16, 15, p.color, 'left');
-    for (let i = 0; i < 3; i++) heart(x + 108 + i * 24, y + 16, 1.1, i < p.hp ? '#ff3b5c' : 'rgba(255,255,255,0.25)');
+    const mh = maxHp();
+    for (let i = 0; i < mh; i++) heart(x + (mh > 3 ? 94 : 108) + i * (mh > 3 ? 22 : 24), y + 16, 1.1, i < p.hp ? '#ff3b5c' : 'rgba(255,255,255,0.25)');
     ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.roundRect(x + 12, y + 34, 158, 12, 6); ctx.fill();
     ctx.fillStyle = p.ink < 5 ? '#ff3b5c' : p.color; ctx.beginPath(); ctx.roundRect(x + 12, y + 34, Math.max(6, 158 * p.ink / 100), 12, 6); ctx.fill();
   });
   text('Punkte: ' + score, W / 2, 26, 20, '#ffe04a');
+  coinIcon(W / 2 - 22, 54, 9); text(String(shop.coins), W / 2 - 8, 54, 17, '#ffd23f', 'left');
   if (boss) {
     const bw = 500, bx = W / 2 - bw / 2, by = H - 34;
     ctx.fillStyle = 'rgba(20,12,40,0.6)'; ctx.beginPath(); ctx.roundRect(bx - 8, by - 26, bw + 16, 50, 12); ctx.fill();
@@ -1675,6 +1868,100 @@ function drawTitle() {
   text('Abtauchen füllt deine Tinte schnell wieder auf!  ·  Esc = Pause', W / 2, 448, 15, '#fff', 'center', false);
   text('Ist dein Freund ein Geist? Berühr ihn, dann lebt er wieder!', W / 2, 474, 15, '#fff', 'center', false);
   text('Highscore: ' + highscore, W / 2, 520, 18, '#ffe04a');
+}
+
+function coinIcon(x, y, r) {
+  ctx.fillStyle = '#b8860b'; circle(x, y + 1.5, r);
+  ctx.fillStyle = '#ffd23f'; circle(x, y, r);
+  ctx.fillStyle = '#fff3a0'; circle(x - r * 0.3, y - r * 0.3, r * 0.3);
+}
+
+// kleine Bilder für die Shop-Sachen
+function drawShopIcon(id, x, y) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.lineCap = 'round';
+  if (id === 'spritze' || id === 'turbo') {
+    ctx.fillStyle = '#3b3b4f'; ctx.beginPath(); ctx.roundRect(-30, -8, 50, 16, 5); ctx.fill();
+    ctx.fillStyle = '#ff7a00'; ctx.beginPath(); ctx.roundRect(-24, -22, 22, 15, 5); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.fillRect(20, -4, 10, 8);
+    if (id === 'turbo') {
+      ctx.fillStyle = '#ffe04a'; ctx.beginPath(); ctx.moveTo(4, -34); ctx.lineTo(-6, -14); ctx.lineTo(2, -14); ctx.lineTo(-4, 4); ctx.lineTo(12, -20); ctx.lineTo(4, -20); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-50, -10 + i * 10); ctx.lineTo(-38, -10 + i * 10); ctx.stroke(); }
+    }
+  } else if (id === 'dreifach') {
+    ['#ff7a00', '#b44cff', '#3ad1c4'].forEach((c, i) => {
+      const a = (i - 1) * 0.5;
+      ctx.fillStyle = c; circle(Math.cos(a) * 26 - 6, Math.sin(a) * 26, 10);
+    });
+    ctx.fillStyle = '#3b3b4f'; ctx.beginPath(); ctx.roundRect(-36, -6, 26, 12, 4); ctx.fill();
+  } else if (id === 'bombe') {
+    ctx.fillStyle = '#222'; circle(0, 6, 24);
+    ctx.fillStyle = '#ff3b8d'; circle(-6, 0, 8); ctx.fillStyle = '#3ad1c4'; circle(8, 12, 6); ctx.fillStyle = '#ffe04a'; circle(6, -6, 5);
+    ctx.strokeStyle = '#8a6a40'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(10, -16); ctx.quadraticCurveTo(18, -30, 28, -28); ctx.stroke();
+    star(30, -30, 9 + Math.sin(t * 15) * 2, '#ffb000');
+  } else if (id === 'laser') {
+    ['#ff5a5a', '#ffa64a', '#ffe04a', '#6ee06e', '#4ab4ff', '#9a6aff'].forEach((c, i) => {
+      ctx.strokeStyle = c; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-40, -15 + i * 6); ctx.lineTo(40, -15 + i * 6); ctx.stroke();
+    });
+    ctx.fillStyle = '#fff'; circle(40, 0, 8);
+  } else if (id === 'doppelsprung') {
+    ctx.fillStyle = '#e0123f'; ctx.beginPath(); ctx.roundRect(-22, -4, 40, 20, 8); ctx.fill(); ctx.fillRect(-22, -20, 18, 22);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-24, 12, 44, 6);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(-22, -14); ctx.quadraticCurveTo(-46, -36, -36, -6); ctx.quadraticCurveTo(-48, -14, -22, -4); ctx.fill();
+  } else if (id === 'herz') {
+    heart(0, 0, 2.6, '#ff3b5c');
+    text('+1', 24, -20, 18, '#fff');
+  } else if (id === 'magnet') {
+    ctx.strokeStyle = '#e0123f'; ctx.lineWidth = 14; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.arc(0, 0, 20, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = '#ccc'; ctx.fillRect(-27, 0, 14, 14); ctx.fillRect(13, 0, 14, 14);
+    ctx.fillStyle = `hsl(${(t * 120) % 360},90%,60%)`; circle(0, 28 + Math.sin(t * 6) * 3, 6);
+  } else if (id === 'tank') {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.roundRect(-16, -30, 32, 60, 10); ctx.fill();
+    const lvl = 0.5 + Math.sin(t * 3) * 0.3;
+    ctx.fillStyle = '#b44cff'; ctx.fillRect(-12, 26 - 52 * lvl, 24, 52 * lvl);
+    text('XL', 0, -40, 14, '#ffe04a');
+  } else if (id === 'schild') {
+    ctx.fillStyle = 'rgba(140,220,255,0.35)'; circle(0, 0, 30);
+    ctx.strokeStyle = 'rgba(140,220,255,0.95)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'; circle(-10, -12, 6);
+  }
+  ctx.restore();
+}
+
+function drawShop() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#3a1f70'); g.addColorStop(1, '#170d30');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  text('KLECKS-SHOP', W / 2, 40, 40, '#ffe04a');
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.roundRect(14, 18, 120, 40, 10); ctx.fill();
+  text('← Karte', 74, 38, 16, '#fff');
+  coinIcon(W - 120, 40, 13); text(String(shop.coins), W - 100, 40, 26, '#ffd23f', 'left');
+  text('WAFFEN  (eine kannst du in die Hand nehmen)', 40, 92, 16, '#ffb870', 'left', false);
+  text('GADGETS  (wirken immer, wenn du sie hast)', 40, 282, 16, '#8fdcff', 'left', false);
+  for (let row = 0; row < 2; row++) shopItems(row).forEach((it, col) => {
+    const c = shopCardPos(row, col), sel = row === shopRow && col === shopCol, owned = hasItem(it.id);
+    const lift = sel ? -4 + Math.sin(t * 5) * 2 : 0;
+    ctx.fillStyle = owned ? 'rgba(80,200,120,0.25)' : 'rgba(255,255,255,0.1)';
+    ctx.beginPath(); ctx.roundRect(c.x, c.y + lift, c.w, c.h, 14); ctx.fill();
+    ctx.strokeStyle = sel ? '#ffe04a' : 'rgba(255,255,255,0.25)'; ctx.lineWidth = sel ? 5 : 2;
+    ctx.beginPath(); ctx.roundRect(c.x, c.y + lift, c.w, c.h, 14); ctx.stroke();
+    drawShopIcon(it.id, c.x + c.w / 2, c.y + 55 + lift);
+    text(it.name, c.x + c.w / 2, c.y + 106 + lift, 14, '#fff');
+    if (row === 0 && shop.weapon === it.id) text('IN DER HAND', c.x + c.w / 2, c.y + 132 + lift, 13, '#6effa0');
+    else if (owned) text(row === 0 ? 'Gekauft' : 'AKTIV ✓', c.x + c.w / 2, c.y + 132 + lift, 13, '#6effa0');
+    else {
+      coinIcon(c.x + c.w / 2 - 22, c.y + 132 + lift, 8);
+      text(String(it.price), c.x + c.w / 2 - 8, c.y + 132 + lift, 16, shop.coins >= it.price ? '#ffd23f' : '#ff7a8a', 'left');
+    }
+  });
+  // Info zum ausgewählten Ding
+  const it = shopItems(shopRow)[shopCol];
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.roundRect(40, 462, W - 80, 66, 12); ctx.fill();
+  if (shopMsgTimer > 0) text(shopMsg, W / 2, 484, 20, '#ffe04a');
+  else text(it.info, W / 2, 484, 17, '#fff', 'center', false);
+  text('← → ↑ ↓ aussuchen  ·  Enter / Leertaste / 2× Klick = kaufen oder nehmen  ·  Esc = zurück', W / 2, 512, 13, '#ffb870', 'center', false);
 }
 
 // ---------- Weltkarte zeichnen ----------
@@ -1804,6 +2091,7 @@ function drawMap() {
 function draw() {
   if (state === 'title') { drawTitle(); return; }
   if (state === 'map') { drawMap(); return; }
+  if (state === 'shop') { drawShop(); return; }
   const st = STAGES[stageIndex];
   ctx.save();
   if (shake > 0) ctx.translate(rand(-1, 1) * shake * 14, rand(-1, 1) * shake * 14);
