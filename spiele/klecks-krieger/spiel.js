@@ -243,7 +243,7 @@ const LEVEL8 = {
   ground: [[0, 800], [1100, 1600], [1950, 2500], [2800, 3300], [3700, 4200], [4500, 5600]],
   plats: [[300, 340, 140], [560, 190, 140], [1250, 330, 140], [1450, 260, 120], [2050, 340, 140], [2250, 200, 140],
           [2950, 330, 140], [3150, 260, 120], [3850, 330, 140], [4050, 190, 140], [4700, 340, 140], [5000, 280, 140]],
-  bouncers: [[905, 400, 90], [1730, 410, 90], [2605, 400, 90], [3380, 410, 80], [3560, 400, 80], [4305, 400, 90],
+  bouncers: [[895, 400, 110], [1715, 410, 110], [2595, 400, 110], [3380, 410, 80], [3560, 400, 80], [4295, 400, 110],
              [480, GROUND_Y - 34, 80], [2150, GROUND_Y - 34, 80], [3950, GROUND_Y - 34, 80]],
   movers: [],
   walkers: [600, 1200, 1400, 2100, 2300, 2900, 3100, 3900, 4100, 4700, 5000, 5300],
@@ -257,7 +257,7 @@ const LEVEL9 = {
   ground: [[0, 700], [950, 1400], [1650, 2100], [2400, 2800], [3100, 3500], [3800, 4300], [4600, 5000], [5300, 6000]],
   plats: [[300, 340, 140], [1050, 330, 140], [1250, 260, 120], [1750, 340, 140], [2500, 330, 140], [2650, 260, 120],
           [3200, 340, 140], [3900, 330, 140], [4100, 260, 120], [4700, 330, 140], [5500, 340, 140], [5750, 280, 140]],
-  bouncers: [[1480, 400, 90], [2905, 400, 90], [5105, 400, 90]],
+  bouncers: [[1470, 400, 110], [2895, 400, 110], [5095, 400, 110]],
   movers: [
     { x: 770, y: 400, w: 110, ax: 'y', range: 60, speed: 1.6 },
     { x: 2195, y: 400, w: 110, ax: 'x', range: 60, speed: 1.5 },
@@ -651,7 +651,7 @@ function fireWeapon(p, wp) {
   };
   if (wp.id === 'dreifach') for (const d of [-0.16, 0, 0.16]) mk(p.aim + d, 700);
   else if (wp.id === 'turbo') mk(p.aim + rand(-0.05, 0.05), 800, { r: 6 });
-  else if (wp.id === 'bombe') mk(p.aim, 560, { r: 12, grav: 800, bomb: true, life: 2.5 });
+  else if (wp.id === 'bombe') mk(p.aim, 650, { r: 12, grav: 480, bomb: true, life: 2.5 });
   else if (wp.id === 'laser') mk(p.aim, 1100, { r: 6, grav: 0, vy: Math.sin(p.aim) * 1100, pierce: true, laser: true, hit: [], life: 1 });
   else mk(p.aim, 720);
   p.ink -= wp.ink; p.cool = wp.cool;
@@ -799,7 +799,7 @@ function makeRobot() {
 }
 // Endboss Grau-Drache: Feuerbälle, Sturzflug, Meteore
 function makeDragon() {
-  const hp = bossHp(180);
+  const hp = bossHp(160);
   return { kind: 'dragon', name: 'Grau-Drache', x: W / 2 - 110, y: 100, w: 220, h: 120, face: -1,
     hp, maxHp: hp, timer: 2.2, act: 'fly', actT: 0, fireT: 0, dropT: 0, tx: 0, flash: 0, t: 0, splats: [], dying: 0 };
 }
