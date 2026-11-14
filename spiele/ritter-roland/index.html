@@ -22,6 +22,9 @@
     .overlay h1 { font-size: 3rem; margin: .3rem; color: #ffd166; }
     .overlay p { font-size: 1.2rem; max-width: 36rem; }
     .overlay button { font-size: 1.5rem; padding: .6rem 2rem; border: none; border-radius: 12px; background: #ffd166; cursor: pointer; margin-top: 1rem; }
+    #speicher { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 15px; background: rgba(0,0,0,.5);
+      padding: 4px 12px; border-radius: 8px; opacity: 0; transition: opacity .4s; pointer-events: none; }
+    #weiterKnopf { background: #7bd389 !important; }
     .versteckt { display: none !important; }
     #touch { position: fixed; bottom: 15px; left: 0; right: 0; display: none; justify-content: space-between; padding: 0 15px; pointer-events: none; }
     #touch button { width: 64px; height: 64px; font-size: 28px; border-radius: 50%; border: none; background: rgba(255,255,255,.35); margin: 4px; touch-action: none; pointer-events: auto; }
@@ -37,6 +40,7 @@
   <div id="auftrag"></div>
   <canvas id="karte" width="200" height="200"></canvas>
   <div id="nachricht"></div>
+  <div id="speicher">💾 Gespeichert</div>
 
   <div id="dialog" class="versteckt">
     <div id="dialogName"></div>
@@ -59,6 +63,7 @@
     <p>⬆️⬇️ oder W/S: laufen &nbsp; ⬅️➡️ oder A/D: drehen<br>
       Leertaste: Schwert schwingen ⚔️ &nbsp; E: Pferd 🐴<br>
       Folge dem <b>goldenen Lichtstrahl</b> und dem Pfeil – oben rechts ist die Karte 🗺️</p>
+    <button id="weiterKnopf" class="versteckt"></button>
     <button id="startKnopf">Los geht's!</button>
   </div>
 

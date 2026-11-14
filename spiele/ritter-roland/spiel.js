@@ -548,7 +548,7 @@ for (let i = 0; i < 4; i++) neuerKobold(SUMPF.x + (Math.random() - 0.5) * 70, SU
 let hauptmannSchluessel = null;
 const hauptmann = neuerKobold(SEE.x + 2, SEE.z, {
   hauptmann: true, groesse: 1.8, hp: 6, jagd: 18, tempo: 4,
-  beiTod: k => { hauptmannSchluessel = neuerSchluessel(k.mesh.position.x, k.mesh.position.z); nachricht('Der Hauptmann hat seinen Schlüssel verloren! 🔑'); },
+  beiTod: k => { hauptmannSchluessel = neuerSchluessel(k.mesh.position.x, k.mesh.position.z, 'hauptmann'); nachricht('Der Hauptmann hat seinen Schlüssel verloren! 🔑'); },
 });
 for (let i = 0; i < 3; i++) neuerKobold(SEE.x + (Math.random() - 0.5) * 20, SEE.z + (Math.random() - 0.5) * 20);
 // Am Weg zu den Bergen
@@ -556,7 +556,8 @@ for (let i = 0; i < 3; i++) neuerKobold(-40 - i * 22, -80 - i * 15);
 // Lager vor der Burg und in der Burg
 for (let i = 0; i < 7; i++) neuerKobold(BURG.x - 25 + i * 8, BZ + 32 + (i % 3) * 5);
 for (const [x, z] of [[-8, BZ + 5], [8, BZ + 5], [0, BZ + 10], [-10, BZ - 10], [10, BZ - 10]]) neuerKobold(x, z);
-// Wanderer im Großen Wald
+const FESTE_KOBOLDE = kobolde.length; // nur diese werden gespeichert
+// Wanderer im Großen Wald (kommen bei jedem Laden neu)
 for (let n = 0; n < 30; n++) {
   const x = (Math.random() * 2 - 1) * 270, z = (Math.random() * 2 - 1) * 270;
   if (Math.hypot(x - DORF.x, z - DORF.z) < 70 || sperrZonen.some(s => Math.hypot(x - s.x, z - s.z) < s.r)) continue;
@@ -601,7 +602,7 @@ const feuerMat = new THREE.MeshBasicMaterial({ color: 0xff6d00 });
 
 // ---------- Schlüssel ----------
 const schluessel = [];
-function neuerSchluessel(x, z) {
+function neuerSchluessel(x, z, typ) {
   const g = new THREE.Group();
   const gold = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.25, emissive: 0x664400 });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.15, 8, 16), gold); ring.position.y = 0.9;
@@ -611,7 +612,7 @@ function neuerSchluessel(x, z) {
   g.position.set(x, 1.8, z);
   g.add(new THREE.PointLight(0xffd700, 2, 8));
   szene.add(g);
-  const s = { mesh: g, gefunden: false };
+  const s = { mesh: g, gefunden: false, typ };
   schluessel.push(s);
   return s;
 }
@@ -891,6 +892,7 @@ function naechsterAuftrag() {
     nachricht('📜 Neuer Auftrag!');
   }
   auftragZeigen();
+  speichern();
 }
 function auftragsZiel() {
   const a = auftraege[schritt];
@@ -975,6 +977,7 @@ function koboldTreffen(k, richtung) {
 
 function ende() {
   laeuft = false;
+  spielstandLoeschen();
   const minuten = Math.round((performance.now() - startZeit) / 60000);
   setTimeout(() => {
     document.getElementById('endeTitel').textContent = '🎉 Gewonnen! 🎉';
@@ -985,13 +988,111 @@ function ende() {
   }, 3500);
 }
 
-document.getElementById('startKnopf').onclick = () => {
+// =====================================================================
+//  SPEICHERN 💾  (im Browser mit localStorage)
+// =====================================================================
+const SPEICHER_NAME = 'ritterRoland.spielstand';
+const speicherEl = document.getElementById('speicher');
+let speicherTimer = 0;
+
+function speichern() {
+  if (!laeuft || dialog.offen) return;
+  const stand = {
+    schritt, leben, gefunden, pilzAnzahl, besiegt, torOffen, reitet,
+    spielzeit: performance.now() - startZeit,
+    roland: [roland.position.x, roland.position.z, roland.rotation.y],
+    pferd: [pferd.position.x, pferd.position.z, pferd.rotation.y],
+    pilze: pilze.map(p => p.gefunden),
+    toteKobolde: kobolde.slice(0, FESTE_KOBOLDE).map((k, i) => k.lebt ? -1 : i).filter(i => i >= 0),
+    drache: drache.lebt,
+    schluessel: schluessel.filter(s => !s.gefunden && s.typ).map(s => [s.mesh.position.x, s.mesh.position.z, s.typ]),
+  };
+  try {
+    localStorage.setItem(SPEICHER_NAME, JSON.stringify(stand));
+    speicherEl.style.opacity = 1;
+    setTimeout(() => speicherEl.style.opacity = 0, 1200);
+  } catch (e) { /* Speichern geht nicht (z. B. privates Fenster) – dann eben nicht */ }
+}
+
+function spielstandLesen() {
+  try { return JSON.parse(localStorage.getItem(SPEICHER_NAME)); } catch (e) { return null; }
+}
+function spielstandLoeschen() {
+  try { localStorage.removeItem(SPEICHER_NAME); } catch (e) { }
+}
+
+function laden(stand) {
+  ({ schritt, leben, gefunden, pilzAnzahl, besiegt } = stand);
+  startZeit = performance.now() - (stand.spielzeit || 0);
+  // Gefundene Pilze wegräumen
+  stand.pilze.forEach((weg, i) => { if (weg) { pilze[i].gefunden = true; szene.remove(pilze[i].mesh); } });
+  // Besiegte Kobolde wegräumen (ohne dass sie nochmal Schlüssel fallen lassen)
+  for (const i of stand.toteKobolde) {
+    const k = kobolde[i];
+    if (!k) continue;
+    k.lebt = false; k.umfallen = 99;
+    szene.remove(k.mesh);
+  }
+  // Drache schon besiegt?
+  if (!stand.drache) {
+    drache.lebt = false;
+    drache.umfallen = Math.PI / 2;
+    drache.mesh.rotation.z = Math.PI / 2;
+  }
+  // Schlüssel, die noch auf dem Boden liegen
+  for (const [x, z, typ] of stand.schluessel) {
+    const s = neuerSchluessel(x, z, typ);
+    if (typ === 'hauptmann') hauptmannSchluessel = s;
+  }
+  // Burgtor schon offen?
+  if (stand.torOffen) {
+    torOffen = true;
+    torHoch = 6.8; tor.position.y = 3.5 + torHoch;
+    hindernisse.splice(hindernisse.indexOf(torHindernis), 1);
+  }
+  // Roland und das Pferd an ihren Platz stellen
+  roland.position.set(stand.roland[0], 0, stand.roland[1]);
+  roland.rotation.y = stand.roland[2];
+  if (stand.reitet) {
+    pferd.position.set(roland.position.x, 0, roland.position.z);
+    pferd.rotation.y = roland.rotation.y;
+    aufAbsteigen();
+  } else {
+    pferd.position.set(stand.pferd[0], 0, stand.pferd[1]);
+    pferd.rotation.y = stand.pferd[2];
+  }
+  pferdHinweis = schritt > 1;
+  kamera.position.set(roland.position.x - Math.sin(roland.rotation.y) * 10, 6, roland.position.z - Math.cos(roland.rotation.y) * 10);
+  auftragZeigen();
+}
+
+function spielStarten(stand) {
   audio = new (window.AudioContext || window.webkitAudioContext)();
   document.getElementById('start').classList.add('versteckt');
-  laeuft = true;
   startZeit = performance.now();
-  nachricht('🏘️ Dorf Rolandsheim');
+  if (stand) laden(stand);
+  laeuft = true;
+  nachricht(stand ? '💾 Willkommen zurück, Ritter Roland!' : '🏘️ Dorf Rolandsheim');
+}
+
+const gespeichert = spielstandLesen();
+const weiterKnopf = document.getElementById('weiterKnopf');
+const startKnopf = document.getElementById('startKnopf');
+if (gespeichert) {
+  weiterKnopf.classList.remove('versteckt');
+  weiterKnopf.textContent = '💾 Weiterspielen (Auftrag ' + (gespeichert.schritt + 1) + ' von ' + auftraege.length + ')';
+  startKnopf.textContent = 'Neues Spiel';
+}
+weiterKnopf.onclick = () => spielStarten(gespeichert);
+startKnopf.onclick = () => {
+  if (gespeichert && !confirm('Wirklich ganz von vorne anfangen? Dein gespeichertes Spiel wird gelöscht!')) return;
+  spielstandLoeschen();
+  spielStarten(null);
 };
+
+// Alle 5 Sekunden automatisch speichern – und wenn man die Seite schließt
+setInterval(speichern, 5000);
+addEventListener('pagehide', speichern);
 
 // =====================================================================
 //  MINI-KARTE 🗺️
@@ -1127,7 +1228,7 @@ function spielLogik(dt, zeit) {
             drache.lebt = false;
             sounds.brüllen();
             nachricht('Der Drache ist besiegt! 🐉💫 Hol dir den Schlüssel!');
-            neuerSchluessel(drache.mesh.position.x + 6, drache.mesh.position.z);
+            neuerSchluessel(drache.mesh.position.x + 6, drache.mesh.position.z, 'drache');
             for (const f of feuerbaelle) szene.remove(f.mesh);
             feuerbaelle.length = 0;
           }
