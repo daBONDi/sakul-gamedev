@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Ritter Roland</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+    #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-size: 22px; text-shadow: 2px 2px 3px #000; pointer-events: none; }
+    #nachricht { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); color: #ffd166; font-size: 24px;
+      text-shadow: 2px 2px 3px #000; pointer-events: none; text-align: center; transition: opacity .5s; }
+    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(10, 10, 40, .85); color: #fff; text-align: center; padding: 1rem; }
+    .overlay h1 { font-size: 3rem; margin: .3rem; color: #ffd166; }
+    .overlay p { font-size: 1.2rem; max-width: 34rem; }
+    .overlay button { font-size: 1.5rem; padding: .6rem 2rem; border: none; border-radius: 12px; background: #ffd166; cursor: pointer; margin-top: 1rem; }
+    .versteckt { display: none !important; }
+    #touch { position: fixed; bottom: 15px; left: 0; right: 0; display: none; justify-content: space-between; padding: 0 15px; }
+    #touch button { width: 70px; height: 70px; font-size: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,.35); margin: 4px; touch-action: none; }
+    @media (pointer: coarse) { #touch { display: flex; } }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="hud"></div>
+  <div id="nachricht"></div>
+
+  <div id="touch">
+    <div>
+      <button data-taste="links">⬅️</button><button data-taste="vor">⬆️</button><button data-taste="zurueck">⬇️</button><button data-taste="rechts">➡️</button>
+    </div>
+    <div><button data-taste="schlag">⚔️</button></div>
+  </div>
+
+  <div id="start" class="overlay">
+    <h1>🛡️ Ritter Roland</h1>
+    <p>Der böse Koboldkönig hat <b>Königin Sisi</b> in seiner Burg eingesperrt! 👑<br><br>
+      Finde die <b>3 goldenen Schlüssel</b> 🔑, öffne das Burgtor und befreie die Königin.<br>
+      Pass auf die Kobolde auf! 👺</p>
+    <p>⬆️⬇️ oder W/S: laufen &nbsp; ⬅️➡️ oder A/D: drehen<br>Leertaste: Schwert schwingen ⚔️</p>
+    <button id="startKnopf">Los geht's!</button>
+  </div>
+
+  <div id="ende" class="overlay versteckt">
+    <h1 id="endeTitel"></h1>
+    <p id="endeText"></p>
+    <button onclick="location.reload()">Nochmal spielen</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ---------- Grundgerüst: Szene, Kamera, Licht ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const szene = new THREE.Scene();
+    szene.background = new THREE.Color(0x87ceeb);
+    szene.fog = new THREE.Fog(0x87ceeb, 50, 140);
+
+    const kamera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 300);
+    addEventListener('resize', () => {
+      kamera.aspect = innerWidth / innerHeight;
+      kamera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    szene.add(new THREE.HemisphereLight(0xffffff, 0x446622, 0.9));
+    const sonne = new THREE.DirectionalLight(0xffffff, 1.2);
+    sonne.position.set(30, 60, 20);
+    sonne.castShadow = true;
+    sonne.shadow.mapSize.set(2048, 2048);
+    Object.assign(sonne.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, far: 200 });
+    szene.add(sonne, sonne.target);
+
+    // Hilfsfunktion: Ein Klotz mit Farbe
+    function klotz(b, h, t, farbe) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), new THREE.MeshStandardMaterial({ color: farbe }));
+      m.castShadow = true; m.receiveShadow = true;
+      return m;
+    }
+    function kugel(r, farbe) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), new THREE.MeshStandardMaterial({ color: farbe }));
+      m.castShadow = true;
+      return m;
+    }
+
+    // ---------- Die Welt ----------
+    const boden = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0x5aa83a }));
+    boden.rotation.x = -Math.PI / 2;
+    boden.receiveShadow = true;
+    szene.add(boden);
+
+    // Hindernisse (Wände, Bäume), gegen die man nicht laufen kann
+    const hindernisse = []; // {minX, maxX, minZ, maxZ}
+    function hindernis(x, z, b, t) {
+      const h = { minX: x - b / 2, maxX: x + b / 2, minZ: z - t / 2, maxZ: z + t / 2 };
+      hindernisse.push(h);
+      return h;
+    }
+
+    // Bäume
+    function baum(x, z) {
+      const g = new THREE.Group();
+      const stamm = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 3), new THREE.MeshStandardMaterial({ color: 0x7a4b25 }));
+      stamm.position.y = 1.5; stamm.castShadow = true;
+      const krone = new THREE.Mesh(new THREE.ConeGeometry(2, 5, 8), new THREE.MeshStandardMaterial({ color: 0x2e7d32 }));
+      krone.position.y = 5; krone.castShadow = true;
+      g.add(stamm, krone);
+      g.position.set(x, 0, z);
+      szene.add(g);
+      hindernis(x, z, 1.2, 1.2);
+    }
+    for (let i = 0; i < 70; i++) {
+      const x = (Math.random() - 0.5) * 180, z = (Math.random() - 0.5) * 180;
+      if (Math.abs(x) < 30 && z < -40 && z > -100) continue; // nicht in der Burg
+      if (Math.hypot(x, z - 40) < 10) continue;             // nicht beim Start
+      baum(x, z);
+    }
+
+    // Unsichtbarer Zaun am Weltrand
+    hindernis(0, -95, 200, 2); hindernis(0, 95, 200, 2); hindernis(-95, 0, 2, 200); hindernis(95, 0, 2, 200);
+
+    // ---------- Die Burg ----------
+    const BURG_Z = -70;
+    const steinFarbe = 0x9e9e9e;
+    function mauer(x, z, b, t) {
+      const m = klotz(b, 8, t, steinFarbe);
+      m.position.set(x, 4, z);
+      szene.add(m);
+      hindernis(x, z, b, t);
+      // Zinnen oben drauf
+      const lang = Math.max(b, t), anzahl = Math.floor(lang / 2);
+      for (let i = 0; i < anzahl; i += 2) {
+        const zinne = klotz(b > t ? 1 : t, 1.2, b > t ? t : 1, steinFarbe);
+        const off = -lang / 2 + i * 2 + 1;
+        zinne.position.set(b > t ? x + off : x, 8.6, b > t ? z : z + off);
+        szene.add(zinne);
+      }
+    }
+    mauer(0, BURG_Z - 20, 42, 2);          // hinten
+    mauer(-20, BURG_Z, 2, 40);             // links
+    mauer(20, BURG_Z, 2, 40);              // rechts
+    mauer(-12, BURG_Z + 20, 18, 2);        // vorne links
+    mauer(12, BURG_Z + 20, 18, 2);         // vorne rechts
+
+    // Ecktürme
+    for (const [x, z] of [[-20, BURG_Z - 20], [20, BURG_Z - 20], [-20, BURG_Z + 20], [20, BURG_Z + 20]]) {
+      const turm = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 12, 12), new THREE.MeshStandardMaterial({ color: 0x8a8a8a }));
+      turm.position.set(x, 6, z); turm.castShadow = true;
+      const dach = new THREE.Mesh(new THREE.ConeGeometry(3.6, 5, 12), new THREE.MeshStandardMaterial({ color: 0xb03030 }));
+      dach.position.set(x, 14.5, z); dach.castShadow = true;
+      szene.add(turm, dach);
+      hindernis(x, z, 6, 6);
+    }
+
+    // Burgtor (geht auf, wenn man 3 Schlüssel hat)
+    const tor = klotz(6, 7, 0.8, 0x6d4c2f);
+    tor.position.set(0, 3.5, BURG_Z + 20);
+    szene.add(tor);
+    const torHindernis = hindernis(0, BURG_Z + 20, 6, 2);
+    let torOffen = false;
+    let torHoch = 0;
+
+    // Fahne
+    const mast = klotz(0.2, 6, 0.2, 0x444444); mast.position.set(0, 11, BURG_Z - 20); szene.add(mast);
+    const fahne = klotz(2.5, 1.5, 0.1, 0x7b1fa2); fahne.position.set(1.3, 13.2, BURG_Z - 20); szene.add(fahne);
+
+    // ---------- Königin Sisi im Käfig ----------
+    const sisi = new THREE.Group();
+    const kleid = new THREE.Mesh(new THREE.ConeGeometry(1, 2.4, 16), new THREE.MeshStandardMaterial({ color: 0xff69b4 }));
+    kleid.position.y = 1.2; kleid.castShadow = true;
+    const sisiKopf = kugel(0.45, 0xffd7b5); sisiKopf.position.y = 2.7;
+    const haare = kugel(0.5, 0x5d3a1a); haare.position.set(0, 2.8, -0.12);
+    const krone = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.3, 0.35, 8, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2, side: THREE.DoubleSide }));
+    krone.position.y = 3.25;
+    for (const s of [-1, 1]) { const auge = kugel(0.07, 0x000000); auge.position.set(s * 0.16, 2.75, 0.4); sisi.add(auge); }
+    sisi.add(kleid, haare, sisiKopf, krone);
+    sisi.position.set(0, 0, BURG_Z - 5);
+    szene.add(sisi);
+
+    const kaefig = new THREE.Group();
+    for (let i = 0; i < 12; i++) {
+      const w = (i / 12) * Math.PI * 2;
+      const stab = klotz(0.15, 4.5, 0.15, 0x333333);
+      stab.position.set(Math.cos(w) * 2, 2.25, Math.sin(w) * 2);
+      kaefig.add(stab);
+    }
+    const kaefigDach = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.3, 16), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    kaefigDach.position.y = 4.6; kaefig.add(kaefigDach);
+    kaefig.position.copy(sisi.position);
+    szene.add(kaefig);
+
+    // ---------- Ritter Roland ----------
+    const roland = new THREE.Group();
+    const silber = 0xc0c8d0;
+    const koerper = klotz(1.2, 1.4, 0.7, silber); koerper.position.y = 1.9;
+    const umhang = klotz(1.2, 1.8, 0.1, 0x1565c0); umhang.position.set(0, 1.7, -0.42);
+    const kopf = kugel(0.5, silber); kopf.position.y = 3;
+    const visier = klotz(0.6, 0.12, 0.1, 0x222222); visier.position.set(0, 3.05, 0.45);
+    const feder = klotz(0.15, 0.6, 0.8, 0xe53935); feder.position.set(0, 3.6, -0.1);
+    roland.add(koerper, umhang, kopf, visier, feder);
+
+    // Beine (drehen sich beim Laufen)
+    const beine = [];
+    for (const s of [-1, 1]) {
+      const huefte = new THREE.Group(); huefte.position.set(s * 0.32, 1.2, 0);
+      const bein = klotz(0.45, 1.2, 0.5, 0x8899aa); bein.position.y = -0.6;
+      huefte.add(bein); roland.add(huefte); beine.push(huefte);
+    }
+    // Linker Arm mit Schild
+    const schild = klotz(0.15, 1.3, 1, 0x1565c0); schild.position.set(-0.85, 1.9, 0.2);
+    const wappen = klotz(0.05, 0.6, 0.3, 0xffd700); wappen.position.set(-0.94, 1.95, 0.2);
+    roland.add(schild, wappen);
+    // Rechter Arm mit Schwert (Schulter dreht sich beim Schlagen)
+    const schulter = new THREE.Group(); schulter.position.set(0.8, 2.4, 0);
+    const arm = klotz(0.35, 1, 0.35, silber); arm.position.y = -0.5;
+    const klinge = klotz(0.12, 0.12, 2, 0xeeeeee); klinge.position.set(0, -1, 1);
+    klinge.material.metalness = 0.9; klinge.material.roughness = 0.2;
+    const griff = klotz(0.6, 0.15, 0.15, 0xffd700); griff.position.set(0, -1, 0.05);
+    schulter.add(arm, klinge, griff);
+    roland.add(schulter);
+    roland.position.set(0, 0, 40);
+    roland.rotation.y = Math.PI; // schaut Richtung Burg
+    szene.add(roland);
+
+    // ---------- Schlüssel ----------
+    const schluessel = [];
+    function neuerSchluessel(x, z) {
+      const g = new THREE.Group();
+      const gold = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.25, emissive: 0x664400 });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.15, 8, 16), gold); ring.position.y = 0.9;
+      const schaft = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.4, 0.2), gold); schaft.position.y = -0.2;
+      const bart = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.2), gold); bart.position.set(0.25, -0.7, 0);
+      g.add(ring, schaft, bart);
+      g.position.set(x, 1.8, z);
+      const licht = new THREE.PointLight(0xffd700, 2, 8); g.add(licht);
+      szene.add(g);
+      schluessel.push({ mesh: g, gefunden: false });
+    }
+    neuerSchluessel(55, 25);
+    neuerSchluessel(-60, 0);
+    neuerSchluessel(45, -40);
+
+    // ---------- Kobolde ----------
+    const kobolde = [];
+    function neuerKobold(x, z) {
+      const g = new THREE.Group();
+      const leib = klotz(0.9, 1, 0.6, 0x4caf50); leib.position.y = 1;
+      const k = kugel(0.45, 0x66bb6a); k.position.y = 1.9;
+      for (const s of [-1, 1]) {
+        const ohr = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.6, 6), new THREE.MeshStandardMaterial({ color: 0x66bb6a }));
+        ohr.rotation.z = -s * Math.PI / 2; ohr.position.set(s * 0.6, 2, 0); g.add(ohr);
+        const auge = kugel(0.09, 0xff0000); auge.position.set(s * 0.17, 2, 0.4); auge.material.emissive = new THREE.Color(0xaa0000); g.add(auge);
+        const fuss = klotz(0.3, 0.5, 0.4, 0x2e7d32); fuss.position.set(s * 0.25, 0.25, 0); g.add(fuss);
+      }
+      const keule = klotz(0.25, 1.3, 0.25, 0x6d4c2f); keule.position.set(0.6, 1.2, 0.3); keule.rotation.x = 0.6;
+      g.add(leib, k, keule);
+      g.position.set(x, 0, z);
+      szene.add(g);
+      kobolde.push({ mesh: g, start: new THREE.Vector3(x, 0, z), lebt: true, umfallen: 0, zufallsWinkel: Math.random() * 6, schlagPause: 0 });
+    }
+    // Wächter bei jedem Schlüssel
+    for (const s of schluessel) {
+      for (let i = 0; i < 3; i++) {
+        neuerKobold(s.mesh.position.x + (Math.random() - 0.5) * 12, s.mesh.position.z + (Math.random() - 0.5) * 12);
+      }
+    }
+    // Wächter vor und in der Burg
+    neuerKobold(-6, BURG_Z + 28); neuerKobold(6, BURG_Z + 28);
+    neuerKobold(-8, BURG_Z + 5); neuerKobold(8, BURG_Z + 5); neuerKobold(0, BURG_Z + 10);
+    // Ein paar Wanderer
+    for (let i = 0; i < 4; i++) neuerKobold((Math.random() - 0.5) * 100, (Math.random() - 0.5) * 60);
+
+    // ---------- Töne (Web Audio) ----------
+    let audio;
+    function ton(freq, dauer, typ = 'square', lautstaerke = 0.1, freqEnde) {
+      if (!audio) return;
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = typ; o.frequency.setValueAtTime(freq, audio.currentTime);
+      if (freqEnde) o.frequency.exponentialRampToValueAtTime(freqEnde, audio.currentTime + dauer);
+      g.gain.setValueAtTime(lautstaerke, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dauer);
+      o.connect(g).connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + dauer);
+    }
+    const sounds = {
+      schwung: () => ton(600, 0.15, 'sawtooth', 0.05, 150),
+      treffer: () => ton(200, 0.25, 'square', 0.1, 60),
+      autsch: () => ton(150, 0.4, 'triangle', 0.2, 80),
+      schluessel: () => { ton(880, 0.15, 'sine', 0.2); setTimeout(() => ton(1320, 0.3, 'sine', 0.2), 120); },
+      tor: () => ton(80, 1.5, 'sawtooth', 0.1, 40),
+      sieg: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => ton(f, 0.4, 'sine', 0.2), i * 180)),
+    };
+
+    // ---------- Steuerung ----------
+    const tasten = {};
+    const tastenNamen = { KeyW: 'vor', ArrowUp: 'vor', KeyS: 'zurueck', ArrowDown: 'zurueck',
+      KeyA: 'links', ArrowLeft: 'links', KeyD: 'rechts', ArrowRight: 'rechts', Space: 'schlag' };
+    addEventListener('keydown', e => { if (tastenNamen[e.code]) { tasten[tastenNamen[e.code]] = true; e.preventDefault(); } });
+    addEventListener('keyup', e => { if (tastenNamen[e.code]) tasten[tastenNamen[e.code]] = false; });
+    document.querySelectorAll('#touch button').forEach(b => {
+      b.addEventListener('pointerdown', e => { tasten[b.dataset.taste] = true; e.preventDefault(); });
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => tasten[b.dataset.taste] = false);
+    });
+
+    // ---------- Spielzustand ----------
+    let leben = 5;
+    let gefunden = 0;
+    let unverwundbar = 0;
+    let schlagZeit = 0;      // > 0 während das Schwert schwingt
+    let schlagGetroffen = false;
+    let laeuft = false;
+    let gewonnen = false;
+    let siegZeit = 0;
+    let besiegt = 0;
+
+    const hud = document.getElementById('hud');
+    function hudZeigen() {
+      hud.textContent = '❤️'.repeat(leben) + '🖤'.repeat(5 - leben) +
+        '   🔑 ' + gefunden + '/3   👺 ' + besiegt;
+    }
+    hudZeigen();
+
+    const nachrichtEl = document.getElementById('nachricht');
+    let nachrichtTimer;
+    function nachricht(text) {
+      nachrichtEl.textContent = text;
+      nachrichtEl.style.opacity = 1;
+      clearTimeout(nachrichtTimer);
+      nachrichtTimer = setTimeout(() => nachrichtEl.style.opacity = 0, 3000);
+    }
+
+    document.getElementById('startKnopf').onclick = () => {
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+      document.getElementById('start').classList.add('versteckt');
+      laeuft = true;
+      nachricht('Finde die 3 goldenen Schlüssel! 🔑');
+    };
+
+    function ende(sieg) {
+      laeuft = false;
+      setTimeout(() => {
+        document.getElementById('endeTitel').textContent = sieg ? '🎉 Gewonnen! 🎉' : '💀 Oh nein!';
+        document.getElementById('endeText').innerHTML = sieg
+          ? 'Königin Sisi ist frei! 👑<br>„Danke, tapferer Ritter Roland!“<br><br>Du hast ' + besiegt + ' Kobolde besiegt.'
+          : 'Die Kobolde haben Ritter Roland erwischt.<br>Versuch es nochmal!';
+        document.getElementById('ende').classList.remove('versteckt');
+      }, sieg ? 3000 : 800);
+    }
+
+    // Prüft, ob ein Kreis (x, z, Radius) gegen ein Hindernis stößt
+    function stoesst(x, z, r) {
+      for (const h of hindernisse) {
+        if (x + r > h.minX && x - r < h.maxX && z + r > h.minZ && z - r < h.maxZ) return true;
+      }
+      return false;
+    }
+    // Bewegen mit Kollision: erst X, dann Z – so rutscht man an Wänden entlang
+    function bewegen(obj, dx, dz, r) {
+      if (!stoesst(obj.position.x + dx, obj.position.z, r)) obj.position.x += dx;
+      if (!stoesst(obj.position.x, obj.position.z + dz, r)) obj.position.z += dz;
+    }
+
+    // ---------- Spielschleife ----------
+    const uhr = new THREE.Clock();
+    let laufPhase = 0;
+    const kameraZiel = new THREE.Vector3();
+
+    function schleife() {
+      requestAnimationFrame(schleife);
+      const dt = Math.min(uhr.getDelta(), 0.05);
+      const zeit = uhr.elapsedTime;
+
+      if (laeuft) {
+        // --- Roland bewegen ---
+        const drehTempo = 2.8, laufTempo = 9;
+        if (tasten.links) roland.rotation.y += drehTempo * dt;
+        if (tasten.rechts) roland.rotation.y -= drehTempo * dt;
+        let vor = 0;
+        if (tasten.vor) vor = 1;
+        if (tasten.zurueck) vor = -0.6;
+        const dx = Math.sin(roland.rotation.y) * vor * laufTempo * dt;
+        const dz = Math.cos(roland.rotation.y) * vor * laufTempo * dt;
+        bewegen(roland, dx, dz, 0.7);
+
+        // Beine schwingen beim Laufen
+        if (vor !== 0) laufPhase += dt * 10; else laufPhase *= 0.8;
+        beine[0].rotation.x = Math.sin(laufPhase) * 0.6;
+        beine[1].rotation.x = -Math.sin(laufPhase) * 0.6;
+
+        // --- Schwert schwingen ---
+        if (tasten.schlag && schlagZeit <= 0) {
+          schlagZeit = 0.35; schlagGetroffen = false;
+          sounds.schwung();
+        }
+        if (schlagZeit > 0) {
+          schlagZeit -= dt;
+          const p = 1 - schlagZeit / 0.35;              // 0 → 1
+          schulter.rotation.x = -2.8 + p * 2.5; // von oben nach unten
+          schulter.rotation.y = Math.sin(p * Math.PI) * -0.8;
+          if (!schlagGetroffen && p > 0.4) {
+            schlagGetroffen = true;
+            // Treffen wir einen Kobold vor uns?
+            const vorne = new THREE.Vector3(Math.sin(roland.rotation.y), 0, Math.cos(roland.rotation.y));
+            for (const k of kobolde) {
+              if (!k.lebt) continue;
+              const zuKobold = k.mesh.position.clone().sub(roland.position);
+              const abstand = zuKobold.length();
+              if (abstand < 3.3 && zuKobold.normalize().dot(vorne) > 0.3) {
+                k.lebt = false;
+                besiegt++;
+                sounds.treffer();
+                hudZeigen();
+              }
+            }
+          }
+        } else {
+          schulter.rotation.x += (-0.5 - schulter.rotation.x) * 0.2; // Ruhehaltung: Schwert nach vorn
+          schulter.rotation.y *= 0.8;
+        }
+
+        // --- Schlüssel einsammeln ---
+        for (const s of schluessel) {
+          if (s.gefunden) continue;
+          s.mesh.rotation.y += dt * 2;
+          s.mesh.position.y = 1.8 + Math.sin(zeit * 3) * 0.3;
+          if (s.mesh.position.distanceTo(new THREE.Vector3(roland.position.x, 1.8, roland.position.z)) < 2) {
+            s.gefunden = true;
+            szene.remove(s.mesh);
+            gefunden++;
+            sounds.schluessel();
+            hudZeigen();
+            if (gefunden < 3) nachricht('Schlüssel gefunden! Noch ' + (3 - gefunden) + ' 🔑');
+            else nachricht('Alle Schlüssel! Lauf zum Burgtor! 🏰');
+          }
+        }
+
+        // --- Tor öffnen ---
+        if (!torOffen && gefunden === 3 && roland.position.distanceTo(tor.position) < 9) {
+          torOffen = true;
+          sounds.tor();
+          nachricht('Das Tor geht auf! Befreie Königin Sisi! 👑');
+          hindernisse.splice(hindernisse.indexOf(torHindernis), 1);
+        } else if (!torOffen && gefunden < 3 && roland.position.distanceTo(tor.position) < 7 && Math.random() < 0.01) {
+          nachricht('Das Tor ist verschlossen. Du brauchst 3 Schlüssel! 🔒');
+        }
+
+        // --- Kobolde ---
+        for (const k of kobolde) {
+          const m = k.mesh;
+          if (!k.lebt) continue;
+          const zuRoland = roland.position.clone().sub(m.position);
+          const abstand = zuRoland.length();
+          let ziel;
+          if (abstand < 16) {
+            ziel = zuRoland;                                         // jagen!
+          } else {
+            k.zufallsWinkel += (Math.random() - 0.5) * dt * 3;       // herumwandern
+            ziel = new THREE.Vector3(Math.sin(k.zufallsWinkel), 0, Math.cos(k.zufallsWinkel));
+            if (m.position.distanceTo(k.start) > 10) ziel = k.start.clone().sub(m.position);
+          }
+          ziel.y = 0;
+          if (ziel.length() > 0.01) {
+            ziel.normalize();
+            const tempo = abstand < 16 ? 5 : 2;
+            if (abstand > 1.5) bewegen(m, ziel.x * tempo * dt, ziel.z * tempo * dt, 0.5);
+            m.rotation.y = Math.atan2(ziel.x, ziel.z);
+          }
+          m.position.y = Math.abs(Math.sin(zeit * 10 + k.zufallsWinkel)) * 0.2; // hüpfen
+
+          // Kobold haut zu
+          k.schlagPause -= dt;
+          if (abstand < 1.8 && k.schlagPause <= 0 && unverwundbar <= 0) {
+            k.schlagPause = 1;
+            leben--;
+            unverwundbar = 1.2;
+            sounds.autsch();
+            hudZeigen();
+            // Roland wird zurückgestoßen
+            const stoss = zuRoland.normalize().multiplyScalar(2.5);
+            bewegen(roland, stoss.x, stoss.z, 0.7);
+            if (leben <= 0) ende(false);
+          }
+        }
+
+        // --- Sisi befreien ---
+        if (torOffen && !gewonnen && roland.position.distanceTo(sisi.position) < 4.5) {
+          gewonnen = true;
+          siegZeit = zeit;
+          sounds.sieg();
+          nachricht('Königin Sisi ist frei! 🎉👑');
+          ende(true);
+        }
+      }
+
+      // Umgefallene Kobolde verschwinden
+      for (const k of kobolde) {
+        if (!k.lebt && k.mesh.parent) {
+          k.umfallen += dt * 4;
+          k.mesh.rotation.x = Math.min(k.umfallen, Math.PI / 2);
+          k.mesh.position.y = 0;
+          if (k.umfallen > 4) szene.remove(k.mesh);
+        }
+      }
+
+      // Blinken, wenn getroffen
+      if (unverwundbar > 0) {
+        unverwundbar -= dt;
+        roland.visible = Math.floor(unverwundbar * 10) % 2 === 0;
+      } else roland.visible = true;
+
+      // Tor fährt hoch
+      if (torOffen && torHoch < 6.8) { torHoch += dt * 2; tor.position.y = 3.5 + torHoch; }
+
+      // Sieg: Käfig hebt sich, Sisi hüpft vor Freude
+      if (gewonnen) {
+        kaefig.position.y = Math.min(kaefig.position.y + dt * 3, 8);
+        sisi.position.y = Math.abs(Math.sin((zeit - siegZeit) * 6)) * 0.8;
+        sisi.lookAt(roland.position.x, 0, roland.position.z);
+      } else {
+        sisi.rotation.y = Math.sin(zeit) * 0.5; // schaut sich um
+      }
+
+      fahne.rotation.y = Math.sin(zeit * 2) * 0.2;
+
+      // --- Kamera folgt Roland von hinten ---
+      const hinten = new THREE.Vector3(-Math.sin(roland.rotation.y) * 10, 6, -Math.cos(roland.rotation.y) * 10);
+      kameraZiel.copy(roland.position).add(hinten);
+      kamera.position.lerp(kameraZiel, laeuft || gewonnen ? 0.08 : 1);
+      kamera.lookAt(roland.position.x, roland.position.y + 2, roland.position.z);
+
+      // Schatten-Licht wandert mit
+      sonne.position.set(roland.position.x + 30, 60, roland.position.z + 20);
+      sonne.target.position.copy(roland.position);
+
+      renderer.render(szene, kamera);
+    }
+    schleife();
+  </script>
+</body>
+</html>
