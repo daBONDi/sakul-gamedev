@@ -31,7 +31,7 @@
     <div>
       <button data-taste="links">⬅️</button><button data-taste="vor">⬆️</button><button data-taste="zurueck">⬇️</button><button data-taste="rechts">➡️</button>
     </div>
-    <div><button data-taste="schlag">⚔️</button></div>
+    <div><button data-taste="pferd">🐴</button><button data-taste="schlag">⚔️</button></div>
   </div>
 
   <div id="start" class="overlay">
@@ -39,7 +39,7 @@
     <p>Der böse Koboldkönig hat <b>Königin Sisi</b> in seiner Burg eingesperrt! 👑<br><br>
       Finde die <b>3 goldenen Schlüssel</b> 🔑, öffne das Burgtor und befreie die Königin.<br>
       Pass auf die Kobolde auf! 👺</p>
-    <p>⬆️⬇️ oder W/S: laufen &nbsp; ⬅️➡️ oder A/D: drehen<br>Leertaste: Schwert schwingen ⚔️</p>
+    <p>⬆️⬇️ oder W/S: laufen &nbsp; ⬅️➡️ oder A/D: drehen<br>Leertaste: Schwert schwingen ⚔️<br>E: aufs Pferd steigen / absteigen 🐴</p>
     <button id="startKnopf">Los geht's!</button>
   </div>
 
@@ -199,25 +199,27 @@
 
     // ---------- Ritter Roland ----------
     const roland = new THREE.Group();
+    const figur = new THREE.Group(); // Rolands Körper – wird beim Reiten hochgehoben
+    roland.add(figur);
     const silber = 0xc0c8d0;
     const koerper = klotz(1.2, 1.4, 0.7, silber); koerper.position.y = 1.9;
     const umhang = klotz(1.2, 1.8, 0.1, 0x1565c0); umhang.position.set(0, 1.7, -0.42);
     const kopf = kugel(0.5, silber); kopf.position.y = 3;
     const visier = klotz(0.6, 0.12, 0.1, 0x222222); visier.position.set(0, 3.05, 0.45);
     const feder = klotz(0.15, 0.6, 0.8, 0xe53935); feder.position.set(0, 3.6, -0.1);
-    roland.add(koerper, umhang, kopf, visier, feder);
+    figur.add(koerper, umhang, kopf, visier, feder);
 
     // Beine (drehen sich beim Laufen)
     const beine = [];
     for (const s of [-1, 1]) {
       const huefte = new THREE.Group(); huefte.position.set(s * 0.32, 1.2, 0);
       const bein = klotz(0.45, 1.2, 0.5, 0x8899aa); bein.position.y = -0.6;
-      huefte.add(bein); roland.add(huefte); beine.push(huefte);
+      huefte.add(bein); figur.add(huefte); beine.push(huefte);
     }
     // Linker Arm mit Schild
     const schild = klotz(0.15, 1.3, 1, 0x1565c0); schild.position.set(-0.85, 1.9, 0.2);
     const wappen = klotz(0.05, 0.6, 0.3, 0xffd700); wappen.position.set(-0.94, 1.95, 0.2);
-    roland.add(schild, wappen);
+    figur.add(schild, wappen);
     // Rechter Arm mit Schwert (Schulter dreht sich beim Schlagen)
     const schulter = new THREE.Group(); schulter.position.set(0.8, 2.4, 0);
     const arm = klotz(0.35, 1, 0.35, silber); arm.position.y = -0.5;
@@ -225,10 +227,69 @@
     klinge.material.metalness = 0.9; klinge.material.roughness = 0.2;
     const griff = klotz(0.6, 0.15, 0.15, 0xffd700); griff.position.set(0, -1, 0.05);
     schulter.add(arm, klinge, griff);
-    roland.add(schulter);
+    figur.add(schulter);
     roland.position.set(0, 0, 40);
     roland.rotation.y = Math.PI; // schaut Richtung Burg
     szene.add(roland);
+
+    // ---------- Das Pferd ----------
+    const pferd = new THREE.Group();
+    const braun = 0x8d5524, dunkel = 0x3e2410;
+    const pRumpf = klotz(1.2, 1.1, 2.8, braun); pRumpf.position.y = 1.9;
+    const sattel = klotz(1.3, 0.25, 1, 0xc62828); sattel.position.set(0, 2.55, -0.1);
+    const decke = klotz(1.35, 0.8, 1.2, 0x1565c0); decke.position.set(0, 2.1, -0.1);
+    const hals = klotz(0.6, 1.4, 0.7, braun); hals.position.set(0, 2.7, 1.3); hals.rotation.x = 0.5;
+    const pKopf = klotz(0.55, 0.6, 1.2, braun); pKopf.position.set(0, 3.3, 1.9);
+    const maul = klotz(0.5, 0.45, 0.3, dunkel); maul.position.set(0, 3.2, 2.5);
+    const maehne = klotz(0.15, 1.4, 0.4, dunkel); maehne.position.set(0, 2.95, 1.05); maehne.rotation.x = 0.5;
+    for (const sx of [-1, 1]) {
+      const ohr = klotz(0.12, 0.35, 0.12, braun); ohr.position.set(sx * 0.18, 3.75, 1.6); pferd.add(ohr);
+      const auge = kugel(0.08, 0x000000); auge.position.set(sx * 0.29, 3.4, 2.1); pferd.add(auge);
+    }
+    const schweif = klotz(0.2, 1.3, 0.25, dunkel); schweif.position.set(0, 1.6, -1.55); schweif.rotation.x = -0.3;
+    pferd.add(pRumpf, decke, sattel, hals, pKopf, maul, maehne, schweif);
+    // 4 Beine, die beim Galoppieren schwingen
+    const pferdeBeine = [];
+    for (const [bx, bz] of [[-0.4, 1], [0.4, 1], [-0.4, -1], [0.4, -1]]) {
+      const gelenk = new THREE.Group(); gelenk.position.set(bx, 1.4, bz);
+      const bein = klotz(0.3, 1.2, 0.3, braun); bein.position.y = -0.6;
+      const huf = klotz(0.34, 0.25, 0.36, dunkel); huf.position.y = -1.27;
+      gelenk.add(bein, huf); pferd.add(gelenk); pferdeBeine.push(gelenk);
+    }
+    pferd.position.set(7, 0, 33);
+    pferd.rotation.y = Math.PI;
+    szene.add(pferd);
+
+    let reitet = false;
+    let pferdTasteVorher = false;
+    let pferdHinweis = false;
+
+    function aufAbsteigen() {
+      if (!reitet) {
+        if (roland.position.distanceTo(pferd.position) > 4) return;
+        reitet = true;
+        // Roland springt aufs Pferd: das Pferd wird ein Teil von Roland
+        roland.position.x = pferd.position.x; roland.position.z = pferd.position.z;
+        roland.rotation.y = pferd.rotation.y;
+        pferd.position.set(0, 0, 0); pferd.rotation.y = 0;
+        roland.add(pferd);
+        figur.position.y = 1.3;
+        beine[0].rotation.set(-0.3, 0, -0.5); beine[1].rotation.set(-0.3, 0, 0.5);
+        sounds.wiehern();
+        nachricht('Hü-hott! 🐴 (E zum Absteigen)');
+      } else {
+        reitet = false;
+        // Pferd bleibt stehen, Roland steigt seitlich ab
+        roland.remove(pferd);
+        pferd.position.set(roland.position.x, 0, roland.position.z);
+        pferd.rotation.y = roland.rotation.y;
+        szene.add(pferd);
+        figur.position.y = 0;
+        beine[0].rotation.set(0, 0, 0); beine[1].rotation.set(0, 0, 0);
+        const seite = roland.rotation.y + Math.PI / 2;
+        bewegen(roland, Math.sin(seite) * 2.2, Math.cos(seite) * 2.2, 0.7);
+      }
+    }
 
     // ---------- Schlüssel ----------
     const schluessel = [];
@@ -295,6 +356,8 @@
       treffer: () => ton(200, 0.25, 'square', 0.1, 60),
       autsch: () => ton(150, 0.4, 'triangle', 0.2, 80),
       schluessel: () => { ton(880, 0.15, 'sine', 0.2); setTimeout(() => ton(1320, 0.3, 'sine', 0.2), 120); },
+      wiehern: () => ton(700, 0.6, 'sawtooth', 0.08, 300),
+      trampel: () => ton(120, 0.3, 'square', 0.15, 50),
       tor: () => ton(80, 1.5, 'sawtooth', 0.1, 40),
       sieg: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => ton(f, 0.4, 'sine', 0.2), i * 180)),
     };
@@ -302,7 +365,7 @@
     // ---------- Steuerung ----------
     const tasten = {};
     const tastenNamen = { KeyW: 'vor', ArrowUp: 'vor', KeyS: 'zurueck', ArrowDown: 'zurueck',
-      KeyA: 'links', ArrowLeft: 'links', KeyD: 'rechts', ArrowRight: 'rechts', Space: 'schlag' };
+      KeyA: 'links', ArrowLeft: 'links', KeyD: 'rechts', ArrowRight: 'rechts', Space: 'schlag', KeyE: 'pferd' };
     addEventListener('keydown', e => { if (tastenNamen[e.code]) { tasten[tastenNamen[e.code]] = true; e.preventDefault(); } });
     addEventListener('keyup', e => { if (tastenNamen[e.code]) tasten[tastenNamen[e.code]] = false; });
     document.querySelectorAll('#touch button').forEach(b => {
@@ -380,7 +443,15 @@
 
       if (laeuft) {
         // --- Roland bewegen ---
-        const drehTempo = 2.8, laufTempo = 9;
+        // Auf- und Absteigen (nur einmal pro Tastendruck)
+        if (tasten.pferd && !pferdTasteVorher) aufAbsteigen();
+        pferdTasteVorher = !!tasten.pferd;
+        if (!reitet && !pferdHinweis && roland.position.distanceTo(pferd.position) < 4) {
+          pferdHinweis = true;
+          nachricht('Drücke E (oder 🐴), um aufs Pferd zu steigen!');
+        }
+
+        const drehTempo = reitet ? 2.4 : 2.8, laufTempo = reitet ? 18 : 9;
         if (tasten.links) roland.rotation.y += drehTempo * dt;
         if (tasten.rechts) roland.rotation.y -= drehTempo * dt;
         let vor = 0;
@@ -388,12 +459,23 @@
         if (tasten.zurueck) vor = -0.6;
         const dx = Math.sin(roland.rotation.y) * vor * laufTempo * dt;
         const dz = Math.cos(roland.rotation.y) * vor * laufTempo * dt;
-        bewegen(roland, dx, dz, 0.7);
+        bewegen(roland, dx, dz, reitet ? 1.3 : 0.7);
 
         // Beine schwingen beim Laufen
-        if (vor !== 0) laufPhase += dt * 10; else laufPhase *= 0.8;
-        beine[0].rotation.x = Math.sin(laufPhase) * 0.6;
-        beine[1].rotation.x = -Math.sin(laufPhase) * 0.6;
+        if (vor !== 0) laufPhase += dt * (reitet ? 14 : 10); else laufPhase *= 0.8;
+        if (reitet) {
+          // Galopp: Pferdebeine schwingen, Roland wippt auf und ab
+          pferdeBeine[0].rotation.x = Math.sin(laufPhase) * 0.7;
+          pferdeBeine[1].rotation.x = Math.sin(laufPhase + 0.5) * 0.7;
+          pferdeBeine[2].rotation.x = -Math.sin(laufPhase) * 0.7;
+          pferdeBeine[3].rotation.x = -Math.sin(laufPhase + 0.5) * 0.7;
+          roland.position.y = Math.abs(Math.sin(laufPhase)) * 0.3;
+          schweif.rotation.x = -0.3 - Math.abs(Math.sin(laufPhase)) * 0.5;
+        } else {
+          roland.position.y = 0;
+          beine[0].rotation.x = Math.sin(laufPhase) * 0.6;
+          beine[1].rotation.x = -Math.sin(laufPhase) * 0.6;
+        }
 
         // --- Schwert schwingen ---
         if (tasten.schlag && schlagZeit <= 0) {
@@ -477,6 +559,14 @@
 
           // Kobold haut zu
           k.schlagPause -= dt;
+          // Im Galopp werden Kobolde umgeritten!
+          if (reitet && vor > 0 && abstand < 2.2) {
+            k.lebt = false;
+            besiegt++;
+            sounds.trampel();
+            hudZeigen();
+            continue;
+          }
           if (abstand < 1.8 && k.schlagPause <= 0 && unverwundbar <= 0) {
             k.schlagPause = 1;
             leben--;
@@ -529,12 +619,14 @@
       }
 
       fahne.rotation.y = Math.sin(zeit * 2) * 0.2;
+      if (!reitet) { schweif.rotation.z = Math.sin(zeit * 2) * 0.4; pKopf.position.y = 3.3 + Math.sin(zeit) * 0.05; } // Pferd wartet
 
       // --- Kamera folgt Roland von hinten ---
-      const hinten = new THREE.Vector3(-Math.sin(roland.rotation.y) * 10, 6, -Math.cos(roland.rotation.y) * 10);
+      const kAbstand = reitet ? 13 : 10, kHoehe = reitet ? 8 : 6;
+      const hinten = new THREE.Vector3(-Math.sin(roland.rotation.y) * kAbstand, kHoehe, -Math.cos(roland.rotation.y) * kAbstand);
       kameraZiel.copy(roland.position).add(hinten);
       kamera.position.lerp(kameraZiel, laeuft || gewonnen ? 0.08 : 1);
-      kamera.lookAt(roland.position.x, roland.position.y + 2, roland.position.z);
+      kamera.lookAt(roland.position.x, roland.position.y + (reitet ? 3 : 2), roland.position.z);
 
       // Schatten-Licht wandert mit
       sonne.position.set(roland.position.x + 30, 60, roland.position.z + 20);
