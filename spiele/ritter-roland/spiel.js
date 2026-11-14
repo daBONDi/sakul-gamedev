@@ -193,10 +193,10 @@ kreise.push({ x: DORF.x, z: DORF.z, r: 3.2 });
 // Stall
 const STALL = { x: 22, z: 190 };
 for (const [sx, sz] of [[-5, -4], [5, -4], [-5, 4], [5, 4]]) {
-  const p = klotz(0.5, 4.5, 0.5, 0x6d4c41); p.position.set(STALL.x + sx, 2.25, STALL.z + sz); szene.add(p);
+  const p = klotz(0.5, 5.6, 0.5, 0x6d4c41); p.position.set(STALL.x + sx, 2.8, STALL.z + sz); szene.add(p);
   hindernis(STALL.x + sx, STALL.z + sz, 0.6, 0.6);
 }
-const stallDach = klotz(11.5, 0.4, 9.5, 0x8d4925); stallDach.position.set(STALL.x, 4.6, STALL.z); szene.add(stallDach);
+const stallDach = klotz(11.5, 0.4, 9.5, 0x8d4925); stallDach.position.set(STALL.x, 5.7, STALL.z); szene.add(stallDach);
 const stallWand = klotz(10, 4.2, 0.4, 0xa1887f); stallWand.position.set(STALL.x + 5, 2.1, STALL.z); stallWand.rotation.y = Math.PI / 2; szene.add(stallWand);
 hindernis(STALL.x + 5, STALL.z, 0.6, 9);
 const heu = klotz(2, 1, 3, 0xe6c35c); heu.position.set(STALL.x + 3.5, 0.5, STALL.z); szene.add(heu);
