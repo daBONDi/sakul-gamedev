@@ -4,7 +4,7 @@ import * as THREE from 'three';
 //  RITTER ROLAND – eine riesige 3D-Welt mit Aufträgen
 // =====================================================================
 
-const WELT = 300; // Die Welt geht von -300 bis +300 (600 x 600 Meter!)
+const WELT = 600; // Die Welt geht von -600 bis +600 (1200 x 1200 Meter!)
 
 // ---------- Grundgerüst: Szene, Kamera, Licht ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -85,16 +85,26 @@ function namensSchild(text) {
 }
 
 // ---------- Hindernisse (gegen die man nicht laufen kann) ----------
-const hindernisse = []; // Rechtecke {minX, maxX, minZ, maxZ}
-const kreise = [];      // Kreise {x, z, r} (Berge, Brunnen)
+// Die Welt ist so groß, dass wir die Hindernisse in ein Raster aus 20x20-Meter-Feldern
+// einsortieren. Dann muss man nur die Felder in der Nähe prüfen – das geht viel schneller!
+const ZELLE = 20;
+const raster = new Map();     // Feld -> Liste von Rechtecken {minX, maxX, minZ, maxZ}
+const kreise = [];            // Kreise {x, z, r} (Berge, Brunnen)
+const feldNr = (cx, cz) => cx * 100000 + cz;
 function hindernis(x, z, b, t) {
-  const h = { minX: x - b / 2, maxX: x + b / 2, minZ: z - t / 2, maxZ: z + t / 2 };
-  hindernisse.push(h);
+  const h = { minX: x - b / 2, maxX: x + b / 2, minZ: z - t / 2, maxZ: z + t / 2, weg: false };
+  for (let cx = Math.floor(h.minX / ZELLE); cx <= Math.floor(h.maxX / ZELLE); cx++) {
+    for (let cz = Math.floor(h.minZ / ZELLE); cz <= Math.floor(h.maxZ / ZELLE); cz++) {
+      const n = feldNr(cx, cz);
+      if (!raster.has(n)) raster.set(n, []);
+      raster.get(n).push(h);
+    }
+  }
   return h;
 }
 
 // Der See: Wasser ist überall zwischen Ufer und Insel – außer auf der Brücke
-const SEE = { x: 190, z: 30, r: 65, insel: 18 };
+const SEE = { x: 400, z: 60, r: 65, insel: 18 };
 function istWasser(x, z) {
   const d = Math.hypot(x - SEE.x, z - SEE.z);
   if (d > SEE.r || d < SEE.insel) return false;
@@ -104,8 +114,14 @@ function istWasser(x, z) {
 
 function stoesst(x, z, r) {
   if (istWasser(x, z)) return true;
-  for (const h of hindernisse) {
-    if (x + r > h.minX && x - r < h.maxX && z + r > h.minZ && z - r < h.maxZ) return true;
+  for (let cx = Math.floor((x - r) / ZELLE); cx <= Math.floor((x + r) / ZELLE); cx++) {
+    for (let cz = Math.floor((z - r) / ZELLE); cz <= Math.floor((z + r) / ZELLE); cz++) {
+      const liste = raster.get(feldNr(cx, cz));
+      if (!liste) continue;
+      for (const h of liste) {
+        if (!h.weg && x + r > h.minX && x - r < h.maxX && z + r > h.minZ && z - r < h.maxZ) return true;
+      }
+    }
   }
   for (const k of kreise) {
     if (Math.hypot(x - k.x, z - k.z) < k.r + r) return true;
@@ -121,7 +137,7 @@ function bewegen(obj, dx, dz, r) {
 // =====================================================================
 //  DIE WELT
 // =====================================================================
-const boden = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), mat(0x5aa83a));
+const boden = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), mat(0x5aa83a));
 boden.rotation.x = -Math.PI / 2;
 boden.receiveShadow = true;
 szene.add(boden);
@@ -131,11 +147,15 @@ hindernis(0, -WELT, 2 * WELT, 2); hindernis(0, WELT, 2 * WELT, 2);
 hindernis(-WELT, 0, 2, 2 * WELT); hindernis(WELT, 0, 2, 2 * WELT);
 
 // Wichtige Orte
-const DORF = { x: 0, z: 205 };
-const HOF = { x: -140, z: 160 };
-const SUMPF = { x: -205, z: 0 };
-const TAL = { x: -190, z: -190 };   // Drachental in den Bergen
-const BURG = { x: 0, z: -210 };
+const DORF = { x: 0, z: 450 };
+const HOF = { x: -300, z: 330 };
+const SUMPF = { x: -430, z: 0 };
+const TAL = { x: -400, z: -380 };   // Drachental in den Bergen
+const BURG = { x: 0, z: -480 };
+// Neue Orte mit Schatztruhen
+const ORTE = {
+  muehle: { x: 255, z: 285 }, ruine: { x: 325, z: -275 }, turm: { x: -185, z: 160 }, steine: { x: 480, z: -105 },
+};
 
 const gebiete = [
   { name: '🏘️ Dorf Rolandsheim', x: DORF.x, z: DORF.z, r: 45 },
@@ -145,12 +165,17 @@ const gebiete = [
   { name: '🐉 Drachental', x: TAL.x, z: TAL.z, r: 45 },
   { name: '⛰️ Drachenberge', x: TAL.x, z: TAL.z, r: 125 },
   { name: '🏰 Koboldburg', x: BURG.x, z: BURG.z, r: 60 },
+  { name: '🌬️ Alte Windmühle', x: ORTE.muehle.x, z: ORTE.muehle.z, r: 25 },
+  { name: '🏛️ Geheimnisvolle Ruine', x: ORTE.ruine.x, z: ORTE.ruine.z, r: 25 },
+  { name: '🗼 Wachturm', x: ORTE.turm.x, z: ORTE.turm.z, r: 22 },
+  { name: '🗿 Steinkreis', x: ORTE.steine.x, z: ORTE.steine.z, r: 24 },
 ];
 
 // ---------- Wege ----------
 const wege = [
-  [0, 195, 0, 0], [0, 0, 0, -186], [0, 0, -195, 0], [0, 0, 122, 30],
-  [-5, 200, -112, 150], [0, -60, -106, -120],
+  [0, 440, 0, 0], [0, 0, 0, -456], [0, 0, -420, 0], [0, 0, 332, 60],
+  [-5, 445, -272, 320], [0, -120, -316, -310],
+  [0, 280, 245, 285], [0, -200, 315, -270], [0, 160, -175, 160], [332, 60, 320, -40], [320, -40, 470, -95],
 ];
 wege.forEach(([x1, z1, x2, z2], i) => {
   const l = Math.hypot(x2 - x1, z2 - z1);
@@ -177,8 +202,8 @@ function haus(x, z, wand = 0xf5e6c8, dach = 0xa0522d, g = 8, blickZu = DORF) {
   szene.add(h);
   hindernis(x, z, g * 1.2, g * 1.2);
 }
-haus(24, 212); haus(8, 230, 0xffe0b2, 0x8d4925); haus(-12, 228, 0xe1f5fe, 0xb03030);
-haus(-28, 214, 0xfff9c4); haus(22, 170, 0xf8bbd0, 0x6d4c41);
+haus(24, 457); haus(8, 475, 0xffe0b2, 0x8d4925); haus(-12, 473, 0xe1f5fe, 0xb03030);
+haus(-28, 459, 0xfff9c4); haus(22, 415, 0xf8bbd0, 0x6d4c41);
 
 // Brunnen (heilt!)
 const brunnen = new THREE.Group();
@@ -191,7 +216,7 @@ szene.add(brunnen);
 kreise.push({ x: DORF.x, z: DORF.z, r: 3.2 });
 
 // Stall
-const STALL = { x: 22, z: 190 };
+const STALL = { x: 22, z: 435 };
 for (const [sx, sz] of [[-5, -4], [5, -4], [-5, 4], [5, 4]]) {
   const p = klotz(0.5, 5.6, 0.5, 0x6d4c41); p.position.set(STALL.x + sx, 2.8, STALL.z + sz); szene.add(p);
   hindernis(STALL.x + sx, STALL.z + sz, 0.6, 0.6);
@@ -202,13 +227,13 @@ hindernis(STALL.x + 5, STALL.z, 0.6, 9);
 const heu = klotz(2, 1, 3, 0xe6c35c); heu.position.set(STALL.x + 3.5, 0.5, STALL.z); szene.add(heu);
 
 // ---------- Hof von Bauer Hans ----------
-haus(-150, 132, 0xb71c1c, 0x4e342e, 10, HOF);
+haus(-310, 302, 0xb71c1c, 0x4e342e, 10, HOF);
 const feld = new THREE.Mesh(new THREE.BoxGeometry(44, 0.12, 34), mat(0xe6c35c));
 feld.position.set(HOF.x - 5, 0.06, HOF.z + 10); feld.receiveShadow = true; szene.add(feld);
 for (let i = 0; i < 8; i++) {
   const reihe = klotz(42, 0.5, 1, 0xd4a83a); reihe.position.set(HOF.x - 5, 0.25, HOF.z - 4 + i * 4); szene.add(reihe);
 }
-for (const [hx, hz] of [[-115, 175], [-120, 182], [-170, 140]]) {
+for (const [hx, hz] of [[-275, 345], [-280, 352], [-330, 310]]) {
   const ballen = walze(1.5, 1.5, 2, 0xd4a83a); ballen.rotation.z = Math.PI / 2; ballen.position.set(hx, 1.5, hz); szene.add(ballen);
   hindernis(hx, hz, 2.2, 3);
 }
@@ -219,18 +244,18 @@ for (let i = 0; i < 8; i++) {
   const w = Math.random() * Math.PI * 2, d = 15 + Math.random() * 35;
   bodenKreis(SUMPF.x + Math.cos(w) * d, SUMPF.z + Math.sin(w) * d, 2 + Math.random() * 4, 0x2f3d1f, 0.04);
 }
-haus(-217, -4, 0x6d4c41, 0x4a148c, 8, { x: 0, z: 0 });
-const kessel = walze(1.2, 0.8, 1.3, 0x222222); kessel.position.set(-206, 0.65, 8); szene.add(kessel);
+haus(-442, -4, 0x6d4c41, 0x4a148c, 8, { x: 0, z: 0 });
+const kessel = walze(1.2, 0.8, 1.3, 0x222222); kessel.position.set(-431, 0.65, 8); szene.add(kessel);
 const suppe = new THREE.Mesh(new THREE.CircleGeometry(1.1, 16), new THREE.MeshBasicMaterial({ color: 0x76ff03 }));
-suppe.rotation.x = -Math.PI / 2; suppe.position.set(-206, 1.32, 8); szene.add(suppe);
-hindernis(-206, 8, 2.4, 2.4);
+suppe.rotation.x = -Math.PI / 2; suppe.position.set(-431, 1.32, 8); szene.add(suppe);
+hindernis(-431, 8, 2.4, 2.4);
 
-const PILZ_ORTE = [[-245, -35], [-175, -42], [-232, 42], [-178, 36], [-258, 8]];
+const PILZ_ORTE = [[-470, -35], [-400, -42], [-457, 42], [-403, 36], [-483, 8]];
 // Tote Bäume im Sumpf
 for (let i = 0; i < 26; i++) {
   const w = Math.random() * Math.PI * 2, d = 12 + Math.random() * 44;
   const x = SUMPF.x + Math.cos(w) * d, z = SUMPF.z + Math.sin(w) * d;
-  if (amWeg(x, z, 5) || PILZ_ORTE.some(([px, pz]) => Math.hypot(x - px, z - pz) < 6) || Math.hypot(x + 212, z) < 14) continue;
+  if (amWeg(x, z, 5) || PILZ_ORTE.some(([px, pz]) => Math.hypot(x - px, z - pz) < 6) || Math.hypot(x + 437, z) < 14) continue;
   const b = new THREE.Group();
   const stamm = walze(0.3, 0.5, 6, 0x4e3b2a, 6); stamm.position.y = 3;
   const ast1 = klotz(2, 0.25, 0.25, 0x4e3b2a); ast1.position.set(0.8, 4.5, 0); ast1.rotation.z = 0.6;
@@ -245,14 +270,15 @@ const seeWasser = bodenKreis(SEE.x, SEE.z, SEE.r, 0x2a7fd4, 0.05);
 seeWasser.material.roughness = 0.15; seeWasser.material.metalness = 0.3;
 bodenKreis(SEE.x, SEE.z, SEE.insel + 1.5, 0xe0c98a, 0.07);
 bodenKreis(SEE.x, SEE.z, SEE.insel, 0x66bb44, 0.08);
-const bruecke = klotz(SEE.x - SEE.insel - 118, 0.4, 6, 0x8d6e63);
-bruecke.position.set((118 + SEE.x - SEE.insel) / 2 + 2, 0.2, SEE.z); szene.add(bruecke);
+const UFER_X = SEE.x - 72;
+const bruecke = klotz(SEE.x - SEE.insel - UFER_X, 0.4, 6, 0x8d6e63);
+bruecke.position.set((UFER_X + SEE.x - SEE.insel) / 2 + 2, 0.2, SEE.z); szene.add(bruecke);
 for (const s of [-1, 1]) {
-  const gelaender = klotz(SEE.x - SEE.insel - 118, 0.2, 0.2, 0x5d4037);
+  const gelaender = klotz(SEE.x - SEE.insel - UFER_X, 0.2, 0.2, 0x5d4037);
   gelaender.position.set(bruecke.position.x, 1.2, SEE.z + s * 2.9); szene.add(gelaender);
 }
-haus(104, 52, 0x8d6e63, 0x795548, 7, SEE);
-const boot = klotz(2.5, 0.8, 6, 0x6d4c41); boot.position.set(140, 0.3, 58); boot.rotation.y = 0.8; szene.add(boot);
+haus(314, 82, 0x8d6e63, 0x795548, 7, SEE);
+const boot = klotz(2.5, 0.8, 6, 0x6d4c41); boot.position.set(350, 0.3, 88); boot.rotation.y = 0.8; szene.add(boot);
 
 // ---------- Drachenberge ----------
 const bergMat = mat(0x8a8a8a), schneeMat = mat(0xffffff);
@@ -265,7 +291,7 @@ function berg(x, z, r, h, kollision = true) {
   if (kollision) kreise.push({ x, z, r: r * 0.85 });
 }
 bodenKreis(TAL.x, TAL.z, 46, 0x8d7b68);
-const ZWERG = { x: -108, z: -120 };
+const ZWERG = { x: -318, z: -310 };
 const passWinkel = Math.atan2(ZWERG.z - TAL.z, ZWERG.x - TAL.x);
 for (let i = 0; i < 60; i++) {
   const w = Math.random() * Math.PI * 2;
@@ -287,7 +313,7 @@ const lore = klotz(2, 1.4, 3, 0x616161); lore.position.set(ZWERG.x + 4, 0.9, ZWE
 hindernis(lore.position.x, lore.position.z, 2.2, 3.2);
 
 // Berge rund um die ganze Welt (nur zum Anschauen)
-for (let i = -WELT; i <= WELT; i += 40) {
+for (let i = -WELT; i <= WELT; i += 55) {
   for (const [x, z] of [[i, -WELT - 25], [i, WELT + 25], [-WELT - 25, i], [WELT + 25, i]]) {
     berg(x + (Math.random() - 0.5) * 15, z, 25 + Math.random() * 12, 40 + Math.random() * 35, false);
   }
@@ -355,14 +381,82 @@ const kaefigDach = walze(2.2, 2.2, 0.3, 0x333333, 16); kaefigDach.position.y = 4
 kaefig.position.copy(sisi.position);
 szene.add(kaefig);
 
+// ---------- Neue Orte: Windmühle, Ruine, Wachturm, Steinkreis ----------
+const muehlenRad = new THREE.Group();
+{
+  const { x, z } = ORTE.muehle;
+  const t = walze(3, 4, 12, 0xf5f5f5); t.position.set(x, 6, z);
+  const d = kegel(3.6, 4, 0x8d4925, 12); d.position.set(x, 14, z);
+  szene.add(t, d); kreise.push({ x, z, r: 4 });
+  for (let i = 0; i < 4; i++) {
+    const arm = new THREE.Group();
+    const f = klotz(1.4, 9, 0.2, 0xd7ccc8); f.position.y = 4.5;
+    arm.add(f); arm.rotation.z = i * Math.PI / 2; muehlenRad.add(arm);
+  }
+  muehlenRad.position.set(x, 11, z + 3.9);
+  szene.add(muehlenRad);
+}
+{
+  const { x, z } = ORTE.ruine;
+  for (let i = 0; i < 12; i++) {
+    if (i % 4 === 1) continue; // Eingänge
+    const w = i / 12 * Math.PI * 2, h = 2 + Math.random() * 5;
+    const st = klotz(4.5, h, 1.5, 0xa1a1a1);
+    st.position.set(x + Math.cos(w) * 12, h / 2, z + Math.sin(w) * 12); st.rotation.y = -w + Math.PI / 2;
+    szene.add(st); hindernis(st.position.x, st.position.z, 3, 3);
+  }
+  for (const [sx, sz] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) {
+    const h = 4 + Math.random() * 5;
+    const saeule = walze(0.8, 0.9, h, 0xbdbdbd); saeule.position.set(x + sx, h / 2, z + sz);
+    szene.add(saeule); kreise.push({ x: x + sx, z: z + sz, r: 1 });
+  }
+}
+{
+  const { x, z } = ORTE.turm;
+  const t = walze(3.5, 4, 22, 0x9e9e9e); t.position.set(x, 11, z);
+  const d = kegel(4.5, 6, 0x1565c0, 12); d.position.set(x, 25, z);
+  const tuer = klotz(1.8, 3, 0.3, 0x5d4037); tuer.position.set(x, 1.5, z + 3.9);
+  szene.add(t, d, tuer); kreise.push({ x, z, r: 4 });
+}
+{
+  const { x, z } = ORTE.steine;
+  for (let i = 0; i < 9; i++) {
+    const w = i / 9 * Math.PI * 2;
+    const st = klotz(2, 7 + Math.random() * 2, 1.2, 0x757575);
+    st.position.set(x + Math.cos(w) * 11, 3.5, z + Math.sin(w) * 11); st.rotation.y = -w;
+    szene.add(st); kreise.push({ x: st.position.x, z: st.position.z, r: 1.2 });
+  }
+}
+
+// ---------- Schatztruhen 📦 (jede gibt ein Herz mehr!) ----------
+const truhen = [
+  [ORTE.muehle.x + 7, ORTE.muehle.z], [ORTE.ruine.x, ORTE.ruine.z],
+  [ORTE.turm.x, ORTE.turm.z + 7], [ORTE.steine.x, ORTE.steine.z],
+].map(([x, z]) => {
+  const g = new THREE.Group();
+  const kiste = klotz(1.6, 1, 1.1, 0x6d4c41); kiste.position.y = 0.5;
+  const band = klotz(0.3, 1.05, 1.15, 0xffd700); band.position.y = 0.5;
+  band.material.emissive = new THREE.Color(0x664400);
+  const deckel = new THREE.Group(); deckel.position.set(0, 1, -0.55);
+  const d = klotz(1.7, 0.4, 1.15, 0x795548); d.position.set(0, 0.2, 0.55);
+  const dBand = klotz(0.3, 0.45, 1.2, 0xffd700); dBand.position.set(0, 0.2, 0.55);
+  deckel.add(d, dBand);
+  g.add(kiste, band, deckel);
+  g.position.set(x, 0, z);
+  g.scale.setScalar(1.3);
+  szene.add(g);
+  return { mesh: g, deckel, offen: false };
+});
+
 // ---------- Großer Wald (viele Bäume auf einmal = "InstancedMesh", das ist schnell) ----------
 const sperrZonen = [
   { x: DORF.x, z: DORF.z, r: 50 }, { x: HOF.x, z: HOF.z, r: 48 }, { x: SUMPF.x, z: SUMPF.z, r: 62 },
   { x: SEE.x, z: SEE.z, r: 78 }, { x: TAL.x, z: TAL.z, r: 128 }, { x: BURG.x, z: BURG.z, r: 62 },
-  { x: 104, z: 52, r: 12 },
+  { x: 314, z: 82, r: 12 },
+  ...Object.values(ORTE).map(o => ({ x: o.x, z: o.z, r: 24 })),
 ];
 const baumOrte = [];
-for (let i = 0; i < 2500 && baumOrte.length < 900; i++) {
+for (let i = 0; i < 12000 && baumOrte.length < 3600; i++) {
   const x = (Math.random() * 2 - 1) * (WELT - 8), z = (Math.random() * 2 - 1) * (WELT - 8);
   if (sperrZonen.some(s => Math.hypot(x - s.x, z - s.z) < s.r)) continue;
   if (amWeg(x, z, 8)) continue;
@@ -421,7 +515,7 @@ const schulter = new THREE.Group(); schulter.position.set(0.8, 2.4, 0);
   schulter.add(arm, klinge, griff);
 }
 figur.add(schulter);
-const START = new THREE.Vector3(0, 0, 180);
+const START = new THREE.Vector3(0, 0, 425);
 roland.position.copy(START);
 szene.add(roland);
 
@@ -493,13 +587,13 @@ function neuerNPC(id, name, x, z, aussehen, sonst, groesse = 1) {
   hindernis(x, z, 1.2, 1.2);
   npcs[id] = { name, mesh: m, pos: m.position, sonst, zuletzt: -99 };
 }
-neuerNPC('bert', 'Bürgermeister Bert', 7, 192, { kleid: 0xc62828, hut: 'zylinder', hutFarbe: 0x222222, kette: true, bart: 0x9e9e9e },
+neuerNPC('bert', 'Bürgermeister Bert', 7, 437, { kleid: 0xc62828, hut: 'zylinder', hutFarbe: 0x222222, kette: true, bart: 0x9e9e9e },
   'Wenn du verletzt bist, trink vom Brunnen! 💧');
-neuerNPC('hans', 'Bauer Hans', -112, 152, { kleid: 0x2e7d32, hut: 'stroh', hutFarbe: 0xe6c35c, haare: 0x8d5524 },
+neuerNPC('hans', 'Bauer Hans', -272, 322, { kleid: 0x2e7d32, hut: 'stroh', hutFarbe: 0xe6c35c, haare: 0x8d5524 },
   'Mein Korn wächst und gedeiht! 🌾');
-neuerNPC('hilda', 'Hexe Hilda', -203, 3, { kleid: 0x4a148c, hut: 'spitz', hutFarbe: 0x311b92, haare: 0x9e9e9e },
+neuerNPC('hilda', 'Hexe Hilda', -428, 3, { kleid: 0x4a148c, hut: 'spitz', hutFarbe: 0x311b92, haare: 0x9e9e9e },
   'Hihihi! Blubber, blubber … 🧪');
-neuerNPC('fritz', 'Fischer Fritz', 114, 38, { kleid: 0x1565c0, hut: 'stroh', hutFarbe: 0xffeb3b, bart: 0x6d4c41 },
+neuerNPC('fritz', 'Fischer Fritz', 324, 68, { kleid: 0x1565c0, hut: 'stroh', hutFarbe: 0xffeb3b, bart: 0x6d4c41 },
   'Ahoi! Schönes Wetter zum Angeln! 🎣');
 neuerNPC('zwerg', 'Zwerg Zacharias', ZWERG.x, ZWERG.z, { kleid: 0x795548, hut: 'zipfel', hutFarbe: 0xc62828, bart: 0xffffff },
   'Graben, graben, graben … ⛏️', 0.7);
@@ -552,14 +646,14 @@ const hauptmann = neuerKobold(SEE.x + 2, SEE.z, {
 });
 for (let i = 0; i < 3; i++) neuerKobold(SEE.x + (Math.random() - 0.5) * 20, SEE.z + (Math.random() - 0.5) * 20);
 // Am Weg zu den Bergen
-for (let i = 0; i < 3; i++) neuerKobold(-40 - i * 22, -80 - i * 15);
+for (let i = 0; i < 4; i++) neuerKobold(-60 - i * 60, -155 - i * 38);
 // Lager vor der Burg und in der Burg
 for (let i = 0; i < 7; i++) neuerKobold(BURG.x - 25 + i * 8, BZ + 32 + (i % 3) * 5);
 for (const [x, z] of [[-8, BZ + 5], [8, BZ + 5], [0, BZ + 10], [-10, BZ - 10], [10, BZ - 10]]) neuerKobold(x, z);
 const FESTE_KOBOLDE = kobolde.length; // nur diese werden gespeichert
 // Wanderer im Großen Wald (kommen bei jedem Laden neu)
-for (let n = 0; n < 30; n++) {
-  const x = (Math.random() * 2 - 1) * 270, z = (Math.random() * 2 - 1) * 270;
+for (let n = 0; n < 110; n++) {
+  const x = (Math.random() * 2 - 1) * (WELT - 30), z = (Math.random() * 2 - 1) * (WELT - 30);
   if (Math.hypot(x - DORF.x, z - DORF.z) < 70 || sperrZonen.some(s => Math.hypot(x - s.x, z - s.z) < s.r)) continue;
   neuerKobold(x, z);
 }
@@ -707,7 +801,7 @@ document.querySelectorAll('#touch button').forEach(b => {
 //  SPIELZUSTAND
 // =====================================================================
 let leben = 5;
-const MAX_LEBEN = 5;
+let MAX_LEBEN = 5;
 let gefunden = 0;       // goldene Schlüssel
 let pilzAnzahl = 0;
 let unverwundbar = 0;
@@ -732,7 +826,7 @@ const auftragEl = document.getElementById('auftrag');
 let hudAlt = '';
 function hudZeigen() {
   let text = '❤️'.repeat(Math.max(0, leben)) + '🖤'.repeat(MAX_LEBEN - Math.max(0, leben)) +
-    '\n🔑 ' + gefunden + '/3   👺 ' + besiegt + (pilzAnzahl > 0 && pilzAnzahl < 5 ? '   🍄 ' + pilzAnzahl + '/5' : '');
+    '\n🔑 ' + gefunden + '/3   📦 ' + truhen.filter(t => t.offen).length + '/4   👺 ' + besiegt + (pilzAnzahl > 0 && pilzAnzahl < 5 ? '   🍄 ' + pilzAnzahl + '/5' : '');
   if (drache.lebt && drache.aktiv) text += '\n🐉 ' + '🟥'.repeat(drache.hp) + '⬛'.repeat(drache.maxHp - drache.hp);
   else if (hauptmann.lebt && roland.position.distanceTo(hauptmann.mesh.position) < 28)
     text += '\n👹 ' + '🟥'.repeat(hauptmann.hp) + '⬛'.repeat(hauptmann.maxHp - hauptmann.hp);
@@ -991,7 +1085,7 @@ function ende() {
 // =====================================================================
 //  SPEICHERN 💾  (im Browser mit localStorage)
 // =====================================================================
-const SPEICHER_NAME = 'ritterRoland.spielstand';
+const SPEICHER_NAME = 'ritterRoland.spielstand2';
 const speicherEl = document.getElementById('speicher');
 let speicherTimer = 0;
 
@@ -1003,6 +1097,7 @@ function speichern() {
     roland: [roland.position.x, roland.position.z, roland.rotation.y],
     pferd: [pferd.position.x, pferd.position.z, pferd.rotation.y],
     pilze: pilze.map(p => p.gefunden),
+    truhen: truhen.map(t => t.offen), maxLeben: MAX_LEBEN,
     toteKobolde: kobolde.slice(0, FESTE_KOBOLDE).map((k, i) => k.lebt ? -1 : i).filter(i => i >= 0),
     drache: drache.lebt,
     schluessel: schluessel.filter(s => !s.gefunden && s.typ).map(s => [s.mesh.position.x, s.mesh.position.z, s.typ]),
@@ -1024,6 +1119,8 @@ function spielstandLoeschen() {
 function laden(stand) {
   ({ schritt, leben, gefunden, pilzAnzahl, besiegt } = stand);
   startZeit = performance.now() - (stand.spielzeit || 0);
+  MAX_LEBEN = stand.maxLeben || 5;
+  (stand.truhen || []).forEach((offen, i) => { if (offen) { truhen[i].offen = true; truhen[i].deckel.rotation.x = -1.9; } });
   // Gefundene Pilze wegräumen
   stand.pilze.forEach((weg, i) => { if (weg) { pilze[i].gefunden = true; szene.remove(pilze[i].mesh); } });
   // Besiegte Kobolde wegräumen (ohne dass sie nochmal Schlüssel fallen lassen)
@@ -1048,7 +1145,7 @@ function laden(stand) {
   if (stand.torOffen) {
     torOffen = true;
     torHoch = 6.8; tor.position.y = 3.5 + torHoch;
-    hindernisse.splice(hindernisse.indexOf(torHindernis), 1);
+    torHindernis.weg = true;
   }
   // Roland und das Pferd an ihren Platz stellen
   roland.position.set(stand.roland[0], 0, stand.roland[1]);
@@ -1118,8 +1215,9 @@ kartenBild.width = kartenBild.height = KG;
   kreis(TAL.x, TAL.z, 46, '#8d7b68');
   c.fillStyle = '#555'; { const [bx, bz] = aufKarte(BURG.x - 20, BURG.z - 20); c.fillRect(bx, bz, 40 * s, 40 * s); }
   c.font = '15px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle';
-  for (const [e, x, z] of [['🏘️', DORF.x, DORF.z], ['🌾', HOF.x, HOF.z], ['🧙‍♀️', SUMPF.x, SUMPF.z], ['🎣', 110, 45],
-    ['🐉', TAL.x, TAL.z], ['⛏️', ZWERG.x, ZWERG.z], ['🏰', BURG.x, BURG.z]]) c.fillText(e, ...aufKarte(x, z));
+  for (const [e, x, z] of [['🏘️', DORF.x, DORF.z], ['🌾', HOF.x, HOF.z], ['🧙‍♀️', SUMPF.x, SUMPF.z], ['🎣', 320, 75],
+    ['🐉', TAL.x, TAL.z], ['⛏️', ZWERG.x, ZWERG.z], ['🏰', BURG.x, BURG.z],
+    ['🌬️', ORTE.muehle.x, ORTE.muehle.z], ['🏛️', ORTE.ruine.x, ORTE.ruine.z], ['🗼', ORTE.turm.x, ORTE.turm.z], ['🗿', ORTE.steine.x, ORTE.steine.z]]) c.fillText(e, ...aufKarte(x, z));
 }
 function karteZeichnen(zeit) {
   kctx.drawImage(kartenBild, 0, 0);
@@ -1168,7 +1266,7 @@ function spielLogik(dt, zeit) {
   }
 
   // --- Roland bewegen ---
-  const drehTempo = reitet ? 2.4 : 2.8, laufTempo = reitet ? 20 : 9;
+  const drehTempo = reitet ? 2.4 : 2.8, laufTempo = reitet ? 28 : 10;
   if (tasten.links) roland.rotation.y += drehTempo * dt;
   if (tasten.rechts) roland.rotation.y -= drehTempo * dt;
   let vor = 0;
@@ -1264,6 +1362,19 @@ function spielLogik(dt, zeit) {
     }
   }
 
+  // --- Schatztruhen öffnen ---
+  for (const t of truhen) {
+    if (t.offen) continue;
+    if (Math.hypot(t.mesh.position.x - roland.position.x, t.mesh.position.z - roland.position.z) < 3.2) {
+      t.offen = true;
+      MAX_LEBEN++;
+      leben = MAX_LEBEN;
+      sounds.sieg();
+      nachricht('📦 Schatztruhe! Du hast jetzt ' + MAX_LEBEN + ' Herzen! ❤️', 4000);
+      speichern();
+    }
+  }
+
   // --- Brunnen heilt ---
   heilPause -= dt;
   if (leben < MAX_LEBEN && heilPause <= 0 && Math.hypot(roland.position.x - DORF.x, roland.position.z - DORF.z) < 6.5) {
@@ -1279,7 +1390,7 @@ function spielLogik(dt, zeit) {
       torOffen = true;
       sounds.tor();
       nachricht('Klick, klick, klick! Das Tor geht auf! 🏰');
-      hindernisse.splice(hindernisse.indexOf(torHindernis), 1);
+      torHindernis.weg = true;
     } else if (Math.random() < 0.01) {
       nachricht('Das Tor ist verschlossen. Du brauchst 3 Schlüssel! 🔒');
     }
@@ -1474,6 +1585,8 @@ function schleife() {
   }
 
   fahne.rotation.y = Math.sin(zeit * 2) * 0.2;
+  muehlenRad.rotation.z += dt * 0.8;
+  for (const t of truhen) if (t.offen && t.deckel.rotation.x > -1.9) t.deckel.rotation.x -= dt * 4;
   suppe.material.color.setHSL(0.28, 1, 0.45 + Math.sin(zeit * 4) * 0.1);
   if (!reitet) { schweif.rotation.z = Math.sin(zeit * 2) * 0.4; pKopf.position.y = 3.3 + Math.sin(zeit) * 0.05; }
 
