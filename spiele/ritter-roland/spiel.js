@@ -1353,7 +1353,7 @@ function spielLogik(dt, zeit) {
   // --- Schlüssel einsammeln ---
   for (const s of schluessel) {
     if (s.gefunden) continue;
-    if (Math.hypot(s.mesh.position.x - roland.position.x, s.mesh.position.z - roland.position.z) < 2.2) {
+    if (Math.hypot(s.mesh.position.x - roland.position.x, s.mesh.position.z - roland.position.z) < 3) {
       s.gefunden = true;
       szene.remove(s.mesh);
       gefunden++;
