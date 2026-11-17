@@ -115,6 +115,8 @@ function block(x, y) {
   return welt[y * W + x];
 }
 function setzeBlock(x, y, b) { welt[y * W + x] = b; }
+// Block ändern UND den anderen Spielern Bescheid sagen
+function aendereBlock(x, y, b) { setzeBlock(x, y, b); netzBlock(x, y, b); }
 function begehbar(b) { return b === LUFT || b === LEITER || b === LAVA; }
 
 // ---------- Speichern / Laden ----------
@@ -122,12 +124,21 @@ const SPEICHER = 'minening-spielstand';
 
 let gespeichertAnzeige = 0;
 
+const WELT_SPEICHER = 'minening-welt';
+
 function speichern() {
   gespeichertAnzeige = 1.5;
   try {
-    localStorage.setItem(SPEICHER, JSON.stringify({
-      welt: Array.from(welt), x: spieler.x, y: spieler.y, geld, verdient, stufen, inventar, resetUhr,
-    }));
+    let daten = {};
+    try { daten = JSON.parse(localStorage.getItem(SPEICHER)) || {}; } catch (e) { /* neu */ }
+    delete daten.welt;
+    Object.assign(daten, { geld, verdient, stufen, inventar });
+    // Als Gast gehört die Mine dem Host – dann speichern wir nur unsere Münzen & Sachen
+    if (netzRolle !== 'gast') {
+      daten.x = spieler.x; daten.y = spieler.y;
+      localStorage.setItem(WELT_SPEICHER, JSON.stringify({ welt: Array.from(welt), resetUhr }));
+    }
+    localStorage.setItem(SPEICHER, JSON.stringify(daten));
     localStorage.setItem('minening-rekord', String(rekordTiefe));
   } catch (e) { /* egal */ }
 }
@@ -136,11 +147,13 @@ function ladeSpielstand() {
   try {
     rekordTiefe = Number(localStorage.getItem('minening-rekord')) || 0;
     const d = JSON.parse(localStorage.getItem(SPEICHER));
-    if (!d || d.welt.length !== W * H) return false;
-    welt = Uint8Array.from(d.welt);
-    spieler = neuerSpieler(d.x, d.y);
+    if (!d) return false;
+    const w = JSON.parse(localStorage.getItem(WELT_SPEICHER)) || { welt: d.welt, resetUhr: d.resetUhr };
+    if (!w.welt || w.welt.length !== W * H) return false;
+    welt = Uint8Array.from(w.welt);
+    spieler = neuerSpieler(d.x ?? 8, d.y ?? BODEN - 1);
     geld = d.geld; verdient = d.verdient; stufen = d.stufen; inventar = d.inventar;
-    resetUhr = d.resetUhr || RESET_ZEIT;
+    resetUhr = w.resetUhr || RESET_ZEIT;
     return true;
   } catch (e) { return false; }
 }
@@ -160,13 +173,15 @@ function neuesSpiel() {
 }
 
 // Die Mine wird neu gebaut – Münzen, Upgrades und Rucksack bleiben!
-function mineReset() {
-  neueWelt();
+function mineReset(weltVomHost) {
+  if (weltVomHost) welt = Uint8Array.from(weltVomHost);
+  else neueWelt();
   resetUhr = RESET_ZEIT;
   graben = null; partikel = [];
   spieler = neuerSpieler(5, BODEN - 1);
   text('⛏️ Die Mine ist neu!', spieler.zx + T / 2, spieler.zy - 20, '#ffd166');
   [300, 400, 500, 700].forEach((f, i) => setTimeout(() => ton(f, 0.15, 'triangle', 0.08), i * 100));
+  netzReset();
   speichern();
 }
 
@@ -183,6 +198,7 @@ function drueck(r) { if (!gedrueckt.includes(r)) gedrueckt.push(r); }
 function loslass(r) { const i = gedrueckt.indexOf(r); if (i >= 0) gedrueckt.splice(i, 1); }
 
 addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;  // Beim Tippen des Raum-Codes nicht laufen
   if (TASTEN[e.key]) { drueck(TASTEN[e.key]); e.preventDefault(); }
   if (!laeuft) return;
   if (e.key === 'h' || e.key === 'H') nachHause();
@@ -276,7 +292,7 @@ function kaufen(i) {
 function abbauen(x, y) {
   const b = block(x, y);
   const info = BLOECKE[b];
-  setzeBlock(x, y, LUFT);
+  aendereBlock(x, y, LUFT);
   for (let i = 0; i < 10; i++) {
     partikel.push({ x: x * T + T / 2, y: y * T + T / 2, vx: zufall(-120, 120), vy: zufall(-200, 0),
       farbe: Math.random() < 0.5 ? info.farbe : BLOECKE[ERDE].farbe, leben: zufall(0.4, 0.8) });
@@ -298,7 +314,10 @@ function abbauen(x, y) {
 function update(dt) {
   // Countdown bis zum Mine-Reset
   resetUhr -= dt;
-  if (resetUhr <= 0) mineReset();
+  if (resetUhr <= 0) {
+    if (netzRolle === 'gast') resetUhr = 0; // Gäste warten auf den Host
+    else mineReset();
+  }
   const s = spieler;
 
   // Bewegung zu einem Ziel-Block (weich gleiten)
@@ -353,7 +372,7 @@ function update(dt) {
           if (dy === -1) {
             // Hochklettern: Leiter bauen, wo wir stehen
             if (zy >= 0) {
-              if (block(s.x, s.y) === LUFT) { setzeBlock(s.x, s.y, LEITER); ton(500, 0.04, 'square', 0.03); }
+              if (block(s.x, s.y) === LUFT) { aendereBlock(s.x, s.y, LEITER); ton(500, 0.04, 'square', 0.03); }
               s.ziel = { x: zx, y: zy };
             }
           } else {
@@ -470,16 +489,31 @@ function zeichneLaden() {
 
 function zeichneSpieler() {
   const s = spieler;
-  const px = s.zx, py = s.zy;
   const wackel = s.ziel && !s.ziel.fallen ? Math.sin(s.schritt) * 2 : 0;
+  zeichneArbeiter(s.zx, s.zy, s.blick, wackel, !!graben, stufen.hacke, SPIELER_FARBEN[meineNr - 1]);
+}
+
+// Die anderen Spieler (online) mit ihrer Farbe und Nummer
+function zeichneAndere() {
+  for (const id in andere) {
+    const a = andere[id];
+    const wackel = a.laeuft ? Math.sin(performance.now() / 60) * 2 : 0;
+    zeichneArbeiter(a.zx, a.zy, a.blick, wackel, a.gr, a.hacke, SPIELER_FARBEN[a.nr - 1]);
+    ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#000'; ctx.fillText('Spieler ' + a.nr, a.zx + T / 2 + 1, a.zy - 7);
+    ctx.fillStyle = SPIELER_FARBEN[a.nr - 1]; ctx.fillText('Spieler ' + a.nr, a.zx + T / 2, a.zy - 8);
+  }
+}
+
+function zeichneArbeiter(px, py, blick, wackel, grabt, hacke, farbe) {
   ctx.save();
   ctx.translate(px + T / 2, py);
-  ctx.scale(s.blick, 1);
+  ctx.scale(blick, 1);
   // Beine
   ctx.fillStyle = '#2b4a8a';
   ctx.fillRect(-9, 28 + wackel, 7, 12 - wackel); ctx.fillRect(2, 28 - wackel, 7, 12 + wackel);
   // Körper
-  ctx.fillStyle = '#e07a2f'; ctx.fillRect(-11, 14, 22, 16);
+  ctx.fillStyle = farbe; ctx.fillRect(-11, 14, 22, 16);
   ctx.fillStyle = '#ffd166'; ctx.fillRect(-11, 20, 22, 3);
   // Kopf
   ctx.fillStyle = '#f5c99b'; ctx.fillRect(-8, 3, 16, 13);
@@ -488,12 +522,12 @@ function zeichneSpieler() {
   ctx.fillStyle = '#f2c32e'; ctx.fillRect(-10, -1, 20, 7);
   ctx.fillStyle = '#fff6b0'; ctx.fillRect(7, 0, 5, 5);
   // Spitzhacke (schwingt beim Graben)
-  const winkel = graben ? Math.sin(performance.now() / 60) * 0.8 : 0.3;
+  const winkel = grabt ? Math.sin(performance.now() / 60) * 0.8 : 0.3;
   ctx.translate(10, 22);
   ctx.rotate(winkel);
   ctx.fillStyle = '#8b5a2b'; ctx.fillRect(0, -2, 16, 4);
   const hackFarben = ['#9a9a9a', '#e0a878', '#ffd700', '#5ff3ff', '#2ee86b'];
-  ctx.fillStyle = hackFarben[stufen.hacke];
+  ctx.fillStyle = hackFarben[hacke];
   ctx.beginPath(); ctx.moveTo(14, -10); ctx.quadraticCurveTo(22, 0, 14, 10); ctx.lineTo(17, 0); ctx.fill();
   ctx.restore();
 }
@@ -605,6 +639,7 @@ function zeichne() {
     }
   }
 
+  zeichneAndere();
   zeichneSpieler();
 
   partikel.forEach(p => { ctx.fillStyle = p.farbe; ctx.fillRect(p.x - 3, p.y - 3, 6, 6); });
@@ -640,6 +675,15 @@ function zeichne() {
 
   zeichneHUD();
 
+  // Online-Anzeige oben rechts
+  if (netzRolle !== 'solo') {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(canvas.width - 215, 48, 205, 82);
+    ctx.textAlign = 'right'; ctx.font = 'bold 17px system-ui';
+    ctx.fillStyle = '#7bd389'; ctx.fillText('🌐 Raum-Code: ' + raumCode, canvas.width - 20, 72);
+    ctx.fillStyle = '#fff'; ctx.fillText('👥 ' + spielerAnzahl() + ' Spieler in der Mine', canvas.width - 20, 96);
+    ctx.fillStyle = SPIELER_FARBEN[meineNr - 1]; ctx.fillText('Du bist Spieler ' + meineNr, canvas.width - 20, 120);
+  }
+
   // Kleine Anzeige, wenn gespeichert wurde
   if (gespeichertAnzeige > 0) {
     ctx.globalAlpha = Math.min(1, gespeichertAnzeige);
@@ -671,6 +715,7 @@ function schleife(jetzt) {
   letzteZeit = jetzt;
   if (laeuft) {
     update(dt);
+    netzTick(dt);
     speicherUhr += dt;
     gespeichertAnzeige -= dt;
     if (speicherUhr > 5) { speicherUhr = 0; speichern(); }
@@ -687,11 +732,19 @@ else {
 }
 kamera.x = spieler.zx - canvas.width / 2; kamera.y = spieler.zy - canvas.height / 2;
 
-document.getElementById('startKnopf').onclick = () => {
+function spielStarten() {
   document.getElementById('start').classList.add('versteckt');
+  kamera.x = spieler.zx - canvas.width / 2; kamera.y = spieler.zy - canvas.height / 2;
   laeuft = true;
   ton(440, 0.1, 'triangle', 0.08);
-};
+}
+
+document.getElementById('startKnopf').onclick = spielStarten;
+document.getElementById('hostKnopf').onclick = netzHosten;
+document.getElementById('beitretenKnopf').onclick = () => netzBeitreten(document.getElementById('codeFeld').value);
+document.getElementById('codeFeld').addEventListener('keydown', e => {
+  if (e.key === 'Enter') netzBeitreten(e.target.value);
+});
 document.getElementById('neuKnopf').onclick = () => {
   if (!confirm('Wirklich ein neues Spiel starten? Dein Fortschritt ist dann weg!')) return;
   neuesSpiel();
