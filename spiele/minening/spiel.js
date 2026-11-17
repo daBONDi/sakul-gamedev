@@ -46,6 +46,8 @@ let graben = null;  // { x, y, fortschritt }
 let texte = [];     // fliegende Texte (+Gold usw.)
 let partikel = [];
 let imLaden = false;
+const RESET_ZEIT = 500;      // Alle 500 Sekunden wird die Mine neu gebaut
+let resetUhr = RESET_ZEIT;
 let laeuft = false;
 let kamera = { x: 0, y: 0 };
 
@@ -124,7 +126,7 @@ function speichern() {
   gespeichertAnzeige = 1.5;
   try {
     localStorage.setItem(SPEICHER, JSON.stringify({
-      welt: Array.from(welt), x: spieler.x, y: spieler.y, geld, verdient, stufen, inventar,
+      welt: Array.from(welt), x: spieler.x, y: spieler.y, geld, verdient, stufen, inventar, resetUhr,
     }));
     localStorage.setItem('minening-rekord', String(rekordTiefe));
   } catch (e) { /* egal */ }
@@ -138,6 +140,7 @@ function ladeSpielstand() {
     welt = Uint8Array.from(d.welt);
     spieler = neuerSpieler(d.x, d.y);
     geld = d.geld; verdient = d.verdient; stufen = d.stufen; inventar = d.inventar;
+    resetUhr = d.resetUhr || RESET_ZEIT;
     return true;
   } catch (e) { return false; }
 }
@@ -152,7 +155,19 @@ function neuesSpiel() {
   geld = 0; verdient = 0;
   stufen = { hacke: 0, rucksack: 0, lampe: 0 };
   inventar = {};
+  resetUhr = RESET_ZEIT;
   if (rekordTiefe === undefined) rekordTiefe = 0;
+}
+
+// Die Mine wird neu gebaut – Münzen, Upgrades und Rucksack bleiben!
+function mineReset() {
+  neueWelt();
+  resetUhr = RESET_ZEIT;
+  graben = null; partikel = [];
+  spieler = neuerSpieler(5, BODEN - 1);
+  text('⛏️ Die Mine ist neu!', spieler.zx + T / 2, spieler.zy - 20, '#ffd166');
+  [300, 400, 500, 700].forEach((f, i) => setTimeout(() => ton(f, 0.15, 'triangle', 0.08), i * 100));
+  speichern();
 }
 
 // ---------- Steuerung ----------
@@ -281,6 +296,9 @@ function abbauen(x, y) {
 }
 
 function update(dt) {
+  // Countdown bis zum Mine-Reset
+  resetUhr -= dt;
+  if (resetUhr <= 0) mineReset();
   const s = spieler;
 
   // Bewegung zu einem Ziel-Block (weich gleiten)
@@ -485,19 +503,28 @@ let ladenKnoepfe = [];
 function zeichneHUD() {
   const tiefe = Math.max(0, spieler.y - BODEN + 1);
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(8, 8, 250, 112);
+  ctx.fillRect(8, 8, 250, 136);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 18px system-ui'; ctx.textAlign = 'left';
   ctx.fillText('💰 ' + geld + ' Münzen', 18, 32);
   ctx.fillText('⬇️ Tiefe: ' + tiefe + ' m  (Rekord ' + rekordTiefe + ')', 18, 56);
   const voll = rucksackVoll(), platz = rucksackPlatz();
   ctx.fillStyle = voll >= platz ? '#ff6b6b' : '#fff';
   ctx.fillText('🎒 Rucksack: ' + voll + ' / ' + platz, 18, 80);
+  const sek = Math.ceil(resetUhr);
+  ctx.fillStyle = sek <= 30 ? '#ff6b6b' : '#fff';
+  ctx.fillText('⏳ Neue Mine in: ' + Math.floor(sek / 60) + ':' + String(sek % 60).padStart(2, '0'), 18, 104);
+  if (sek <= 10) {
+    ctx.save();
+    ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 34px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('⚠️ Mine wird neu gebaut in ' + sek + '!', canvas.width / 2, 170);
+    ctx.restore();
+  }
   // Erze im Rucksack als kleine Quadrate
   let ix = 18;
   for (const e of ERZE) {
     if (!inventar[e]) continue;
-    ctx.fillStyle = BLOECKE[e].farbe; ctx.fillRect(ix, 92, 14, 14);
-    ctx.fillStyle = '#fff'; ctx.font = '14px system-ui'; ctx.fillText(inventar[e], ix + 17, 105);
+    ctx.fillStyle = BLOECKE[e].farbe; ctx.fillRect(ix, 116, 14, 14);
+    ctx.fillStyle = '#fff'; ctx.font = '14px system-ui'; ctx.fillText(inventar[e], ix + 17, 129);
     ix += 44;
   }
 
