@@ -118,7 +118,10 @@ function begehbar(b) { return b === LUFT || b === LEITER || b === LAVA; }
 // ---------- Speichern / Laden ----------
 const SPEICHER = 'minening-spielstand';
 
+let gespeichertAnzeige = 0;
+
 function speichern() {
+  gespeichertAnzeige = 1.5;
   try {
     localStorage.setItem(SPEICHER, JSON.stringify({
       welt: Array.from(welt), x: spieler.x, y: spieler.y, geld, verdient, stufen, inventar,
@@ -607,6 +610,15 @@ function zeichne() {
   ctx.globalAlpha = 1;
 
   zeichneHUD();
+
+  // Kleine Anzeige, wenn gespeichert wurde
+  if (gespeichertAnzeige > 0) {
+    ctx.globalAlpha = Math.min(1, gespeichertAnzeige);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(canvas.width - 165, 10, 155, 32);
+    ctx.fillStyle = '#7bd389'; ctx.font = 'bold 17px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText('💾 Gespeichert', canvas.width - 20, 32);
+    ctx.globalAlpha = 1;
+  }
 }
 
 // ---------- Bildschirmgröße ----------
@@ -631,6 +643,7 @@ function schleife(jetzt) {
   if (laeuft) {
     update(dt);
     speicherUhr += dt;
+    gespeichertAnzeige -= dt;
     if (speicherUhr > 5) { speicherUhr = 0; speichern(); }
   }
   zeichne();
@@ -658,5 +671,7 @@ document.getElementById('neuKnopf').onclick = () => {
   laeuft = true;
 };
 addEventListener('beforeunload', () => { if (laeuft) speichern(); });
+// Auch speichern, wenn man den Tab wechselt oder das Handy weglegt
+document.addEventListener('visibilitychange', () => { if (laeuft && document.hidden) speichern(); });
 
 requestAnimationFrame(schleife);
