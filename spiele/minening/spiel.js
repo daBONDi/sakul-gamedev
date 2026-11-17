@@ -385,6 +385,8 @@ function hash(x, y, n) {
 }
 
 function zeichneBlock(b, x, y, px, py) {
+  // Erze sind versteckt: Sie sehen aus wie normaler Stein!
+  if (ERZE.includes(b)) b = y - BODEN > 45 ? TIEFSTEIN : STEIN;
   if (b === LUFT) {
     if (y > BODEN) { ctx.fillStyle = '#2a1a0e'; ctx.fillRect(px, py, T, T); }
     return;
