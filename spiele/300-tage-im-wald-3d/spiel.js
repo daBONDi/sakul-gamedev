@@ -1,0 +1,905 @@
+// ===== 300 Tage im Wald – 3D =====
+// Überlebe 300 Tage! Sammle Holz, Steine und Beeren, trinke am See,
+// mach Lagerfeuer gegen Kälte und Wölfe, bau dir eine Hütte.
+// Die 3D-Grafik macht Three.js. Die Balken und Texte werden in 2D darübergemalt.
+import * as THREE from 'three';
+
+const canvas = document.getElementById('hud');
+const ctx = canvas.getContext('2d');
+let B = 0, H = 0;
+function groesse() { B = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+addEventListener('resize', groesse); groesse();
+
+// ---------- Einstellungen ----------
+const ZIEL_TAGE = 300;
+const TAG_LAENGE = 40;      // Sekunden pro Tag (Tag + Nacht)
+const NACHT_ANTEIL = 0.35;  // so viel vom Tag ist Nacht
+const WELT = 3000;          // Größe der Welt in Pixeln
+const SPEICHER = 'wald300-3d-spielstand';
+
+// Zufall mit festem Startwert -> der Wald sieht immer gleich aus
+let seed = 12345;
+function zufall() {
+  seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+  let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+const abstand = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+// ---------- Welt bauen ----------
+const seen = [
+  { x: 1500, y: 1500, r: 160 },
+  { x: 600, y: 900, r: 120 },
+  { x: 2400, y: 2300, r: 140 },
+];
+function imSee(x, y, extra = 0) { return seen.some(s => Math.hypot(x - s.x, y - s.y) < s.r + extra); }
+
+function freierPlatz() {
+  let x, y;
+  do { x = 60 + zufall() * (WELT - 120); y = 60 + zufall() * (WELT - 120); }
+  while (imSee(x, y, 40) || Math.hypot(x - 1500, y - 1300) < 100);
+  return { x, y };
+}
+
+const baeume = [], steine = [], buesche = [];
+for (let i = 0; i < 260; i++) baeume.push({ ...freierPlatz(), r: 22 + zufall() * 14, hp: 3, weg: 0 });
+for (let i = 0; i < 70; i++) steine.push({ ...freierPlatz(), r: 14 + zufall() * 8, hp: 4, weg: 0 });
+for (let i = 0; i < 90; i++) buesche.push({ ...freierPlatz(), r: 16, beeren: 3, nachwachsen: 0 });
+
+// Gras-Tupfer zur Deko
+const gras = [];
+for (let i = 0; i < 900; i++) gras.push(freierPlatz());
+
+// ---------- Spielzustand ----------
+let spieler, inv, feuer, huette, woelfe, hasen, zeit, tag, nachrichten, zustand, speer, angriffPause, schadenBlitz;
+
+function neuesSpiel() {
+  spieler = { x: 1500, y: 1300, leben: 100, hunger: 100, durst: 100, waerme: 100, blick: 0 };
+  inv = { holz: 0, stein: 0, beeren: 0, fleisch: 0, gebraten: 0 };
+  feuer = []; huette = null; woelfe = []; hasen = [];
+  zeit = 0; tag = 1; speer = false;
+  angriffPause = 0; schadenBlitz = 0;
+  nachrichten = [];
+  for (const b of baeume) { b.hp = 3; b.weg = 0; }
+  for (const s of steine) { s.hp = 4; s.weg = 0; }
+  for (const b of buesche) { b.beeren = 3; b.nachwachsen = 0; }
+}
+
+function speichern() {
+  try {
+    localStorage.setItem(SPEICHER, JSON.stringify({
+      spieler, inv, feuer, huette, tag, speer,
+      baeume: baeume.map(b => [b.hp, b.weg]),
+      steine: steine.map(s => [s.hp, s.weg]),
+      buesche: buesche.map(b => [b.beeren, b.nachwachsen]),
+    }));
+  } catch (e) {}
+}
+
+function laden() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SPEICHER));
+    if (!d) return false;
+    neuesSpiel();
+    Object.assign(spieler, d.spieler); Object.assign(inv, d.inv);
+    feuer = d.feuer || []; huette = d.huette || null; tag = d.tag; speer = d.speer;
+    d.baeume.forEach((w, i) => { baeume[i].hp = w[0]; baeume[i].weg = w[1]; });
+    d.steine.forEach((w, i) => { steine[i].hp = w[0]; steine[i].weg = w[1]; });
+    d.buesche.forEach((w, i) => { buesche[i].beeren = w[0]; buesche[i].nachwachsen = w[1]; });
+    zeit = 0;
+    return true;
+  } catch (e) { return false; }
+}
+
+function hatSpielstand() { try { return !!localStorage.getItem(SPEICHER); } catch (e) { return false; } }
+function rekord() { try { return +localStorage.getItem('wald300-3d-rekord') || 0; } catch (e) { return 0; } }
+function setzeRekord(t) { try { if (t > rekord()) localStorage.setItem('wald300-3d-rekord', t); } catch (e) {} }
+
+function sag(text, farbe = '#fff') {
+  nachrichten.push({ text, farbe, zeit: 4 });
+  if (nachrichten.length > 5) nachrichten.shift();
+}
+
+// ---------- Jahreszeiten ----------
+function jahreszeit() {
+  const j = Math.floor(((tag - 1) % 120) / 30);   // alle 30 Tage wechselt sie
+  return ['Frühling', 'Sommer', 'Herbst', 'Winter'][j];
+}
+const istWinter = () => jahreszeit() === 'Winter';
+function istNacht() { return zeit / TAG_LAENGE > 1 - NACHT_ANTEIL; }
+
+// ---------- Tastatur ----------
+const tasten = {};
+addEventListener('keydown', e => {
+  tasten[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+  if (zustand === 'start') {
+    if (e.code === 'Enter') { neuesSpiel(); zustand = 'spiel'; sag('Überlebe 300 Tage im Wald! Viel Glück!', '#ffd166'); }
+    if (e.code === 'KeyL' && hatSpielstand() && laden()) { zustand = 'spiel'; sag('Spielstand geladen: Tag ' + tag, '#ffd166'); }
+    return;
+  }
+  if (zustand === 'tot' || zustand === 'gewonnen') {
+    if (e.code === 'Enter') zustand = 'start';
+    return;
+  }
+  if (e.code === 'KeyP') zustand = zustand === 'pause' ? 'spiel' : 'pause';
+  if (zustand !== 'spiel') return;
+  if (e.code === 'Digit1') bauFeuer();
+  if (e.code === 'Digit2') bauSpeer();
+  if (e.code === 'Digit3') bauHuette();
+  if (e.code === 'KeyF') essen();
+});
+addEventListener('keyup', e => { tasten[e.code] = false; });
+
+// ---------- Aktionen ----------
+function bauFeuer() {
+  if (inv.holz >= 5 && inv.stein >= 2) {
+    inv.holz -= 5; inv.stein -= 2;
+    feuer.push({ x: spieler.x + Math.cos(spieler.blick) * 40, y: spieler.y + Math.sin(spieler.blick) * 40, brennstoff: 60 });
+    sag('🔥 Lagerfeuer gebaut!', '#ffb347');
+  } else sag('Feuer braucht 5 Holz + 2 Steine', '#ff8080');
+}
+
+function bauSpeer() {
+  if (speer) return sag('Du hast schon einen Speer.');
+  if (inv.holz >= 3 && inv.stein >= 3) {
+    inv.holz -= 3; inv.stein -= 3; speer = true;
+    sag('🗡️ Speer gebaut! Du haust jetzt doppelt so stark zu.', '#ffd166');
+  } else sag('Speer braucht 3 Holz + 3 Steine', '#ff8080');
+}
+
+// Hütte: drinnen ist es warm, Wölfe können nicht beißen, nachts schläfst du
+const HUETTE_GROESSE = 46;   // halbe Breite der Hütte
+function inHuette(o = spieler) {
+  return !!huette && Math.abs(o.x - huette.x) < HUETTE_GROESSE && Math.abs(o.y - huette.y) < HUETTE_GROESSE;
+}
+
+function bauHuette() {
+  if (huette) return sag('Du hast schon eine Hütte! 🛖');
+  if (inv.holz < 15 || inv.stein < 5) return sag('Hütte braucht 15 Holz + 5 Steine', '#ff8080');
+  const x = spieler.x + Math.cos(spieler.blick) * 70, y = spieler.y + Math.sin(spieler.blick) * 70;
+  const imWeg = imSee(x, y, 70) || x < 80 || y < 80 || x > WELT - 80 || y > WELT - 80 ||
+    baeume.some(b => !b.weg && Math.hypot(x - b.x, y - b.y) < 70) ||
+    steine.some(s => !s.weg && Math.hypot(x - s.x, y - s.y) < 65);
+  if (imWeg) return sag('Hier ist kein Platz! Such eine freie Stelle.', '#ff8080');
+  inv.holz -= 15; inv.stein -= 5;
+  huette = { x, y };
+  sag('🛖 Hütte gebaut! Geh nachts rein zum Schlafen.', '#ffd166');
+}
+
+function essen() {
+  if (inv.gebraten > 0) { inv.gebraten--; spieler.hunger = Math.min(100, spieler.hunger + 45); sag('🍖 Lecker, gebratenes Fleisch!'); }
+  else if (inv.beeren > 0) { inv.beeren--; spieler.hunger = Math.min(100, spieler.hunger + 12); sag('🫐 Mmh, Beeren.'); }
+  else if (inv.fleisch > 0) { inv.fleisch--; spieler.hunger = Math.min(100, spieler.hunger + 20); spieler.leben -= 5; sag('🥩 Rohes Fleisch... Bauchweh! (am Feuer braten mit Leertaste)', '#ff8080'); }
+  else sag('Du hast nichts zu essen!', '#ff8080');
+}
+
+function interagieren() {
+  if (angriffPause > 0) return;
+  const p = spieler;
+  const schaden = speer ? 2 : 1;
+  const reichweite = speer ? 70 : 55;
+
+  // 1. Tiere angreifen
+  for (const w of woelfe) {
+    if (abstand(p, w) < reichweite + 10) {
+      w.hp -= schaden; angriffPause = 0.35;
+      const d = abstand(p, w) || 1; w.x += (w.x - p.x) / d * 30; w.y += (w.y - p.y) / d * 30;
+      if (w.hp <= 0) { inv.fleisch += 2; sag('🐺 Wolf besiegt! +2 Fleisch', '#ffd166'); }
+      return;
+    }
+  }
+  for (const h of hasen) {
+    if (abstand(p, h) < reichweite) {
+      h.hp = 0; inv.fleisch++; angriffPause = 0.35; sag('🐇 +1 Fleisch');
+      return;
+    }
+  }
+  // 2. Feuer: Fleisch braten oder Holz nachlegen
+  for (const f of feuer) {
+    if (abstand(p, f) < 60) {
+      angriffPause = 0.3;
+      if (inv.fleisch > 0) { inv.fleisch--; inv.gebraten++; sag('🍖 Fleisch gebraten!'); }
+      else if (inv.holz > 0) { inv.holz--; f.brennstoff = Math.min(150, f.brennstoff + 30); sag('🪵 Holz ins Feuer gelegt'); }
+      else sag('Kein Holz zum Nachlegen!', '#ff8080');
+      return;
+    }
+  }
+  // 3. Busch, Baum, Stein
+  for (const b of buesche) {
+    if (abstand(p, b) < 45 && b.beeren > 0) {
+      b.beeren--; inv.beeren++; angriffPause = 0.25;
+      if (b.beeren === 0) b.nachwachsen = 2;
+      return;
+    }
+  }
+  for (const b of baeume) {
+    if (!b.weg && abstand(p, b) < b.r + 30) {
+      b.hp -= schaden; angriffPause = 0.35; b.wackeln = 0.2;
+      if (b.hp <= 0) { b.weg = 4; inv.holz += 3; sag('🪵 +3 Holz'); }
+      return;
+    }
+  }
+  for (const s of steine) {
+    if (!s.weg && abstand(p, s) < s.r + 30) {
+      s.hp -= schaden; angriffPause = 0.4; s.wackeln = 0.2;
+      if (s.hp <= 0) { s.weg = 6; inv.stein += 2; sag('🪨 +2 Steine'); }
+      return;
+    }
+  }
+  // 4. Trinken am See
+  if (imSee(p.x, p.y, 40)) {
+    spieler.durst = Math.min(100, spieler.durst + 25); angriffPause = 0.4;
+    sag('💧 Schluck! Wasser getrunken.', '#7ec8ff');
+    return;
+  }
+}
+
+// ---------- Neuer Tag ----------
+function neuerTag() {
+  tag++;
+  setzeRekord(tag);
+  if (tag > ZIEL_TAGE) { zustand = 'gewonnen'; try { localStorage.removeItem(SPEICHER); } catch (e) {} return; }
+  for (const b of baeume) if (b.weg && --b.weg === 0) b.hp = 3;
+  for (const s of steine) if (s.weg && --s.weg === 0) s.hp = 4;
+  for (const b of buesche) {
+    if (b.beeren === 0 && --b.nachwachsen <= 0 && !istWinter()) b.beeren = 3;
+  }
+  sag('☀️ Tag ' + tag + ' beginnt!', '#ffd166');
+  if ((tag - 1) % 30 === 0) sag('Die Jahreszeit wechselt: ' + jahreszeit(), istWinter() ? '#bfe6ff' : '#9be37b');
+  speichern();
+}
+
+// ---------- Tiere ----------
+function spawnWeitWeg(min, max) {
+  for (let i = 0; i < 20; i++) {
+    const a = Math.random() * Math.PI * 2, d = min + Math.random() * (max - min);
+    const x = spieler.x + Math.cos(a) * d, y = spieler.y + Math.sin(a) * d;
+    if (x > 20 && y > 20 && x < WELT - 20 && y < WELT - 20 && !imSee(x, y, 10)) return { x, y };
+  }
+  return null;
+}
+
+function bewegeMitKollision(obj, dx, dy) {
+  const nx = Math.max(15, Math.min(WELT - 15, obj.x + dx));
+  const ny = Math.max(15, Math.min(WELT - 15, obj.y + dy));
+  const blockiert = (x, y) =>
+    baeume.some(b => !b.weg && Math.hypot(x - b.x, y - b.y) < b.r * 0.55 + 12) ||
+    steine.some(s => !s.weg && Math.hypot(x - s.x, y - s.y) < s.r + 10);
+  if (!blockiert(nx, obj.y)) obj.x = nx;
+  if (!blockiert(obj.x, ny)) obj.y = ny;
+}
+
+function tiereUpdate(dt) {
+  // Hasen: immer ca. 14 in der Nähe
+  hasen = hasen.filter(h => h.hp > 0 && abstand(h, spieler) < 1400);
+  while (hasen.length < (istWinter() ? 6 : 14)) {
+    const pos = spawnWeitWeg(500, 1200); if (!pos) break;
+    hasen.push({ ...pos, hp: 1, ziel: Math.random() * 6.28, t: 0, hopp: 0 });
+  }
+  for (const h of hasen) {
+    h.t -= dt; h.hopp += dt * 10;
+    let tempo = 40;
+    if (abstand(h, spieler) < 150) { h.ziel = Math.atan2(h.y - spieler.y, h.x - spieler.x); tempo = 170; }
+    else if (h.t <= 0) { h.ziel = Math.random() * 6.28; h.t = 1 + Math.random() * 2; }
+    const dx = Math.cos(h.ziel) * tempo * dt, dy = Math.sin(h.ziel) * tempo * dt;
+    if (!imSee(h.x + dx, h.y + dy)) bewegeMitKollision(h, dx, dy); else h.ziel += Math.PI;
+  }
+
+  // Wölfe: kommen in der Nacht. Je später im Spiel, desto mehr.
+  const maxWoelfe = istNacht() ? Math.min(8, 1 + Math.floor(tag / 30) + (istWinter() ? 1 : 0)) : 0;
+  if (woelfe.length < maxWoelfe && Math.random() < dt * 0.4) {
+    const pos = spawnWeitWeg(600, 800);
+    if (pos) { woelfe.push({ ...pos, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('🐺 Ein Wolf heult in der Dunkelheit...', '#ff8080'); }
+  }
+  for (const w of woelfe) {
+    w.biss -= dt;
+    let zx = spieler.x, zy = spieler.y, tempo = 135, flucht = false;
+    // Angst vor Feuer
+    for (const f of feuer) {
+      if (abstand(w, f) < 170) { zx = w.x * 2 - f.x; zy = w.y * 2 - f.y; tempo = 160; flucht = true; }
+    }
+    if (huette && abstand(w, huette) < 130) { zx = w.x * 2 - huette.x; zy = w.y * 2 - huette.y; tempo = 160; flucht = true; }
+    if (!istNacht()) { zx = w.x * 2 - spieler.x; zy = w.y * 2 - spieler.y; flucht = true; }
+    const a = Math.atan2(zy - w.y, zx - w.x);
+    w.blick = a;
+    if (flucht || abstand(w, spieler) > 30) bewegeMitKollision(w, Math.cos(a) * tempo * dt, Math.sin(a) * tempo * dt);
+    if (!flucht && !inHuette() && abstand(w, spieler) < 34 && w.biss <= 0) {
+      spieler.leben -= 12; w.biss = 1; schadenBlitz = 0.3;
+    }
+  }
+  woelfe = woelfe.filter(w => w.hp > 0 && (istNacht() || abstand(w, spieler) < 900));
+}
+
+// ---------- Update ----------
+function update(dt) {
+  const p = spieler;
+  // Bewegung
+  // In 3D läuft "W" immer dahin, wohin die Kamera schaut
+  let vor = 0, seit = 0;
+  if (tasten.KeyA || tasten.ArrowLeft) seit--;
+  if (tasten.KeyD || tasten.ArrowRight) seit++;
+  if (tasten.KeyW || tasten.ArrowUp) vor++;
+  if (tasten.KeyS || tasten.ArrowDown) vor--;
+  if (tasten.KeyQ) kamWinkel -= dt * 2;
+  if (tasten.KeyE) kamWinkel += dt * 2;
+  const dx = Math.cos(kamWinkel) * vor - Math.sin(kamWinkel) * seit;
+  const dy = Math.sin(kamWinkel) * vor + Math.cos(kamWinkel) * seit;
+  if (vor || seit) {
+    const l = Math.hypot(dx, dy);
+    p.blick = Math.atan2(dy, dx);
+    const tempo = (tasten.ShiftLeft ? 230 : 160) * dt;
+    const nx = p.x + dx / l * tempo, ny = p.y + dy / l * tempo;
+    // Nicht in den See laufen
+    if (!imSee(nx, p.y)) bewegeMitKollision(p, dx / l * tempo, 0);
+    if (!imSee(p.x, ny)) bewegeMitKollision(p, 0, dy / l * tempo);
+    if (tasten.ShiftLeft) p.durst -= dt * 0.6;
+    p.laufen = (p.laufen || 0) + dt * 12;
+  }
+
+  angriffPause -= dt; schadenBlitz -= dt;
+  if (tasten.Space) interagieren();
+
+  // Zeit (beim Schlafen in der Hütte vergeht die Nacht 4x so schnell)
+  const schlaeft = inHuette() && istNacht();
+  zeit += schlaeft ? dt * 4 : dt;
+  if (schlaeft && !p.schlief) sag('💤 Du schläfst in der Hütte... Zzz', '#bfe6ff');
+  p.schlief = schlaeft;
+  if (zeit >= TAG_LAENGE) { zeit -= TAG_LAENGE; neuerTag(); if (zustand !== 'spiel') return; }
+
+  // Feuer brennen ab
+  for (const f of feuer) f.brennstoff -= dt;
+  feuer = feuer.filter(f => f.brennstoff > 0);
+  const amFeuer = feuer.some(f => abstand(p, f) < 130);
+
+  // Körperwerte
+  p.hunger -= dt * 0.9;
+  p.durst -= dt * (jahreszeit() === 'Sommer' ? 1.5 : 1.2);
+  let kaelte = 0;
+  if (istNacht()) kaelte = istWinter() ? 3.5 : 2;
+  else kaelte = istWinter() ? 1.2 : -3;
+  if (amFeuer) kaelte = -10;
+  else if (inHuette()) kaelte = -6;
+  p.waerme -= dt * kaelte;
+  p.hunger = Math.max(0, p.hunger); p.durst = Math.max(0, p.durst);
+  p.waerme = Math.max(0, Math.min(100, p.waerme));
+
+  if (p.hunger <= 0 || p.durst <= 0 || p.waerme <= 0) { p.leben -= dt * 3; schadenBlitz = Math.max(schadenBlitz, 0.05); }
+  else if (p.hunger > 40 && p.durst > 40 && p.waerme > 40) p.leben = Math.min(100, p.leben + dt * (schlaeft ? 4 : 0.8));
+
+  tiereUpdate(dt);
+
+  for (const b of baeume) if (b.wackeln > 0) b.wackeln -= dt;
+  for (const s of steine) if (s.wackeln > 0) s.wackeln -= dt;
+  for (const n of nachrichten) n.zeit -= dt;
+  nachrichten = nachrichten.filter(n => n.zeit > 0);
+
+  if (p.leben <= 0) {
+    zustand = 'tot';
+    try { localStorage.removeItem(SPEICHER); } catch (e) {}
+  }
+}
+
+// Wie dunkel ist es gerade? (0 = Tag, 0.85 = Nacht)
+function dunkelheit() {
+  const t = zeit / TAG_LAENGE;
+  const start = 1 - NACHT_ANTEIL;
+  if (t < 0.08) return 0.85 * (1 - t / 0.08);                  // Morgendämmerung
+  if (t < start - 0.08) return 0;
+  if (t < start) return 0.85 * ((t - (start - 0.08)) / 0.08);  // Abenddämmerung
+  return 0.85;
+}
+
+// ---------- 3D-Welt (Three.js) ----------
+// In 3D ist "x" links/rechts, "y" oben/unten und "z" vorne/hinten.
+// Die Spiel-Logik benutzt noch x und y wie in 2D -> in 3D wird daraus x und z.
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.domElement.id = 'welt3d';
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#8fc8ff');
+scene.fog = new THREE.Fog('#8fc8ff', 450, 1300);
+
+const kamera = new THREE.PerspectiveCamera(55, 1, 2, 1500);
+let kamWinkel = -Math.PI / 2;   // in welche Richtung die Kamera schaut
+let kamAbstand = 230;           // wie weit die Kamera weg ist (Mausrad)
+
+function groesse3d() {
+  renderer.setSize(innerWidth, innerHeight);
+  kamera.aspect = innerWidth / innerHeight;
+  kamera.updateProjectionMatrix();
+}
+addEventListener('resize', groesse3d); groesse3d();
+
+// Kamera mit der Maus drehen und zoomen
+renderer.domElement.addEventListener('pointerdown', e => renderer.domElement.setPointerCapture(e.pointerId));
+renderer.domElement.addEventListener('pointermove', e => { if (e.buttons) kamWinkel += e.movementX * 0.006; });
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  kamAbstand = Math.max(110, Math.min(480, kamAbstand + e.deltaY * 0.3));
+}, { passive: false });
+
+// ---------- Licht ----------
+const himmelLicht = new THREE.HemisphereLight('#dff1ff', '#4a5a30', 1.5);
+const sonne = new THREE.DirectionalLight('#fff4dd', 2.2);
+sonne.castShadow = true;
+sonne.shadow.mapSize.set(2048, 2048);
+Object.assign(sonne.shadow.camera, { left: -450, right: 450, top: 450, bottom: -450, near: 10, far: 1200 });
+sonne.shadow.bias = -0.0005;
+scene.add(himmelLicht, sonne, sonne.target);
+
+const spielerLicht = new THREE.PointLight('#ffe0b0', 0, 230, 0);   // kleines Licht um dich in der Nacht
+scene.add(spielerLicht);
+const feuerLichter = [0, 1, 2].map(() => { const l = new THREE.PointLight('#ff9a3c', 0, 340, 0); scene.add(l); return l; });
+
+// ---------- Materialien (Farben) ----------
+const mat = (farbe, extra = {}) => new THREE.MeshLambertMaterial({ color: farbe, ...extra });
+const durchsichtig = m => { const k = m.clone(); k.transparent = true; k.opacity = 0.22; k.depthWrite = false; return k; };
+
+const bodenMat = mat('#4f8a3a'), grasMat = mat('#3b6e2b');
+const seeMat = new THREE.MeshStandardMaterial({ color: '#2f78b8', roughness: 0.15, metalness: 0.1 });
+const uferMat = mat('#c9b27a');
+const holzMat = mat('#6b4a2b'), stumpfMat = mat('#a8875a');
+const kroneDunkel = mat('#2e6b2a'), kroneHell = mat('#3f8a37');
+const kroneDunkelDurch = durchsichtig(kroneDunkel), kroneHellDurch = durchsichtig(kroneHell);
+const steinMat = new THREE.MeshStandardMaterial({ color: '#8d949a', flatShading: true, roughness: 1 });
+const buschMat = mat('#2d7d3a'), buschMat2 = mat('#3a9447'), beerenMat = mat('#d42a5a', { emissive: '#3a0010' });
+const hasenMat = mat('#a58a6a'), weissMat = mat('#ffffff');
+const wolfMat = mat('#4a4f55'), wolfMat2 = mat('#5d636a'), wolfAugen = new THREE.MeshBasicMaterial({ color: '#ffdd33' });
+const dachMat = mat('#7a3b22', { transparent: true });
+const wandMat = mat('#7a5232'), dielenMat = mat('#a07a4e');
+const flammeMat1 = new THREE.MeshBasicMaterial({ color: '#ff7b00' }), flammeMat2 = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
+const grauMat = mat('#888888'), schwarzMat = mat('#222222');
+
+// Farben je Jahreszeit
+const JAHRESFARBEN = {
+  'Frühling': { boden: '#4f8a3a', gras: '#3b6e2b', dunkel: '#2e6b2a', hell: '#3f8a37', busch: '#2d7d3a', busch2: '#3a9447', see: '#2f78b8', ufer: '#c9b27a', hase: '#a58a6a', dach: '#7a3b22', himmel: '#8fc8ff' },
+  'Sommer':   { boden: '#5f8f2f', gras: '#4a7a22', dunkel: '#245c22', hell: '#2f7a2b', busch: '#2d7d3a', busch2: '#3a9447', see: '#2f78b8', ufer: '#d8c084', hase: '#a58a6a', dach: '#7a3b22', himmel: '#7cc0ff' },
+  'Herbst':   { boden: '#7a7a35', gras: '#6a5a28', dunkel: '#b35a1f', hell: '#d98a2b', busch: '#6b6a2a', busch2: '#8a7a30', see: '#2c6a9e', ufer: '#b8a070', hase: '#a58a6a', dach: '#7a3b22', himmel: '#a8c4d8' },
+  'Winter':   { boden: '#dfe8ee', gras: '#c7d3db', dunkel: '#2f5a3a', hell: '#e9f2f7', busch: '#5d7a5d', busch2: '#728f72', see: '#8fc3dd', ufer: '#b8c8d0', hase: '#ffffff', dach: '#e9f2f7', himmel: '#c9d6e2' },
+};
+let letzteJahreszeit = '';
+function jahreszeitFarben() {
+  const j = jahreszeit();
+  if (j === letzteJahreszeit) return;
+  letzteJahreszeit = j;
+  const f = JAHRESFARBEN[j];
+  bodenMat.color.set(f.boden); grasMat.color.set(f.gras);
+  kroneDunkel.color.set(f.dunkel); kroneDunkelDurch.color.set(f.dunkel);
+  kroneHell.color.set(f.hell); kroneHellDurch.color.set(f.hell);
+  buschMat.color.set(f.busch); buschMat2.color.set(f.busch2);
+  seeMat.color.set(f.see); uferMat.color.set(f.ufer);
+  hasenMat.color.set(f.hase); dachMat.color.set(f.dach);
+  tagHimmel.set(f.himmel);
+  seeMat.roughness = j === 'Winter' ? 0.6 : 0.15;   // im Winter ist der See zugefroren
+}
+const tagHimmel = new THREE.Color('#8fc8ff'), nachtHimmel = new THREE.Color('#070b1c');
+
+// ---------- Boden, Gras, Seen ----------
+const boden = new THREE.Mesh(new THREE.PlaneGeometry(WELT + 2400, WELT + 2400), bodenMat);
+boden.rotation.x = -Math.PI / 2; boden.position.set(WELT / 2, 0, WELT / 2);
+boden.receiveShadow = true;
+scene.add(boden);
+
+const grasMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(2.5, 10, 3).translate(0, 5, 0), grasMat, gras.length);
+const m4 = new THREE.Matrix4();
+gras.forEach((g, i) => { m4.makeTranslation(g.x, 0, g.y); grasMesh.setMatrixAt(i, m4); });
+scene.add(grasMesh);
+
+for (const s of seen) {
+  const ufer = new THREE.Mesh(new THREE.CircleGeometry(s.r + 10, 48), uferMat);
+  ufer.rotation.x = -Math.PI / 2; ufer.position.set(s.x, 0.4, s.y); ufer.receiveShadow = true;
+  const wasser = new THREE.Mesh(new THREE.CircleGeometry(s.r, 48), seeMat);
+  wasser.rotation.x = -Math.PI / 2; wasser.position.set(s.x, 0.9, s.y);
+  scene.add(ufer, wasser);
+}
+
+// ---------- Bäume ----------
+const baumGeo = {
+  stamm: new THREE.CylinderGeometry(5, 7, 50, 7).translate(0, 25, 0),
+  unten: new THREE.ConeGeometry(28, 50, 8).translate(0, 70, 0),
+  oben: new THREE.ConeGeometry(20, 40, 8).translate(0, 100, 0),
+  stumpf: new THREE.CylinderGeometry(8, 9, 8, 8).translate(0, 4, 0),
+};
+const baumTeile = baeume.map(b => {
+  const g = new THREE.Group();
+  g.position.set(b.x, 0, b.y); g.scale.setScalar(b.r / 28); g.rotation.y = Math.random() * 6;
+  const stamm = new THREE.Mesh(baumGeo.stamm, holzMat);
+  const unten = new THREE.Mesh(baumGeo.unten, kroneDunkel);
+  const oben = new THREE.Mesh(baumGeo.oben, kroneHell);
+  const stumpf = new THREE.Mesh(baumGeo.stumpf, stumpfMat);
+  for (const m of [stamm, unten, oben]) { m.castShadow = true; m.receiveShadow = true; }
+  stumpf.visible = false;
+  g.add(stamm, unten, oben, stumpf);
+  scene.add(g);
+  return { g, stamm, unten, oben, stumpf, durch: false };
+});
+
+// ---------- Steine ----------
+const steinGeo = new THREE.DodecahedronGeometry(1, 0);
+const steinTeile = steine.map(s => {
+  const m = new THREE.Mesh(steinGeo, steinMat);
+  m.scale.set(s.r, s.r * 0.75, s.r * 0.9);
+  m.position.set(s.x, s.r * 0.35, s.y); m.rotation.y = Math.random() * 6;
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m);
+  return m;
+});
+
+// ---------- Büsche mit Beeren ----------
+const buschGeo = new THREE.SphereGeometry(16, 10, 8), beereGeo = new THREE.SphereGeometry(3.2, 6, 5);
+const buschTeile = buesche.map(b => {
+  const g = new THREE.Group(); g.position.set(b.x, 0, b.y);
+  const k1 = new THREE.Mesh(buschGeo, buschMat); k1.scale.set(1, 0.75, 1); k1.position.y = 10;
+  const k2 = new THREE.Mesh(buschGeo, buschMat2); k2.scale.set(0.65, 0.55, 0.65); k2.position.set(-5, 17, -4);
+  k1.castShadow = true;
+  g.add(k1, k2);
+  const beeren = [0, 1, 2].map(i => {
+    const a = i * 2.1 + 0.4;
+    const m = new THREE.Mesh(beereGeo, beerenMat);
+    m.position.set(Math.cos(a) * 13, 13 + (i % 2) * 4, Math.sin(a) * 13);
+    g.add(m); return m;
+  });
+  scene.add(g);
+  return { g, beeren };
+});
+
+// ---------- Hilfsfunktion: 3D-Objekte zu Spiel-Objekten passend halten ----------
+// Für jedes Ding in der Liste gibt es ein 3D-Modell. Neue bekommen eins, weg ist weg.
+function abgleichen(liste, karte, baue) {
+  for (const o of liste) if (!karte.has(o)) { const m = baue(o); scene.add(m); karte.set(o, m); }
+  for (const [o, m] of karte) if (!liste.includes(o)) { scene.remove(m); karte.delete(o); }
+}
+const feuerModelle = new Map(), huettenModelle = new Map(), wolfModelle = new Map(), hasenModelle = new Map();
+
+// ---------- Lagerfeuer ----------
+const kleinerStein = new THREE.DodecahedronGeometry(5, 0);
+const scheitGeo = new THREE.CylinderGeometry(2.5, 2.5, 30, 6).rotateZ(Math.PI / 2).translate(0, 3, 0);
+const flammeGeo1 = new THREE.ConeGeometry(9, 26, 7).translate(0, 13, 0);
+const flammeGeo2 = new THREE.ConeGeometry(5.5, 18, 6).translate(0, 9, 0);
+function baueFeuer() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * Math.PI * 2;
+    const s = new THREE.Mesh(kleinerStein, steinMat); s.position.set(Math.cos(a) * 16, 2, Math.sin(a) * 16); g.add(s);
+  }
+  const s1 = new THREE.Mesh(scheitGeo, holzMat); s1.rotation.y = 0.6;
+  const s2 = new THREE.Mesh(scheitGeo, holzMat); s2.rotation.y = -0.6;
+  const f1 = new THREE.Mesh(flammeGeo1, flammeMat1), f2 = new THREE.Mesh(flammeGeo2, flammeMat2);
+  f1.position.y = 3; f2.position.y = 4;
+  g.add(s1, s2, f1, f2);
+  g.userData = { f1, f2 };
+  return g;
+}
+
+// ---------- Hütte ----------
+function baueHuette() {
+  const g = new THREE.Group();
+  const G = HUETTE_GROESSE, hoch = 45, d = 6;
+  const kiste = (b, h, t, x, y, z, m) => {
+    const k = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), m);
+    k.position.set(x, y, z); k.castShadow = true; k.receiveShadow = true; g.add(k); return k;
+  };
+  kiste(G * 2, 2, G * 2, 0, 1, 0, dielenMat);                       // Boden
+  kiste(G * 2, hoch, d, 0, hoch / 2, -G, wandMat);                  // Wand hinten
+  kiste(d, hoch, G * 2, -G, hoch / 2, 0, wandMat);                  // Wand links
+  kiste(d, hoch, G * 2, G, hoch / 2, 0, wandMat);                   // Wand rechts
+  const tuer = 30, stueck = (G * 2 - tuer) / 2;
+  kiste(stueck, hoch, d, -(tuer / 2 + stueck / 2), hoch / 2, G, wandMat);   // Wand vorne mit Tür
+  kiste(stueck, hoch, d, tuer / 2 + stueck / 2, hoch / 2, G, wandMat);
+  kiste(tuer, 12, d, 0, hoch - 6, G, wandMat);
+  // Bett
+  kiste(26, 8, 40, -G + 17, 5, -G + 26, holzMat);
+  kiste(22, 3, 26, -G + 17, 10, -G + 32, mat('#c0392b'));
+  kiste(18, 4, 9, -G + 17, 10, -G + 12, weissMat);
+  // Dach (Pyramide)
+  const dach = new THREE.Mesh(new THREE.ConeGeometry((G + 12) * Math.SQRT2, 42, 4), dachMat);
+  dach.rotation.y = Math.PI / 4; dach.position.y = hoch + 21; dach.castShadow = true;
+  g.add(dach);
+  g.position.set(huette.x, 0, huette.y);
+  return g;
+}
+
+// ---------- Wolf ----------
+const kugel = new THREE.SphereGeometry(1, 12, 9);
+function teil(geo, m, x, y, z, sx = 1, sy = sx, sz = sx) {
+  const k = new THREE.Mesh(geo, m); k.position.set(x, y, z); k.scale.set(sx, sy, sz); k.castShadow = true; return k;
+}
+const beinGeo = new THREE.CylinderGeometry(2.5, 2, 14, 6).translate(0, -7, 0);
+function baueWolf() {
+  const g = new THREE.Group();
+  g.add(teil(kugel, wolfMat, 0, 22, 0, 22, 12, 11));                // Körper
+  g.add(teil(kugel, wolfMat2, 20, 30, 0, 10, 9, 9));                // Kopf
+  g.add(teil(new THREE.BoxGeometry(12, 6, 7), wolfMat2, 30, 27, 0)); // Schnauze
+  g.add(teil(kugel, schwarzMat, 36, 28, 0, 2));                     // Nase
+  const ohr = new THREE.ConeGeometry(3, 8, 4);
+  g.add(teil(ohr, wolfMat, 17, 40, -5), teil(ohr, wolfMat, 17, 40, 5));
+  g.add(teil(kugel, wolfAugen, 27, 32, -4, 2), teil(kugel, wolfAugen, 27, 32, 4, 2)); // leuchtende Augen
+  const schwanz = teil(new THREE.CylinderGeometry(2, 4, 20, 6), wolfMat2, -26, 22, 0); schwanz.rotation.z = 1.1; g.add(schwanz);
+  const beine = [[12, -6], [12, 6], [-12, -6], [-12, 6]].map(([x, z]) => { const b = teil(beinGeo, wolfMat, x, 16, z); g.add(b); return b; });
+  g.userData = { beine, schritt: 0 };
+  return g;
+}
+
+// ---------- Hase ----------
+const ohrGeo = new THREE.CapsuleGeometry(1.6, 7, 3, 6);
+function baueHase() {
+  const g = new THREE.Group();
+  g.add(teil(kugel, hasenMat, 0, 9, 0, 11, 8, 8));
+  g.add(teil(kugel, hasenMat, 9, 14, 0, 6));
+  g.add(teil(ohrGeo, hasenMat, 7, 23, -2.5), teil(ohrGeo, hasenMat, 7, 23, 2.5));
+  g.add(teil(kugel, weissMat, -11, 10, 0, 3.5));
+  g.add(teil(kugel, schwarzMat, 14, 15, -2.5, 1.2), teil(kugel, schwarzMat, 14, 15, 2.5, 1.2));
+  return g;
+}
+
+// ---------- Spieler ----------
+const held = new THREE.Group();
+const hautMat = mat('#f2c49b'), jackeMat = mat('#c0392b'), haarMat = mat('#5a3a1a'), hoseMat = mat('#2c3e66');
+const heldBeinGeo = new THREE.CylinderGeometry(3.5, 3.5, 12, 7).translate(0, -6, 0);
+const heldBein1 = teil(heldBeinGeo, hoseMat, 0, 12, -4), heldBein2 = teil(heldBeinGeo, hoseMat, 0, 12, 4);
+held.add(heldBein1, heldBein2);
+held.add(teil(new THREE.CapsuleGeometry(9, 12, 4, 10), jackeMat, 0, 22, 0));    // Jacke
+held.add(teil(kugel, hautMat, 0, 41, 0, 8));                                    // Kopf
+held.add(teil(new THREE.SphereGeometry(8.7, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), haarMat, -1, 42, 0)); // Haare
+held.add(teil(kugel, schwarzMat, 7.2, 40.5, -3, 1.4), teil(kugel, schwarzMat, 7.2, 40.5, 3, 1.4));      // Augen
+// Speer (zeigt nach vorne)
+const speerModell = new THREE.Group();
+const speerInnen = new THREE.Group(); speerInnen.rotation.z = -Math.PI / 2;
+speerInnen.add(new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 55, 6).translate(0, 12.5, 0), mat('#8a5a2b')));
+speerInnen.add(new THREE.Mesh(new THREE.ConeGeometry(2.8, 9, 6).translate(0, 44, 0), mat('#99aaaa')));
+speerModell.add(speerInnen); speerModell.position.set(4, 24, 12);
+held.add(speerModell);
+held.traverse(m => { if (m.isMesh) m.castShadow = true; });
+scene.add(held);
+
+// ---------- Schnee im Winter ----------
+const SCHNEE = 1500;
+const schneePos = new Float32Array(SCHNEE * 3);
+for (let i = 0; i < SCHNEE; i++) {
+  schneePos[i * 3] = (Math.random() - 0.5) * 900;
+  schneePos[i * 3 + 1] = Math.random() * 400;
+  schneePos[i * 3 + 2] = (Math.random() - 0.5) * 900;
+}
+const schneeGeo = new THREE.BufferGeometry();
+schneeGeo.setAttribute('position', new THREE.BufferAttribute(schneePos, 3));
+const schnee = new THREE.Points(schneeGeo, new THREE.PointsMaterial({ color: '#ffffff', size: 3.5 }));
+scene.add(schnee);
+
+// ---------- Jedes Bild: 3D-Welt an den Spielzustand anpassen ----------
+const kamZiel = new THREE.Vector3();
+function welt3d(dt) {
+  const p = spieler;
+  const jetzt = performance.now();
+  jahreszeitFarben();
+
+  // Bäume: gefällt = Baumstumpf, wackeln beim Hacken
+  baeume.forEach((b, i) => {
+    const t = baumTeile[i];
+    const da = !b.weg;
+    t.stamm.visible = t.unten.visible = t.oben.visible = da;
+    t.stumpf.visible = !da;
+    t.g.position.x = b.x + (b.wackeln > 0 ? Math.sin(b.wackeln * 60) * 3 : 0);
+  });
+  steine.forEach((s, i) => {
+    steinTeile[i].visible = !s.weg;
+    steinTeile[i].position.x = s.x + (s.wackeln > 0 ? Math.sin(s.wackeln * 60) * 2 : 0);
+  });
+  buesche.forEach((b, i) => buschTeile[i].beeren.forEach((m, k) => { m.visible = k < b.beeren; }));
+
+  // Feuer
+  abgleichen(feuer, feuerModelle, baueFeuer);
+  for (const [f, m] of feuerModelle) {
+    m.position.set(f.x, 0, f.y);
+    const g = 0.5 + Math.min(1, f.brennstoff / 40) * 0.5;
+    m.userData.f1.scale.set(g, g * (1 + Math.sin(jetzt / 90) * 0.15), g);
+    m.userData.f2.scale.set(g, g * (1 + Math.cos(jetzt / 70) * 0.2), g);
+    m.userData.f1.rotation.y += dt * 2;
+  }
+  // Die 3 nächsten Feuer bekommen ein Licht
+  const naheFeuer = [...feuer].sort((a, b) => abstand(a, p) - abstand(b, p));
+  feuerLichter.forEach((l, i) => {
+    const f = naheFeuer[i];
+    if (!f) { l.intensity = 0; return; }
+    l.position.set(f.x, 30, f.y);
+    l.intensity = (2.4 + Math.sin(jetzt / 110) * 0.3) * (0.4 + Math.min(1, f.brennstoff / 40) * 0.6);
+  });
+
+  // Hütte
+  abgleichen(huette ? [huette] : [], huettenModelle, baueHuette);
+  dachMat.opacity = inHuette() ? 0.2 : 1;
+  dachMat.depthWrite = !inHuette();
+
+  // Wölfe
+  abgleichen(woelfe, wolfModelle, baueWolf);
+  for (const [w, m] of wolfModelle) {
+    const alt = m.position.clone();
+    m.position.set(w.x, 0, w.y);
+    m.rotation.y = -(w.blick || 0);
+    const bewegt = alt.distanceTo(m.position);
+    m.userData.schritt += bewegt * 0.12;
+    m.userData.beine.forEach((b, i) => { b.rotation.z = Math.sin(m.userData.schritt + (i % 2) * Math.PI) * 0.6; });
+  }
+  // Hasen
+  abgleichen(hasen, hasenModelle, baueHase);
+  for (const [h, m] of hasenModelle) {
+    m.position.set(h.x, Math.abs(Math.sin(h.hopp)) * 6, h.y);
+    m.rotation.y = -h.ziel;
+  }
+
+  // Spieler
+  const wipp = Math.abs(Math.sin(p.laufen || 0)) * 2;
+  held.position.set(p.x, wipp, p.y);
+  held.rotation.y = -p.blick;
+  heldBein1.rotation.z = Math.sin(p.laufen || 0) * 0.6;
+  heldBein2.rotation.z = -Math.sin(p.laufen || 0) * 0.6;
+  speerModell.visible = speer;
+  speerModell.position.x = 4 + (angriffPause > 0.15 ? 15 : 0);
+
+  // Tag und Nacht
+  const n = dunkelheit() / 0.85;     // 0 = hell, 1 = ganz dunkel
+  himmelLicht.intensity = 1.5 * (1 - n) + 0.18;
+  himmelLicht.color.set('#dff1ff').lerp(new THREE.Color('#6a7fc0'), n);
+  sonne.intensity = 2.2 * (1 - n);
+  spielerLicht.intensity = 1.1 * n;
+  spielerLicht.position.set(p.x, 50, p.y);
+  scene.background.copy(tagHimmel).lerp(nachtHimmel, n);
+  scene.fog.color.copy(scene.background);
+  scene.fog.near = 450 - n * 300; scene.fog.far = 1300 - n * 600;
+  sonne.position.set(p.x + 250, 450, p.y + 180);
+  sonne.target.position.set(p.x, 0, p.y);
+
+  // Schnee
+  schnee.visible = istWinter();
+  if (schnee.visible) {
+    for (let i = 0; i < SCHNEE; i++) {
+      schneePos[i * 3 + 1] -= dt * 70;
+      schneePos[i * 3] += Math.sin(jetzt / 900 + i) * dt * 10;
+      if (schneePos[i * 3 + 1] < 0) schneePos[i * 3 + 1] += 400;
+    }
+    schneeGeo.attributes.position.needsUpdate = true;
+    schnee.position.set(p.x, 0, p.y);
+  }
+
+  // Kamera hinter dem Helden
+  kamera.position.set(p.x - Math.cos(kamWinkel) * kamAbstand, kamAbstand * 0.75, p.y - Math.sin(kamWinkel) * kamAbstand);
+  kamZiel.set(p.x, 25, p.y);
+  kamera.lookAt(kamZiel);
+
+  // Bäume zwischen Kamera und Held werden durchsichtig, damit du dich immer siehst
+  const cx = kamera.position.x, cz = kamera.position.z;
+  const vx = p.x - cx, vz = p.y - cz, l2 = vx * vx + vz * vz;
+  baeume.forEach((b, i) => {
+    let durch = false;
+    if (!b.weg) {
+      const t = ((b.x - cx) * vx + (b.y - cz) * vz) / l2;
+      if (t > 0 && t < 1.08) {
+        const qx = cx + vx * t - b.x, qz = cz + vz * t - b.y;
+        durch = qx * qx + qz * qz < (b.r + 20) ** 2;
+      }
+    }
+    const teile = baumTeile[i];
+    if (teile.durch !== durch) {
+      teile.durch = durch;
+      teile.unten.material = durch ? kroneDunkelDurch : kroneDunkel;
+      teile.oben.material = durch ? kroneHellDurch : kroneHell;
+    }
+  });
+
+  renderer.render(scene, kamera);
+}
+
+
+// ---------- Anzeige (HUD) ----------
+function balken(x, y, wert, farbe, symbol, name) {
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x, y, 180, 20);
+  ctx.fillStyle = wert < 25 && Math.floor(performance.now() / 300) % 2 ? '#ff3030' : farbe;
+  ctx.fillRect(x + 2, y + 2, 176 * Math.max(0, wert) / 100, 16);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText(symbol + ' ' + name + ' ' + Math.ceil(Math.max(0, wert)), x + 6, y + 15);
+}
+
+function zeichneHUD() {
+  const p = spieler;
+  // Schaden: roter Rand
+  if (schadenBlitz > 0) { ctx.fillStyle = `rgba(255,0,0,${Math.min(0.35, schadenBlitz)})`; ctx.fillRect(0, 0, B, H); }
+
+  // Balken links oben
+  balken(12, 12, p.leben, '#e74c3c', '❤️', 'Leben');
+  balken(12, 36, p.hunger, '#e67e22', '🍗', 'Hunger');
+  balken(12, 60, p.durst, '#3498db', '💧', 'Durst');
+  balken(12, 84, p.waerme, '#f1c40f', '🔥', 'Wärme');
+
+  // Tag rechts oben
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(B - 230, 10, 220, 80);
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 26px system-ui';
+  ctx.fillText('Tag ' + tag + ' / ' + ZIEL_TAGE, B - 22, 42);
+  ctx.fillStyle = '#fff'; ctx.font = '15px system-ui';
+  ctx.fillText((istNacht() ? '🌙 Nacht' : '☀️ Tag') + ' · ' + jahreszeit(), B - 22, 64);
+  // Fortschritt
+  ctx.fillStyle = '#333'; ctx.fillRect(B - 220, 74, 200, 8);
+  ctx.fillStyle = '#9be37b'; ctx.fillRect(B - 220, 74, 200 * (tag - 1) / ZIEL_TAGE, 8);
+
+  // Inventar unten
+  const items = [['🪵', inv.holz], ['🪨', inv.stein], ['🫐', inv.beeren], ['🥩', inv.fleisch], ['🍖', inv.gebraten], ['🗡️', speer ? '✓' : '–']];
+  const bx = B / 2 - items.length * 31;
+  for (let i = 0; i < items.length; i++) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx + i * 62, H - 70, 56, 56);
+    ctx.textAlign = 'center'; ctx.font = '24px system-ui'; ctx.fillStyle = '#fff';
+    ctx.fillText(items[i][0], bx + i * 62 + 28, H - 38);
+    ctx.font = 'bold 14px system-ui'; ctx.fillText(items[i][1], bx + i * 62 + 28, H - 20);
+  }
+
+  // Hilfe unten links
+  ctx.textAlign = 'left'; ctx.font = '13px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  const hilfe = ['WASD: laufen (W = nach vorne, Shift: rennen)', 'Q/E oder Maus ziehen: Kamera drehen · Mausrad: Zoom', 'Leertaste: hacken, sammeln, trinken, angreifen', 'F: essen · P: Pause',
+    '1: Lagerfeuer (5🪵 2🪨)', '2: Speer (3🪵 3🪨)', '3: Hütte (15🪵 5🪨)'];
+  hilfe.forEach((t, i) => {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(10, H - 36 - (hilfe.length - 1) * 21 + i * 21, ctx.measureText(t).width + 12, 19);
+    ctx.fillStyle = '#fff'; ctx.fillText(t, 16, H - 21 - (hilfe.length - 1) * 21 + i * 21);
+  });
+
+  // Nachrichten
+  ctx.textAlign = 'center'; ctx.font = 'bold 18px system-ui';
+  nachrichten.forEach((n, i) => {
+    ctx.globalAlpha = Math.min(1, n.zeit);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    const w = ctx.measureText(n.text).width + 20;
+    ctx.fillRect(B / 2 - w / 2, 110 + i * 30, w, 26);
+    ctx.fillStyle = n.farbe; ctx.fillText(n.text, B / 2, 129 + i * 30);
+  });
+  ctx.globalAlpha = 1;
+
+  // Warnungen
+  const warn = [];
+  if (p.durst < 25) warn.push('Du hast Durst! Geh zum See 💧');
+  if (p.hunger < 25) warn.push('Du hast Hunger! Drück F 🍗');
+  if (p.waerme < 25) warn.push('Dir ist kalt! Mach ein Feuer 🔥 oder geh in die Hütte 🛖');
+  ctx.font = 'bold 16px system-ui'; ctx.fillStyle = '#ff8080';
+  warn.forEach((t, i) => ctx.fillText(t, B / 2, H - 90 - i * 22));
+
+  if (zustand === 'pause') bildschirm('⏸️ Pause', ['Drück P zum Weiterspielen']);
+}
+
+function bildschirm(titel, zeilen) {
+  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, B, H);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd166'; ctx.font = 'bold 48px system-ui';
+  ctx.fillText(titel, B / 2, H / 2 - 80);
+  ctx.fillStyle = '#fff'; ctx.font = '20px system-ui';
+  zeilen.forEach((z, i) => ctx.fillText(z, B / 2, H / 2 - 20 + i * 32));
+}
+
+// ---------- Hauptschleife ----------
+zustand = 'start';
+neuesSpiel();
+let letzte = performance.now();
+function schleife(jetzt) {
+  const dt = Math.min(0.05, (jetzt - letzte) / 1000);
+  letzte = jetzt;
+  if (zustand === 'spiel') update(dt);
+  if (zustand === 'start') kamWinkel += dt * 0.15;   // Kamera kreist langsam im Startbildschirm
+
+  welt3d(dt);
+
+  ctx.clearRect(0, 0, B, H);
+  if (zustand === 'spiel' || zustand === 'pause') zeichneHUD();
+  if (zustand === 'start') {
+    const z = ['Kannst du 300 Tage im Wald überleben?', '', 'Sammle Holz 🪵, Steine 🪨 und Beeren 🫐.',
+      'Trink am See 💧, baue Lagerfeuer 🔥 und eine Hütte 🛖 gegen Kälte und Wölfe 🐺.', '', '▶ ENTER = Neues Spiel'];
+    if (hatSpielstand()) z.push('▶ L = Weiterspielen (gespeichert)');
+    if (rekord() > 1) z.push('🏆 Dein Rekord: Tag ' + rekord());
+    bildschirm('🌲 300 Tage im Wald 3D 🌲', z);
+  }
+  if (zustand === 'tot') bildschirm('💀 Du hast nicht überlebt', ['Du hast bis Tag ' + tag + ' durchgehalten.', '🏆 Rekord: Tag ' + rekord(), '', 'ENTER = Nochmal versuchen']);
+  if (zustand === 'gewonnen') bildschirm('🏆 GESCHAFFT! 🏆', ['Du hast 300 Tage im Wald überlebt!', 'Du bist ein echter Survival-Profi!', '', 'ENTER = Zurück zum Start']);
+
+  requestAnimationFrame(schleife);
+}
+requestAnimationFrame(schleife);

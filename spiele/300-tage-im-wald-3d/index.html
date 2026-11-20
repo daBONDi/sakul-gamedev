@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>300 Tage im Wald 3D</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #10140f; overflow: hidden; font-family: system-ui, sans-serif; }
+    #welt3d, #hud { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: block; }
+    #hud { pointer-events: none; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="hud"></canvas>
+  <script type="module" src="spiel.js"></script>
+</body>
+</html>
