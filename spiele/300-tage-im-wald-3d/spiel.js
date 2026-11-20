@@ -12,7 +12,7 @@ addEventListener('resize', groesse); groesse();
 
 // ---------- Einstellungen ----------
 const ZIEL_TAGE = 300;
-const TAG_LAENGE = 40;      // Sekunden pro Tag (Tag + Nacht)
+const TAG_LAENGE = 90;      // Sekunden pro Tag (Tag + Nacht)
 const NACHT_ANTEIL = 0.35;  // so viel vom Tag ist Nacht
 const WELT = 3000;          // Größe der Welt in Pixeln
 const SPEICHER = 'wald300-3d-spielstand';
@@ -334,7 +334,7 @@ function update(dt) {
     // Nicht in den See laufen
     if (!imSee(nx, p.y)) bewegeMitKollision(p, dx / l * tempo, 0);
     if (!imSee(p.x, ny)) bewegeMitKollision(p, 0, dy / l * tempo);
-    if (tasten.ShiftLeft) p.durst -= dt * 0.6;
+    if (tasten.ShiftLeft) p.durst -= dt * 0.3;
     p.laufen = (p.laufen || 0) + dt * 12;
   }
 
@@ -354,11 +354,12 @@ function update(dt) {
   const amFeuer = feuer.some(f => abstand(p, f) < 130);
 
   // Körperwerte
-  p.hunger -= dt * 0.9;
-  p.durst -= dt * (jahreszeit() === 'Sommer' ? 1.5 : 1.2);
+  // Kleinere Zahl = Hunger und Durst gehen langsamer weg
+  p.hunger -= dt * 0.4;
+  p.durst -= dt * (jahreszeit() === 'Sommer' ? 0.65 : 0.5);
   let kaelte = 0;
-  if (istNacht()) kaelte = istWinter() ? 3.5 : 2;
-  else kaelte = istWinter() ? 1.2 : -3;
+  if (istNacht()) kaelte = istWinter() ? 1.6 : 0.9;   // die Nacht ist länger, deshalb wird es langsamer kalt
+  else kaelte = istWinter() ? 0.6 : -3;
   if (amFeuer) kaelte = -10;
   else if (inHuette()) kaelte = -6;
   p.waerme -= dt * kaelte;
