@@ -52,12 +52,15 @@ const gras = [];
 for (let i = 0; i < 900; i++) gras.push(freierPlatz());
 
 // ---------- Spielzustand ----------
-let spieler, inv, feuer, huette, woelfe, hasen, zeit, tag, nachrichten, zustand, speer, angriffPause, schadenBlitz;
+let spieler, inv, feuer, huetten, woelfe, hasen, zeit, tag, nachrichten, zustand, speer, angriffPause, schadenBlitz;
+let naechsteId = 1;   // jedes Tier, Feuer und jede Hütte bekommt eine Nummer (wichtig für Mehrspieler)
+let bissPause = 0;
 
 function neuesSpiel() {
   spieler = { x: 1500, y: 1300, leben: 100, hunger: 100, durst: 100, waerme: 100, blick: 0 };
   inv = { holz: 0, stein: 0, beeren: 0, fleisch: 0, gebraten: 0 };
-  feuer = []; huette = null; woelfe = []; hasen = [];
+  feuer = []; huetten = []; woelfe = []; hasen = [];
+  naechsteId = 1; bissPause = 0;
   zeit = 0; tag = 1; speer = false;
   angriffPause = 0; schadenBlitz = 0;
   nachrichten = [];
@@ -69,7 +72,7 @@ function neuesSpiel() {
 function speichern() {
   try {
     localStorage.setItem(SPEICHER, JSON.stringify({
-      spieler, inv, feuer, huette, tag, speer,
+      spieler, inv, feuer, huetten, tag, speer,
       baeume: baeume.map(b => [b.hp, b.weg]),
       steine: steine.map(s => [s.hp, s.weg]),
       buesche: buesche.map(b => [b.beeren, b.nachwachsen]),
@@ -83,7 +86,9 @@ function laden() {
     if (!d) return false;
     neuesSpiel();
     Object.assign(spieler, d.spieler); Object.assign(inv, d.inv);
-    feuer = d.feuer || []; huette = d.huette || null; tag = d.tag; speer = d.speer;
+    feuer = d.feuer || []; huetten = d.huetten || (d.huette ? [{ ...d.huette, nr: 1 }] : []);
+    for (const o of [...feuer, ...huetten]) o.id = naechsteId++;
+    tag = d.tag; speer = d.speer;
     d.baeume.forEach((w, i) => { baeume[i].hp = w[0]; baeume[i].weg = w[1]; });
     d.steine.forEach((w, i) => { steine[i].hp = w[0]; steine[i].weg = w[1]; });
     d.buesche.forEach((w, i) => { buesche[i].beeren = w[0]; buesche[i].nachwachsen = w[1]; });
@@ -117,13 +122,22 @@ addEventListener('keydown', e => {
   if (zustand === 'start') {
     if (e.code === 'Enter') { neuesSpiel(); zustand = 'spiel'; sag('Überlebe 300 Tage im Wald! Viel Glück!', '#ffd166'); }
     if (e.code === 'KeyL' && hatSpielstand() && laden()) { zustand = 'spiel'; sag('Spielstand geladen: Tag ' + tag, '#ffd166'); }
+    if (e.code === 'KeyM') netzHosten();
+    if (e.code === 'KeyB') {
+      tasten.KeyB = false;
+      const code = prompt('Gib den Raum-Code von deinem Freund ein (4 Zeichen):');
+      if (code) netzBeitreten(code);
+    }
     return;
   }
   if (zustand === 'tot' || zustand === 'gewonnen') {
     if (e.code === 'Enter') zustand = 'start';
     return;
   }
-  if (e.code === 'KeyP') zustand = zustand === 'pause' ? 'spiel' : 'pause';
+  if (e.code === 'KeyP') {
+    if (netzRolle !== 'solo') sag('Mit Freunden gibt es keine Pause 😉');
+    else zustand = zustand === 'pause' ? 'spiel' : 'pause';
+  }
   if (zustand !== 'spiel') return;
   if (e.code === 'Digit1') bauFeuer();
   if (e.code === 'Digit2') bauSpeer();
@@ -136,7 +150,7 @@ addEventListener('keyup', e => { tasten[e.code] = false; });
 function bauFeuer() {
   if (inv.holz >= 5 && inv.stein >= 2) {
     inv.holz -= 5; inv.stein -= 2;
-    feuer.push({ x: spieler.x + Math.cos(spieler.blick) * 40, y: spieler.y + Math.sin(spieler.blick) * 40, brennstoff: 60 });
+    neuesFeuer(spieler.x + Math.cos(spieler.blick) * 40, spieler.y + Math.sin(spieler.blick) * 40);
     sag('🔥 Lagerfeuer gebaut!', '#ffb347');
   } else sag('Feuer braucht 5 Holz + 2 Steine', '#ff8080');
 }
@@ -152,19 +166,20 @@ function bauSpeer() {
 // Hütte: drinnen ist es warm, Wölfe können nicht beißen, nachts schläfst du
 const HUETTE_GROESSE = 46;   // halbe Breite der Hütte
 function inHuette(o = spieler) {
-  return !!huette && Math.abs(o.x - huette.x) < HUETTE_GROESSE && Math.abs(o.y - huette.y) < HUETTE_GROESSE;
+  return huetten.some(h => Math.abs(o.x - h.x) < HUETTE_GROESSE && Math.abs(o.y - h.y) < HUETTE_GROESSE);
 }
 
 function bauHuette() {
-  if (huette) return sag('Du hast schon eine Hütte! 🛖');
+  if (huetten.some(h => h.nr === meineNr)) return sag('Du hast schon eine Hütte! 🛖');
   if (inv.holz < 15 || inv.stein < 5) return sag('Hütte braucht 15 Holz + 5 Steine', '#ff8080');
   const x = spieler.x + Math.cos(spieler.blick) * 70, y = spieler.y + Math.sin(spieler.blick) * 70;
   const imWeg = imSee(x, y, 70) || x < 80 || y < 80 || x > WELT - 80 || y > WELT - 80 ||
     baeume.some(b => !b.weg && Math.hypot(x - b.x, y - b.y) < 70) ||
-    steine.some(s => !s.weg && Math.hypot(x - s.x, y - s.y) < 65);
+    steine.some(s => !s.weg && Math.hypot(x - s.x, y - s.y) < 65) ||
+    huetten.some(h => Math.hypot(x - h.x, y - h.y) < 110);
   if (imWeg) return sag('Hier ist kein Platz! Such eine freie Stelle.', '#ff8080');
   inv.holz -= 15; inv.stein -= 5;
-  huette = { x, y };
+  neueHuette(x, y);
   sag('🛖 Hütte gebaut! Geh nachts rein zum Schlafen.', '#ffd166');
 }
 
@@ -185,13 +200,15 @@ function interagieren() {
   for (const w of woelfe) {
     if (abstand(p, w) < reichweite + 10) {
       w.hp -= schaden; angriffPause = 0.35;
+      anHost({ t: 'treffer', art: 'wolf', id: w.id, schaden });
       const d = abstand(p, w) || 1; w.x += (w.x - p.x) / d * 30; w.y += (w.y - p.y) / d * 30;
       if (w.hp <= 0) { inv.fleisch += 2; sag('🐺 Wolf besiegt! +2 Fleisch', '#ffd166'); }
       return;
     }
   }
   for (const h of hasen) {
-    if (abstand(p, h) < reichweite) {
+    if (h.hp > 0 && abstand(p, h) < reichweite) {
+      anHost({ t: 'treffer', art: 'hase', id: h.id });
       h.hp = 0; inv.fleisch++; angriffPause = 0.35; sag('🐇 +1 Fleisch');
       return;
     }
@@ -201,7 +218,7 @@ function interagieren() {
     if (abstand(p, f) < 60) {
       angriffPause = 0.3;
       if (inv.fleisch > 0) { inv.fleisch--; inv.gebraten++; sag('🍖 Fleisch gebraten!'); }
-      else if (inv.holz > 0) { inv.holz--; f.brennstoff = Math.min(150, f.brennstoff + 30); sag('🪵 Holz ins Feuer gelegt'); }
+      else if (inv.holz > 0) { inv.holz--; f.brennstoff = Math.min(150, f.brennstoff + 30); anHost({ t: 'feuerHolz', id: f.id }); sag('🪵 Holz ins Feuer gelegt'); }
       else sag('Kein Holz zum Nachlegen!', '#ff8080');
       return;
     }
@@ -211,6 +228,7 @@ function interagieren() {
     if (abstand(p, b) < 45 && b.beeren > 0) {
       b.beeren--; inv.beeren++; angriffPause = 0.25;
       if (b.beeren === 0) b.nachwachsen = 2;
+      weltGeaendert('busch', buesche.indexOf(b));
       return;
     }
   }
@@ -218,6 +236,7 @@ function interagieren() {
     if (!b.weg && abstand(p, b) < b.r + 30) {
       b.hp -= schaden; angriffPause = 0.35; b.wackeln = 0.2;
       if (b.hp <= 0) { b.weg = 4; inv.holz += 3; sag('🪵 +3 Holz'); }
+      weltGeaendert('baum', baeume.indexOf(b));
       return;
     }
   }
@@ -225,6 +244,7 @@ function interagieren() {
     if (!s.weg && abstand(p, s) < s.r + 30) {
       s.hp -= schaden; angriffPause = 0.4; s.wackeln = 0.2;
       if (s.hp <= 0) { s.weg = 6; inv.stein += 2; sag('🪨 +2 Steine'); }
+      weltGeaendert('stein', steine.indexOf(s));
       return;
     }
   }
@@ -240,7 +260,7 @@ function interagieren() {
 function neuerTag() {
   tag++;
   setzeRekord(tag);
-  if (tag > ZIEL_TAGE) { zustand = 'gewonnen'; try { localStorage.removeItem(SPEICHER); } catch (e) {} return; }
+  if (tag > ZIEL_TAGE) { zustand = 'gewonnen'; anAlle({ t: 'gewonnen' }); try { localStorage.removeItem(SPEICHER); } catch (e) {} return; }
   for (const b of baeume) if (b.weg && --b.weg === 0) b.hp = 3;
   for (const s of steine) if (s.weg && --s.weg === 0) s.hp = 4;
   for (const b of buesche) {
@@ -249,13 +269,14 @@ function neuerTag() {
   sag('☀️ Tag ' + tag + ' beginnt!', '#ffd166');
   if ((tag - 1) % 30 === 0) sag('Die Jahreszeit wechselt: ' + jahreszeit(), istWinter() ? '#bfe6ff' : '#9be37b');
   speichern();
+  anAlle(weltPaket());   // Mehrspieler: nachgewachsene Bäume usw. allen schicken
 }
 
 // ---------- Tiere ----------
-function spawnWeitWeg(min, max) {
+function spawnWeitWeg(min, max, um = spieler) {
   for (let i = 0; i < 20; i++) {
     const a = Math.random() * Math.PI * 2, d = min + Math.random() * (max - min);
-    const x = spieler.x + Math.cos(a) * d, y = spieler.y + Math.sin(a) * d;
+    const x = um.x + Math.cos(a) * d, y = um.y + Math.sin(a) * d;
     if (x > 20 && y > 20 && x < WELT - 20 && y < WELT - 20 && !imSee(x, y, 10)) return { x, y };
   }
   return null;
@@ -273,15 +294,16 @@ function bewegeMitKollision(obj, dx, dy) {
 
 function tiereUpdate(dt) {
   // Hasen: immer ca. 14 in der Nähe
-  hasen = hasen.filter(h => h.hp > 0 && abstand(h, spieler) < 1400);
-  while (hasen.length < (istWinter() ? 6 : 14)) {
-    const pos = spawnWeitWeg(500, 1200); if (!pos) break;
-    hasen.push({ ...pos, hp: 1, ziel: Math.random() * 6.28, t: 0, hopp: 0 });
+  hasen = hasen.filter(h => h.hp > 0 && naechsterSpieler(h).d < 1400);
+  while (hasen.length < Math.min(30, (istWinter() ? 6 : 14) * alleSpieler().length)) {
+    const pos = spawnWeitWeg(500, 1200, zufallsSpieler()); if (!pos) break;
+    hasen.push({ ...pos, id: naechsteId++, hp: 1, ziel: Math.random() * 6.28, t: 0, hopp: 0 });
   }
   for (const h of hasen) {
     h.t -= dt; h.hopp += dt * 10;
     let tempo = 40;
-    if (abstand(h, spieler) < 150) { h.ziel = Math.atan2(h.y - spieler.y, h.x - spieler.x); tempo = 170; }
+    const n = naechsterSpieler(h);
+    if (n.d < 150) { h.ziel = Math.atan2(h.y - n.s.y, h.x - n.s.x); tempo = 170; }
     else if (h.t <= 0) { h.ziel = Math.random() * 6.28; h.t = 1 + Math.random() * 2; }
     const dx = Math.cos(h.ziel) * tempo * dt, dy = Math.sin(h.ziel) * tempo * dt;
     if (!imSee(h.x + dx, h.y + dy)) bewegeMitKollision(h, dx, dy); else h.ziel += Math.PI;
@@ -290,26 +312,37 @@ function tiereUpdate(dt) {
   // Wölfe: kommen in der Nacht. Je später im Spiel, desto mehr.
   const maxWoelfe = istNacht() ? Math.min(8, 1 + Math.floor(tag / 30) + (istWinter() ? 1 : 0)) : 0;
   if (woelfe.length < maxWoelfe && Math.random() < dt * 0.4) {
-    const pos = spawnWeitWeg(600, 800);
-    if (pos) { woelfe.push({ ...pos, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('🐺 Ein Wolf heult in der Dunkelheit...', '#ff8080'); }
+    const pos = spawnWeitWeg(600, 800, zufallsSpieler());
+    if (pos) { woelfe.push({ ...pos, id: naechsteId++, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('🐺 Ein Wolf heult in der Dunkelheit...', '#ff8080'); }
   }
   for (const w of woelfe) {
     w.biss -= dt;
-    let zx = spieler.x, zy = spieler.y, tempo = 135, flucht = false;
+    const n = naechsterSpieler(w);   // der Wolf jagt den Spieler, der am nächsten ist
+    let zx = n.s.x, zy = n.s.y, tempo = 135, flucht = false;
     // Angst vor Feuer
     for (const f of feuer) {
       if (abstand(w, f) < 170) { zx = w.x * 2 - f.x; zy = w.y * 2 - f.y; tempo = 160; flucht = true; }
     }
-    if (huette && abstand(w, huette) < 130) { zx = w.x * 2 - huette.x; zy = w.y * 2 - huette.y; tempo = 160; flucht = true; }
-    if (!istNacht()) { zx = w.x * 2 - spieler.x; zy = w.y * 2 - spieler.y; flucht = true; }
+    for (const h of huetten) if (abstand(w, h) < 130) { zx = w.x * 2 - h.x; zy = w.y * 2 - h.y; tempo = 160; flucht = true; }
+    if (!istNacht()) { zx = w.x * 2 - n.s.x; zy = w.y * 2 - n.s.y; flucht = true; }
     const a = Math.atan2(zy - w.y, zx - w.x);
     w.blick = a;
-    if (flucht || abstand(w, spieler) > 30) bewegeMitKollision(w, Math.cos(a) * tempo * dt, Math.sin(a) * tempo * dt);
-    if (!flucht && !inHuette() && abstand(w, spieler) < 34 && w.biss <= 0) {
-      spieler.leben -= 12; w.biss = 1; schadenBlitz = 0.3;
+    if (flucht || n.d > 30) bewegeMitKollision(w, Math.cos(a) * tempo * dt, Math.sin(a) * tempo * dt);
+  }
+  woelfe = woelfe.filter(w => w.hp > 0 && (istNacht() || naechsterSpieler(w).d < 900));
+}
+
+// Beißt dich ein Wolf? Das prüft jeder Spieler selbst für sich.
+function wolfHatAngst(w) { return feuer.some(f => abstand(w, f) < 170) || huetten.some(h => abstand(w, h) < 130); }
+function wolfBisse(dt) {
+  bissPause -= dt;
+  if (bissPause > 0 || inHuette() || !istNacht()) return;
+  for (const w of woelfe) {
+    if (w.hp > 0 && abstand(w, spieler) < 34 && !wolfHatAngst(w)) {
+      spieler.leben -= 12; schadenBlitz = 0.3; bissPause = 1;
+      return;
     }
   }
-  woelfe = woelfe.filter(w => w.hp > 0 && (istNacht() || abstand(w, spieler) < 900));
 }
 
 // ---------- Update ----------
@@ -343,10 +376,16 @@ function update(dt) {
 
   // Zeit (beim Schlafen in der Hütte vergeht die Nacht 4x so schnell)
   const schlaeft = inHuette() && istNacht();
-  zeit += schlaeft ? dt * 4 : dt;
-  if (schlaeft && !p.schlief) sag('💤 Du schläfst in der Hütte... Zzz', '#bfe6ff');
+  // Mit Freunden geht die Nacht nur schneller vorbei, wenn ALLE in einer Hütte sind
+  const alleSchlafen = schlaeft && Object.values(andere).every(a => a.inH);
+  zeit += alleSchlafen ? dt * 4 : dt;
+  if (schlaeft && !p.schlief) sag(netzRolle === 'solo' ? '💤 Du schläfst in der Hütte... Zzz'
+    : '💤 Zzz... Die Nacht geht schneller, wenn alle in einer Hütte sind', '#bfe6ff');
   p.schlief = schlaeft;
-  if (zeit >= TAG_LAENGE) { zeit -= TAG_LAENGE; neuerTag(); if (zustand !== 'spiel') return; }
+  if (zeit >= TAG_LAENGE) {
+    zeit -= TAG_LAENGE;
+    if (netzRolle !== 'gast') { neuerTag(); if (zustand !== 'spiel') return; }   // beim Gast sagt der Host, wann ein neuer Tag ist
+  }
 
   // Feuer brennen ab
   for (const f of feuer) f.brennstoff -= dt;
@@ -369,14 +408,16 @@ function update(dt) {
   if (p.hunger <= 0 || p.durst <= 0 || p.waerme <= 0) { p.leben -= dt * 3; schadenBlitz = Math.max(schadenBlitz, 0.05); }
   else if (p.hunger > 40 && p.durst > 40 && p.waerme > 40) p.leben = Math.min(100, p.leben + dt * (schlaeft ? 4 : 0.8));
 
-  tiereUpdate(dt);
+  if (netzRolle !== 'gast') tiereUpdate(dt);   // die Tiere steuert nur der Host
+  wolfBisse(dt);
 
   for (const b of baeume) if (b.wackeln > 0) b.wackeln -= dt;
   for (const s of steine) if (s.wackeln > 0) s.wackeln -= dt;
   for (const n of nachrichten) n.zeit -= dt;
   nachrichten = nachrichten.filter(n => n.zeit > 0);
 
-  if (p.leben <= 0) {
+  if (p.leben <= 0 && netzRolle !== 'solo') wiederbeleben();
+  else if (p.leben <= 0) {
     zustand = 'tot';
     try { localStorage.removeItem(SPEICHER); } catch (e) {}
   }
@@ -580,7 +621,7 @@ function baueFeuer() {
 }
 
 // ---------- Hütte ----------
-function baueHuette() {
+function baueHuette(h) {
   const g = new THREE.Group();
   const G = HUETTE_GROESSE, hoch = 45, d = 6;
   const kiste = (b, h, t, x, y, z, m) => {
@@ -603,7 +644,7 @@ function baueHuette() {
   const dach = new THREE.Mesh(new THREE.ConeGeometry((G + 12) * Math.SQRT2, 42, 4), dachMat);
   dach.rotation.y = Math.PI / 4; dach.position.y = hoch + 21; dach.castShadow = true;
   g.add(dach);
-  g.position.set(huette.x, 0, huette.y);
+  g.position.set(h.x, 0, h.y);
   return g;
 }
 
@@ -640,25 +681,46 @@ function baueHase() {
   return g;
 }
 
-// ---------- Spieler ----------
-const held = new THREE.Group();
-const hautMat = mat('#f2c49b'), jackeMat = mat('#c0392b'), haarMat = mat('#5a3a1a'), hoseMat = mat('#2c3e66');
+// ---------- Spieler (du und deine Freunde) ----------
+const SPIELER_FARBEN = ['#c0392b', '#2f7fd8', '#d05fc0', '#3fae4f', '#e6b800', '#e67e22', '#8e6bff', '#20b2aa'];
+const hautMat = mat('#f2c49b'), haarMat = mat('#5a3a1a'), hoseMat = mat('#2c3e66');
 const heldBeinGeo = new THREE.CylinderGeometry(3.5, 3.5, 12, 7).translate(0, -6, 0);
-const heldBein1 = teil(heldBeinGeo, hoseMat, 0, 12, -4), heldBein2 = teil(heldBeinGeo, hoseMat, 0, 12, 4);
-held.add(heldBein1, heldBein2);
-held.add(teil(new THREE.CapsuleGeometry(9, 12, 4, 10), jackeMat, 0, 22, 0));    // Jacke
-held.add(teil(kugel, hautMat, 0, 41, 0, 8));                                    // Kopf
-held.add(teil(new THREE.SphereGeometry(8.7, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), haarMat, -1, 42, 0)); // Haare
-held.add(teil(kugel, schwarzMat, 7.2, 40.5, -3, 1.4), teil(kugel, schwarzMat, 7.2, 40.5, 3, 1.4));      // Augen
-// Speer (zeigt nach vorne)
-const speerModell = new THREE.Group();
-const speerInnen = new THREE.Group(); speerInnen.rotation.z = -Math.PI / 2;
-speerInnen.add(new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 55, 6).translate(0, 12.5, 0), mat('#8a5a2b')));
-speerInnen.add(new THREE.Mesh(new THREE.ConeGeometry(2.8, 9, 6).translate(0, 44, 0), mat('#99aaaa')));
-speerModell.add(speerInnen); speerModell.position.set(4, 24, 12);
-held.add(speerModell);
-held.traverse(m => { if (m.isMesh) m.castShadow = true; });
+const jackeGeo = new THREE.CapsuleGeometry(9, 12, 4, 10);
+const haarGeo = new THREE.SphereGeometry(8.7, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+const speerStock = new THREE.CylinderGeometry(1.3, 1.3, 55, 6).translate(0, 12.5, 0), speerSpitze = new THREE.ConeGeometry(2.8, 9, 6).translate(0, 44, 0);
+const speerHolz = mat('#8a5a2b'), speerMetall = mat('#99aaaa');
+function baueHeld(farbe) {
+  const g = new THREE.Group();
+  const jacke = mat(farbe);
+  const bein1 = teil(heldBeinGeo, hoseMat, 0, 12, -4), bein2 = teil(heldBeinGeo, hoseMat, 0, 12, 4);
+  g.add(bein1, bein2);
+  g.add(teil(jackeGeo, jacke, 0, 22, 0));                                    // Jacke
+  g.add(teil(kugel, hautMat, 0, 41, 0, 8));                                  // Kopf
+  g.add(teil(haarGeo, haarMat, -1, 42, 0));                                  // Haare
+  g.add(teil(kugel, schwarzMat, 7.2, 40.5, -3, 1.4), teil(kugel, schwarzMat, 7.2, 40.5, 3, 1.4)); // Augen
+  // Speer (zeigt nach vorne)
+  const speerG = new THREE.Group();
+  const innen = new THREE.Group(); innen.rotation.z = -Math.PI / 2;
+  innen.add(new THREE.Mesh(speerStock, speerHolz), new THREE.Mesh(speerSpitze, speerMetall));
+  speerG.add(innen); speerG.position.set(4, 24, 12);
+  g.add(speerG);
+  g.traverse(m => { if (m.isMesh) m.castShadow = true; });
+  g.userData = { jacke, bein1, bein2, speerG };
+  return g;
+}
+// Ein Spieler-Modell an die Daten anpassen (Position, Blick, Beine, Speer)
+function stelleHeld(g, d, stoss) {
+  const wipp = Math.abs(Math.sin(d.laufen || 0)) * 2;
+  g.position.set(d.x, wipp, d.y);
+  g.rotation.y = -(d.blick || 0);
+  g.userData.bein1.rotation.z = Math.sin(d.laufen || 0) * 0.6;
+  g.userData.bein2.rotation.z = -Math.sin(d.laufen || 0) * 0.6;
+  g.userData.speerG.visible = !!d.speer;
+  g.userData.speerG.position.x = 4 + (stoss ? 15 : 0);
+}
+const held = baueHeld(SPIELER_FARBEN[0]);
 scene.add(held);
+const andereModelle = new Map();
 
 // ---------- Schnee im Winter ----------
 const SCHNEE = 1500;
@@ -713,7 +775,7 @@ function welt3d(dt) {
   });
 
   // Hütte
-  abgleichen(huette ? [huette] : [], huettenModelle, baueHuette);
+  abgleichen(huetten, huettenModelle, baueHuette);
   dachMat.opacity = inHuette() ? 0.2 : 1;
   dachMat.depthWrite = !inHuette();
 
@@ -735,13 +797,11 @@ function welt3d(dt) {
   }
 
   // Spieler
-  const wipp = Math.abs(Math.sin(p.laufen || 0)) * 2;
-  held.position.set(p.x, wipp, p.y);
-  held.rotation.y = -p.blick;
-  heldBein1.rotation.z = Math.sin(p.laufen || 0) * 0.6;
-  heldBein2.rotation.z = -Math.sin(p.laufen || 0) * 0.6;
-  speerModell.visible = speer;
-  speerModell.position.x = 4 + (angriffPause > 0.15 ? 15 : 0);
+  held.userData.jacke.color.set(SPIELER_FARBEN[meineNr - 1]);
+  stelleHeld(held, { ...p, speer }, angriffPause > 0.15);
+  // Deine Freunde
+  abgleichen(Object.values(andere), andereModelle, a => baueHeld(SPIELER_FARBEN[(a.nr - 1) % 8]));
+  for (const [a, m] of andereModelle) stelleHeld(m, a, false);
 
   // Tag und Nacht
   const n = dunkelheit() / 0.85;     // 0 = hell, 1 = ganz dunkel
@@ -796,6 +856,279 @@ function welt3d(dt) {
   renderer.render(scene, kamera);
 }
 
+
+// ---------- 👫 Mehrspieler (mit PeerJS) ----------
+// Die Computer verbinden sich direkt miteinander.
+// Einer erstellt den Raum (der "Host"), die anderen treten mit dem Raum-Code bei.
+// Der Host passt auf die Welt auf: Zeit, Tiere, Feuer, Hütten.
+// Jeder Spieler hat seinen eigenen Hunger, Durst, Wärme und seine eigenen Sachen.
+
+let netzRolle = 'solo';      // 'solo', 'host' oder 'gast'
+let peer = null;
+let hostVerbindung = null;   // nur für Gäste: die Verbindung zum Host
+const gaeste = new Map();    // nur für den Host: alle Gäste
+let andere = {};             // die anderen Spieler
+let meineNr = 1;
+let raumCode = '';
+let netzText = '';           // Info-Text im Startbildschirm
+let netzUhr = 0;
+const MAX_SPIELER = 8;
+
+function codeMachen() {
+  const zeichen = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 4; i++) c += zeichen[Math.floor(Math.random() * zeichen.length)];
+  return c;
+}
+const peerName = code => 'wald300-raum-' + code.toLowerCase();
+
+function peerDa() {
+  if (typeof Peer === 'undefined') { netzText = '😕 Online geht gerade nicht. Bist du mit dem Internet verbunden?'; return false; }
+  return true;
+}
+
+// ---------- Hilfen für die Spiel-Logik ----------
+function alleSpieler() { return [spieler, ...Object.values(andere)]; }
+function zufallsSpieler() { const a = alleSpieler(); return a[Math.floor(Math.random() * a.length)]; }
+function naechsterSpieler(o) {
+  let s = spieler, d = abstand(o, spieler);
+  for (const a of Object.values(andere)) { const da = abstand(o, a); if (da < d) { d = da; s = a; } }
+  return { s, d };
+}
+
+// Nur Gäste schicken etwas an den Host
+function anHost(d) { if (netzRolle === 'gast' && hostVerbindung && hostVerbindung.open) hostVerbindung.send(d); }
+// Nur der Host schickt etwas an alle Gäste
+function anAlle(d, ausser) { if (netzRolle === 'host') for (const g of gaeste.values()) if (g !== ausser && g.open) g.send(d); }
+
+function neuesFeuer(x, y) {
+  if (netzRolle === 'gast') anHost({ t: 'feuer+', x, y });
+  else feuer.push({ id: naechsteId++, x, y, brennstoff: 60 });
+}
+function neueHuette(x, y, nr = meineNr) {
+  if (netzRolle === 'gast') anHost({ t: 'huette+', x, y, nr });
+  else if (!huetten.some(h => h.nr === nr)) huetten.push({ id: naechsteId++, x, y, nr });
+}
+
+// Ein Baum, Stein oder Busch hat sich verändert -> den anderen erzählen
+const WELT_LISTEN = { baum: baeume, stein: steine, busch: buesche };
+function weltWerte(art, o) { return art === 'busch' ? [o.beeren, o.nachwachsen] : [o.hp, o.weg]; }
+function weltSetzen(art, i, w) {
+  const o = WELT_LISTEN[art][i]; if (!o) return;
+  if (art === 'busch') { o.beeren = w[0]; o.nachwachsen = w[1]; } else { o.hp = w[0]; o.weg = w[1]; }
+}
+function weltGeaendert(art, i) {
+  const d = { t: 'welt1', art, i, w: weltWerte(art, WELT_LISTEN[art][i]) };
+  anAlle(d); anHost(d);
+}
+function weltPaket() {
+  return { t: 'welt', baeume: baeume.map(b => [b.hp, b.weg]), steine: steine.map(s => [s.hp, s.weg]), buesche: buesche.map(b => [b.beeren, b.nachwachsen]) };
+}
+function weltAnwenden(d) {
+  d.baeume.forEach((w, i) => weltSetzen('baum', i, w));
+  d.steine.forEach((w, i) => weltSetzen('stein', i, w));
+  d.buesche.forEach((w, i) => weltSetzen('busch', i, w));
+}
+
+// Wenn du im Mehrspieler umkippst: bei deiner Hütte (oder am Start) wieder aufwachen
+function wiederbeleben() {
+  const h = huetten.find(h => h.nr === meineNr);
+  Object.assign(spieler, { x: h ? h.x : 1500, y: h ? h.y : 1300, leben: 100, hunger: 80, durst: 80, waerme: 80 });
+  inv = { holz: 0, stein: 0, beeren: 0, fleisch: 0, gebraten: 0 };
+  sag('💫 Du bist umgekippt! Du wachst wieder auf, aber deine Sachen sind weg.', '#ff8080');
+}
+
+// ---------- Host: einen Raum erstellen ----------
+function netzHosten() {
+  if (!peerDa() || peer) return;
+  const weiter = hatSpielstand() && confirm('Willst du dein gespeichertes Spiel mit Freunden weiterspielen?\n\nOK = weiterspielen\nAbbrechen = neues Spiel');
+  raumCode = codeMachen();
+  netzText = '⏳ Raum wird erstellt …';
+  peer = new Peer(peerName(raumCode));
+
+  peer.on('open', () => {
+    netzRolle = 'host'; meineNr = 1;
+    if (!(weiter && laden())) neuesSpiel();
+    zustand = 'spiel';
+    sag('👫 Dein Raum-Code ist ' + raumCode + ' – sag ihn deinen Freunden!', '#7bd389');
+  });
+
+  peer.on('connection', v => {
+    v.on('open', () => {
+      if (gaeste.size >= MAX_SPIELER - 1) { v.send({ t: 'voll' }); setTimeout(() => v.close(), 500); return; }
+      v.nr = freieNummer();
+      gaeste.set(v.peer, v);
+      v.send({ ...weltPaket(), t: 'start', nr: v.nr, tag, zeit, feuer, huetten });
+      sag('👋 Spieler ' + v.nr + ' ist da!', SPIELER_FARBEN[v.nr - 1]);
+    });
+    v.on('data', d => hostEmpfaengt(v, d));
+    v.on('close', () => {
+      if (!gaeste.has(v.peer)) return;
+      gaeste.delete(v.peer);
+      delete andere[v.peer];
+      sag('Spieler ' + v.nr + ' ist gegangen', '#aaa');
+    });
+  });
+
+  // Falls die Verbindung zum Vermittlungs-Dienst abbricht: neu verbinden
+  peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id') { peer.destroy(); peer = null; netzHosten(); return; } // Code schon vergeben -> neuer Code
+    if (netzRolle === 'solo') { netzText = '😕 Das hat nicht geklappt (' + e.type + '). Versuch es nochmal!'; peer = null; }
+  });
+}
+
+function freieNummer() {
+  const belegt = new Set([1, ...[...gaeste.values()].map(g => g.nr)]);
+  for (let n = 2; n <= MAX_SPIELER; n++) if (!belegt.has(n)) return n;
+  return MAX_SPIELER;
+}
+
+function hostEmpfaengt(v, d) {
+  if (d.t === 'pos') spielerMerken(v.peer, { ...d, nr: v.nr });
+  else if (d.t === 'welt1') { weltSetzen(d.art, d.i, d.w); anAlle(d, v); }
+  else if (d.t === 'feuer+') neuesFeuer(d.x, d.y);
+  else if (d.t === 'huette+') neueHuette(d.x, d.y, v.nr);
+  else if (d.t === 'feuerHolz') { const f = feuer.find(f => f.id === d.id); if (f) f.brennstoff = Math.min(150, f.brennstoff + 30); }
+  else if (d.t === 'treffer') {
+    if (d.art === 'hase') { const h = hasen.find(h => h.id === d.id); if (h) h.hp = 0; }
+    if (d.art === 'wolf') {
+      const w = woelfe.find(w => w.id === d.id), a = andere[v.peer];
+      if (!w) return;
+      w.hp -= d.schaden;
+      if (a) { const l = abstand(a, w) || 1; w.x += (w.x - a.x) / l * 30; w.y += (w.y - a.y) / l * 30; }
+    }
+  }
+}
+
+// ---------- Gast: bei einem Freund mitspielen ----------
+function netzBeitreten(code) {
+  code = code.trim().toUpperCase();
+  if (code.length !== 4) { netzText = 'Der Raum-Code hat 4 Zeichen.'; return; }
+  if (!peerDa() || peer) return;
+  netzText = '⏳ Suche Raum ' + code + ' …';
+  peer = new Peer();
+
+  peer.on('open', () => {
+    hostVerbindung = peer.connect(peerName(code), { reliable: true });
+    hostVerbindung.on('data', gastEmpfaengt);
+    hostVerbindung.on('close', () => {
+      if (netzRolle !== 'gast') return;
+      alert('Die Verbindung zu deinem Freund ist weg. 😕 Das Spiel startet neu.');
+      location.reload();
+    });
+    raumCode = code;
+  });
+  peer.on('error', e => {
+    if (e.type === 'peer-unavailable') netzText = '😕 Den Raum ' + code + ' gibt es nicht. Stimmt der Code?';
+    else netzText = '😕 Das hat nicht geklappt (' + e.type + '). Versuch es nochmal!';
+    if (netzRolle === 'solo') { peer.destroy(); peer = null; }
+  });
+}
+
+// Liste mit Tieren/Feuern vom Host übernehmen. Dinge mit gleicher Nummer bleiben dieselben,
+// damit die 3D-Modelle nicht jedes Mal neu gebaut werden.
+function uebernehmen(liste, neu) {
+  const alt = new Map(liste.map(o => [o.id, o]));
+  return neu.map(n => {
+    const o = alt.get(n.id);
+    if (!o) return { ...n, zx: n.x, zy: n.y };
+    Object.assign(o, n, { x: o.x, y: o.y, zx: n.x, zy: n.y });
+    return o;
+  });
+}
+
+function gastEmpfaengt(d) {
+  if (d.t === 'start') {
+    neuesSpiel();
+    weltAnwenden(d);
+    feuer = d.feuer; huetten = d.huetten; tag = d.tag; zeit = d.zeit;
+    meineNr = d.nr;
+    netzRolle = 'gast';
+    zustand = 'spiel';
+    sag('👫 Du bist Spieler ' + meineNr + '! Viel Spaß im Wald!', SPIELER_FARBEN[meineNr - 1]);
+  } else if (d.t === 'welt') weltAnwenden(d);
+  else if (d.t === 'welt1') weltSetzen(d.art, d.i, d.w);
+  else if (d.t === 'lage') {
+    zeit = d.zeit;
+    if (d.tag !== tag) {
+      tag = d.tag;
+      sag('☀️ Tag ' + tag + ' beginnt!', '#ffd166');
+      if ((tag - 1) % 30 === 0) sag('Die Jahreszeit wechselt: ' + jahreszeit(), istWinter() ? '#bfe6ff' : '#9be37b');
+    }
+    const da = new Set();
+    for (const s of d.spieler) {
+      if (s.nr === meineNr) continue;
+      spielerMerken(s.nr, s); da.add(String(s.nr));
+    }
+    for (const id in andere) if (!da.has(id)) delete andere[id];
+    woelfe = uebernehmen(woelfe, d.woelfe);
+    hasen = uebernehmen(hasen, d.hasen);
+    feuer = uebernehmen(feuer, d.feuer);
+    huetten = uebernehmen(huetten, d.huetten);
+  } else if (d.t === 'gewonnen') zustand = 'gewonnen';
+  else if (d.t === 'voll') netzText = '😕 Der Raum ist voll (höchstens ' + MAX_SPIELER + ' Spieler).';
+}
+
+// ---------- Für alle ----------
+function spielerMerken(id, d) {
+  const a = andere[id] ||= { x: d.x, y: d.y };
+  Object.assign(a, { nr: d.nr, zx: d.x, zy: d.y, blick: d.blick, laufen: d.laufen, speer: d.speer, inH: d.inH });
+}
+
+function meinePosition() {
+  return { x: Math.round(spieler.x), y: Math.round(spieler.y), blick: +spieler.blick.toFixed(2),
+           laufen: +(spieler.laufen || 0).toFixed(2), speer, inH: inHuette() };
+}
+const rund = o => ({ ...o, x: Math.round(o.x), y: Math.round(o.y) });
+
+// Jedes Bild: andere weich bewegen und 10-mal pro Sekunde Daten schicken
+function netzTick(dt) {
+  const weich = o => { if (o.zx === undefined) return; o.x += (o.zx - o.x) * Math.min(1, dt * 12); o.y += (o.zy - o.y) * Math.min(1, dt * 12); };
+  for (const a of Object.values(andere)) weich(a);
+  if (netzRolle === 'gast') {
+    for (const w of woelfe) weich(w);
+    for (const h of hasen) { weich(h); h.hopp = (h.hopp || 0) + dt * 10; }
+  }
+  if (netzRolle === 'solo' || zustand !== 'spiel') return;
+  netzUhr += dt;
+  if (netzUhr < 0.1) return;
+  netzUhr = 0;
+  if (netzRolle === 'gast') anHost({ t: 'pos', ...meinePosition() });
+  if (netzRolle === 'host') {
+    const liste = [{ nr: 1, ...meinePosition() }];
+    for (const a of Object.values(andere)) liste.push({ nr: a.nr, x: a.zx, y: a.zy, blick: a.blick, laufen: a.laufen, speer: a.speer, inH: a.inH });
+    anAlle({
+      t: 'lage', zeit, tag, spieler: liste,
+      woelfe: woelfe.map(w => rund({ id: w.id, x: w.x, y: w.y, blick: +(w.blick || 0).toFixed(2), hp: w.hp })),
+      hasen: hasen.map(h => rund({ id: h.id, x: h.x, y: h.y, ziel: +h.ziel.toFixed(2), hp: h.hp })),
+      feuer: feuer.map(f => rund({ id: f.id, x: f.x, y: f.y, brennstoff: Math.round(f.brennstoff) })),
+      huetten,
+    });
+  }
+}
+
+// Raum-Code und Namen über den Köpfen anzeigen
+const kopfPunkt = new THREE.Vector3();
+function zeichneNetzHUD() {
+  if (netzRolle === 'solo') return;
+  ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center';
+  for (const a of Object.values(andere)) {
+    kopfPunkt.set(a.x, 64, a.y).project(kamera);
+    if (kopfPunkt.z > 1) continue;   // hinter der Kamera
+    const sx = (kopfPunkt.x + 1) / 2 * B, sy = (1 - kopfPunkt.y) / 2 * H;
+    const name = 'Spieler ' + a.nr + (a.inH ? ' 🛖' : '');
+    const w = ctx.measureText(name).width + 12;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(sx - w / 2, sy - 16, w, 20);
+    ctx.fillStyle = SPIELER_FARBEN[(a.nr - 1) % 8]; ctx.fillText(name, sx, sy - 1);
+  }
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(B - 230, 96, 220, 48);
+  ctx.fillStyle = '#7bd389'; ctx.font = 'bold 16px system-ui';
+  ctx.fillText('👫 Raum-Code: ' + raumCode, B - 22, 116);
+  ctx.fillStyle = SPIELER_FARBEN[meineNr - 1]; ctx.font = '14px system-ui';
+  ctx.fillText('Du: Spieler ' + meineNr + ' · ' + alleSpieler().length + ' im Wald', B - 22, 136);
+}
 
 // ---------- Anzeige (HUD) ----------
 function balken(x, y, wert, farbe, symbol, name) {
@@ -885,16 +1218,19 @@ function schleife(jetzt) {
   const dt = Math.min(0.05, (jetzt - letzte) / 1000);
   letzte = jetzt;
   if (zustand === 'spiel') update(dt);
+  netzTick(dt);
   if (zustand === 'start') kamWinkel += dt * 0.15;   // Kamera kreist langsam im Startbildschirm
 
   welt3d(dt);
 
   ctx.clearRect(0, 0, B, H);
-  if (zustand === 'spiel' || zustand === 'pause') zeichneHUD();
+  if (zustand === 'spiel' || zustand === 'pause') { zeichneHUD(); zeichneNetzHUD(); }
   if (zustand === 'start') {
-    const z = ['Kannst du 300 Tage im Wald überleben?', '', 'Sammle Holz 🪵, Steine 🪨 und Beeren 🫐.',
-      'Trink am See 💧, baue Lagerfeuer 🔥 und eine Hütte 🛖 gegen Kälte und Wölfe 🐺.', '', '▶ ENTER = Neues Spiel'];
+    const z = ['Kannst du 300 Tage im Wald überleben?', 'Sammle Holz 🪵, Steine 🪨 und Beeren 🫐.',
+      'Trink am See 💧, baue Lagerfeuer 🔥 und eine Hütte 🛖 gegen Kälte und Wölfe 🐺.', '', '▶ ENTER = Allein spielen'];
     if (hatSpielstand()) z.push('▶ L = Weiterspielen (gespeichert)');
+    z.push('👫 M = Mit Freunden spielen (Raum erstellen)', '👫 B = Bei einem Freund mitspielen (Code eingeben)');
+    if (netzText) z.push(netzText);
     if (rekord() > 1) z.push('🏆 Dein Rekord: Tag ' + rekord());
     bildschirm('🌲 300 Tage im Wald 3D 🌲', z);
   }
