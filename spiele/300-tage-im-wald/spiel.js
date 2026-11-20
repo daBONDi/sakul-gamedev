@@ -50,12 +50,12 @@ const gras = [];
 for (let i = 0; i < 900; i++) gras.push(freierPlatz());
 
 // ---------- Spielzustand ----------
-let spieler, inv, feuer, woelfe, hasen, zeit, tag, nachrichten, zustand, speer, angriffPause, schadenBlitz;
+let spieler, inv, feuer, huette, woelfe, hasen, zeit, tag, nachrichten, zustand, speer, angriffPause, schadenBlitz;
 
 function neuesSpiel() {
   spieler = { x: 1500, y: 1300, leben: 100, hunger: 100, durst: 100, waerme: 100, blick: 0 };
   inv = { holz: 0, stein: 0, beeren: 0, fleisch: 0, gebraten: 0 };
-  feuer = []; woelfe = []; hasen = [];
+  feuer = []; huette = null; woelfe = []; hasen = [];
   zeit = 0; tag = 1; speer = false;
   angriffPause = 0; schadenBlitz = 0;
   nachrichten = [];
@@ -67,7 +67,7 @@ function neuesSpiel() {
 function speichern() {
   try {
     localStorage.setItem(SPEICHER, JSON.stringify({
-      spieler, inv, feuer, tag, speer,
+      spieler, inv, feuer, huette, tag, speer,
       baeume: baeume.map(b => [b.hp, b.weg]),
       steine: steine.map(s => [s.hp, s.weg]),
       buesche: buesche.map(b => [b.beeren, b.nachwachsen]),
@@ -81,7 +81,7 @@ function laden() {
     if (!d) return false;
     neuesSpiel();
     Object.assign(spieler, d.spieler); Object.assign(inv, d.inv);
-    feuer = d.feuer || []; tag = d.tag; speer = d.speer;
+    feuer = d.feuer || []; huette = d.huette || null; tag = d.tag; speer = d.speer;
     d.baeume.forEach((w, i) => { baeume[i].hp = w[0]; baeume[i].weg = w[1]; });
     d.steine.forEach((w, i) => { steine[i].hp = w[0]; steine[i].weg = w[1]; });
     d.buesche.forEach((w, i) => { buesche[i].beeren = w[0]; buesche[i].nachwachsen = w[1]; });
@@ -125,6 +125,7 @@ addEventListener('keydown', e => {
   if (zustand !== 'spiel') return;
   if (e.code === 'Digit1') bauFeuer();
   if (e.code === 'Digit2') bauSpeer();
+  if (e.code === 'Digit3') bauHuette();
   if (e.code === 'KeyF') essen();
 });
 addEventListener('keyup', e => { tasten[e.code] = false; });
@@ -144,6 +145,25 @@ function bauSpeer() {
     inv.holz -= 3; inv.stein -= 3; speer = true;
     sag('🗡️ Speer gebaut! Du haust jetzt doppelt so stark zu.', '#ffd166');
   } else sag('Speer braucht 3 Holz + 3 Steine', '#ff8080');
+}
+
+// Hütte: drinnen ist es warm, Wölfe können nicht beißen, nachts schläfst du
+const HUETTE_GROESSE = 46;   // halbe Breite der Hütte
+function inHuette(o = spieler) {
+  return !!huette && Math.abs(o.x - huette.x) < HUETTE_GROESSE && Math.abs(o.y - huette.y) < HUETTE_GROESSE;
+}
+
+function bauHuette() {
+  if (huette) return sag('Du hast schon eine Hütte! 🛖');
+  if (inv.holz < 15 || inv.stein < 5) return sag('Hütte braucht 15 Holz + 5 Steine', '#ff8080');
+  const x = spieler.x + Math.cos(spieler.blick) * 70, y = spieler.y + Math.sin(spieler.blick) * 70;
+  const imWeg = imSee(x, y, 70) || x < 80 || y < 80 || x > WELT - 80 || y > WELT - 80 ||
+    baeume.some(b => !b.weg && Math.hypot(x - b.x, y - b.y) < 70) ||
+    steine.some(s => !s.weg && Math.hypot(x - s.x, y - s.y) < 65);
+  if (imWeg) return sag('Hier ist kein Platz! Such eine freie Stelle.', '#ff8080');
+  inv.holz -= 15; inv.stein -= 5;
+  huette = { x, y };
+  sag('🛖 Hütte gebaut! Geh nachts rein zum Schlafen.', '#ffd166');
 }
 
 function essen() {
@@ -278,11 +298,12 @@ function tiereUpdate(dt) {
     for (const f of feuer) {
       if (abstand(w, f) < 170) { zx = w.x * 2 - f.x; zy = w.y * 2 - f.y; tempo = 160; flucht = true; }
     }
+    if (huette && abstand(w, huette) < 130) { zx = w.x * 2 - huette.x; zy = w.y * 2 - huette.y; tempo = 160; flucht = true; }
     if (!istNacht()) { zx = w.x * 2 - spieler.x; zy = w.y * 2 - spieler.y; flucht = true; }
     const a = Math.atan2(zy - w.y, zx - w.x);
     w.blick = a;
     if (flucht || abstand(w, spieler) > 30) bewegeMitKollision(w, Math.cos(a) * tempo * dt, Math.sin(a) * tempo * dt);
-    if (!flucht && abstand(w, spieler) < 34 && w.biss <= 0) {
+    if (!flucht && !inHuette() && abstand(w, spieler) < 34 && w.biss <= 0) {
       spieler.leben -= 12; w.biss = 1; schadenBlitz = 0.3;
     }
   }
@@ -313,8 +334,11 @@ function update(dt) {
   angriffPause -= dt; schadenBlitz -= dt;
   if (tasten.Space) interagieren();
 
-  // Zeit
-  zeit += dt;
+  // Zeit (beim Schlafen in der Hütte vergeht die Nacht 4x so schnell)
+  const schlaeft = inHuette() && istNacht();
+  zeit += schlaeft ? dt * 4 : dt;
+  if (schlaeft && !p.schlief) sag('💤 Du schläfst in der Hütte... Zzz', '#bfe6ff');
+  p.schlief = schlaeft;
   if (zeit >= TAG_LAENGE) { zeit -= TAG_LAENGE; neuerTag(); if (zustand !== 'spiel') return; }
 
   // Feuer brennen ab
@@ -329,12 +353,13 @@ function update(dt) {
   if (istNacht()) kaelte = istWinter() ? 3.5 : 2;
   else kaelte = istWinter() ? 1.2 : -3;
   if (amFeuer) kaelte = -10;
+  else if (inHuette()) kaelte = -6;
   p.waerme -= dt * kaelte;
   p.hunger = Math.max(0, p.hunger); p.durst = Math.max(0, p.durst);
   p.waerme = Math.max(0, Math.min(100, p.waerme));
 
   if (p.hunger <= 0 || p.durst <= 0 || p.waerme <= 0) { p.leben -= dt * 3; schadenBlitz = Math.max(schadenBlitz, 0.05); }
-  else if (p.hunger > 40 && p.durst > 40 && p.waerme > 40) p.leben = Math.min(100, p.leben + dt * 0.8);
+  else if (p.hunger > 40 && p.durst > 40 && p.waerme > 40) p.leben = Math.min(100, p.leben + dt * (schlaeft ? 4 : 0.8));
 
   tiereUpdate(dt);
 
@@ -399,6 +424,9 @@ function zeichneWelt() {
     for (let i = 0; i < 6; i++) { const a = i / 6 * 6.28; kreis(f.x + Math.cos(a) * 16, f.y + Math.sin(a) * 16, 5, '#888'); }
   }
 
+  // Hütte (Boden und Wände)
+  if (huette) zeichneHuetteUnten();
+
   // Tiere
   for (const h of hasen) {
     if (!sichtbar(h)) continue;
@@ -432,6 +460,9 @@ function zeichneWelt() {
     kreis(b.x + w - b.r * 0.3, b.y - 10 - b.r * 0.3, b.r * 0.6, hell);
   }
 
+  // Hütten-Dach (durchsichtig, wenn du drin bist)
+  if (huette) zeichneHuetteDach();
+
   // Flammen
   for (const f of feuer) {
     const t = performance.now() / 100;
@@ -442,6 +473,35 @@ function zeichneWelt() {
 
   ctx.restore();
   zeichneDunkelheit(kx, ky);
+}
+
+function zeichneHuetteUnten() {
+  const { x, y } = huette, g = HUETTE_GROESSE;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x - g + 6, y - g + 8, g * 2, g * 2);   // Schatten
+  ctx.fillStyle = '#a07a4e'; ctx.fillRect(x - g, y - g, g * 2, g * 2);                     // Holzboden
+  ctx.strokeStyle = '#8a6640'; ctx.lineWidth = 2;
+  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x - g, y - g + i * g / 3); ctx.lineTo(x + g, y - g + i * g / 3); ctx.stroke(); }
+  ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 7; ctx.strokeRect(x - g, y - g, g * 2, g * 2); // Wände
+  ctx.fillStyle = '#a07a4e'; ctx.fillRect(x - 14, y + g - 5, 28, 10);                      // Tür
+  // Bett
+  ctx.fillStyle = '#7a4a2a'; ctx.fillRect(x - g + 8, y - g + 8, 26, 40);
+  ctx.fillStyle = '#c0392b'; ctx.fillRect(x - g + 10, y - g + 22, 22, 24);
+  ctx.fillStyle = '#eee'; ctx.fillRect(x - g + 11, y - g + 10, 20, 10);
+}
+
+function zeichneHuetteDach() {
+  const { x, y } = huette, g = HUETTE_GROESSE + 6;
+  ctx.globalAlpha = inHuette() ? 0.25 : 1;
+  ctx.fillStyle = istWinter() ? '#e9f2f7' : '#7a3b22';
+  ctx.beginPath(); ctx.moveTo(x - g, y - g); ctx.lineTo(x + g, y - g); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = istWinter() ? '#d5e2ea' : '#8e4a2b';
+  ctx.beginPath(); ctx.moveTo(x - g, y + g); ctx.lineTo(x + g, y + g); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = istWinter() ? '#c7d6e0' : '#6a3019';
+  ctx.beginPath(); ctx.moveTo(x - g, y - g); ctx.lineTo(x - g, y + g); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + g, y - g); ctx.lineTo(x + g, y + g); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#4a2a14'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x - g, y - g); ctx.lineTo(x + g, y + g); ctx.moveTo(x + g, y - g); ctx.lineTo(x - g, y + g); ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function zeichneSpieler() {
@@ -538,10 +598,10 @@ function zeichneHUD() {
   // Hilfe unten links
   ctx.textAlign = 'left'; ctx.font = '13px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
   const hilfe = ['WASD/Pfeile: laufen (Shift: rennen)', 'Leertaste: hacken, sammeln, trinken, angreifen', 'F: essen · P: Pause',
-    '1: Lagerfeuer (5🪵 2🪨)', '2: Speer (3🪵 3🪨)'];
+    '1: Lagerfeuer (5🪵 2🪨)', '2: Speer (3🪵 3🪨)', '3: Hütte (15🪵 5🪨)'];
   hilfe.forEach((t, i) => {
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(10, H - 120 + i * 21, ctx.measureText(t).width + 12, 19);
-    ctx.fillStyle = '#fff'; ctx.fillText(t, 16, H - 105 + i * 21);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(10, H - 141 + i * 21, ctx.measureText(t).width + 12, 19);
+    ctx.fillStyle = '#fff'; ctx.fillText(t, 16, H - 126 + i * 21);
   });
 
   // Nachrichten
@@ -559,7 +619,7 @@ function zeichneHUD() {
   const warn = [];
   if (p.durst < 25) warn.push('Du hast Durst! Geh zum See 💧');
   if (p.hunger < 25) warn.push('Du hast Hunger! Drück F 🍗');
-  if (p.waerme < 25) warn.push('Dir ist kalt! Mach ein Feuer 🔥');
+  if (p.waerme < 25) warn.push('Dir ist kalt! Mach ein Feuer 🔥 oder geh in die Hütte 🛖');
   ctx.font = 'bold 16px system-ui'; ctx.fillStyle = '#ff8080';
   warn.forEach((t, i) => ctx.fillText(t, B / 2, H - 90 - i * 22));
 
