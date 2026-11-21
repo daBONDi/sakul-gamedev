@@ -371,6 +371,58 @@ function bruellen(laut, hoehe = 1) {   // hoehe: 2 = hohes Fauchen, 0.5 = ganz t
   } catch (e) { /* kein Sound möglich */ }
 }
 
+// Gruseliger Jagd-Sound: schriller Schrei, tiefes Dröhnen und Herzklopfen
+function jagdSound(hoehe = 1) {
+  try {
+    audio = audio || new AudioContext();
+    const t = audio.currentTime;
+    const laut = audio.createGain(); laut.gain.value = 0.5; laut.connect(audio.destination);
+    // 1. Schriller Schrei: zwei Töne, die nicht zusammenpassen, gleiten nach oben und zittern
+    for (const [start, verstimmt] of [[320, 1], [320, 1.414]]) {
+      const o = audio.createOscillator(), v = audio.createGain(), zitter = audio.createOscillator(), zg = audio.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(start * verstimmt * hoehe, t);
+      o.frequency.exponentialRampToValueAtTime(950 * verstimmt * hoehe, t + 0.7);
+      o.frequency.exponentialRampToValueAtTime(600 * verstimmt * hoehe, t + 1.3);
+      zitter.frequency.value = 9; zg.gain.value = 40 * hoehe; zitter.connect(zg); zg.connect(o.frequency);
+      v.gain.setValueAtTime(0.001, t); v.gain.exponentialRampToValueAtTime(0.18, t + 0.25); v.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+      o.connect(v); v.connect(laut);
+      for (const x of [o, zitter]) { x.start(t); x.stop(t + 1.4); }
+    }
+    // 2. Tiefes Dröhnen darunter
+    const d = audio.createOscillator(), dv = audio.createGain();
+    d.type = 'sawtooth'; d.frequency.setValueAtTime(55, t); d.frequency.exponentialRampToValueAtTime(38, t + 2.5);
+    const f = audio.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 200;
+    dv.gain.setValueAtTime(0.001, t); dv.gain.exponentialRampToValueAtTime(0.5, t + 0.3); dv.gain.exponentialRampToValueAtTime(0.001, t + 2.5);
+    d.connect(f); f.connect(dv); dv.connect(laut); d.start(t); d.stop(t + 2.5);
+    // 3. Herzklopfen: bumm-bumm ... bumm-bumm ... (wird schneller)
+    for (const zeitpunkt of [1.2, 1.45, 2.0, 2.22, 2.7, 2.9]) {
+      const h = audio.createOscillator(), hv = audio.createGain(), z = t + zeitpunkt;
+      h.type = 'sine'; h.frequency.setValueAtTime(70, z); h.frequency.exponentialRampToValueAtTime(40, z + 0.15);
+      hv.gain.setValueAtTime(0.001, z); hv.gain.exponentialRampToValueAtTime(0.9, z + 0.02); hv.gain.exponentialRampToValueAtTime(0.001, z + 0.2);
+      h.connect(hv); hv.connect(laut); h.start(z); h.stop(z + 0.22);
+    }
+  } catch (e) { /* kein Sound möglich */ }
+}
+
+// Fängt ein Monster gerade an, DICH zu jagen? Dann kommt der Jagd-Sound (pro Monster nur einmal)
+let jagdSoundPause = 0;
+function jagdPruefen(dt) {
+  jagdSoundPause -= dt;
+  if (!istNacht() || inHuette()) return;
+  for (const w of woelfe) {
+    const d = abstand(w, spieler);
+    if (d > 650) w.jagt = false;                    // weit weg -> darf später wieder erschrecken
+    if (!w.jagt && w.hp > 0 && d < 380 && !wolfHatAngst(w)) {
+      w.jagt = true;
+      if (jagdSoundPause > 0) continue;              // nicht 5 Schreie gleichzeitig
+      const m = monsterArt(w);
+      jagdSound(m.ton); jagdSoundPause = 4;
+      sag('😱 ' + m.emoji + ' Ein ' + m.name + ' jagt dich!', '#ff4040');
+    }
+  }
+}
+
 // Beißt dich ein Wolf? Das prüft jeder Spieler selbst für sich.
 function wolfHatAngst(w) { return feuer.some(f => abstand(w, f) < 170) || huetten.some(h => abstand(w, h) < 130); }
 function wolfBisse(dt) {
@@ -450,6 +502,7 @@ function update(dt) {
 
   if (netzRolle !== 'gast') tiereUpdate(dt);   // die Tiere steuert nur der Host
   wolfBisse(dt);
+  jagdPruefen(dt);
 
   for (const b of baeume) if (b.wackeln > 0) b.wackeln -= dt;
   for (const s of steine) if (s.wackeln > 0) s.wackeln -= dt;
