@@ -313,7 +313,7 @@ function tiereUpdate(dt) {
   const maxWoelfe = istNacht() ? Math.min(8, 1 + Math.floor(tag / 30) + (istWinter() ? 1 : 0)) : 0;
   if (woelfe.length < maxWoelfe && Math.random() < dt * 0.4) {
     const pos = spawnWeitWeg(600, 800, zufallsSpieler());
-    if (pos) { woelfe.push({ ...pos, id: naechsteId++, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('👹 Ein Monster brüllt in der Dunkelheit...', '#ff8080'); }
+    if (pos) { woelfe.push({ ...pos, id: naechsteId++, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('👹 Ein Monster brüllt in der Dunkelheit...', '#ff8080'); bruellen(0.5); }
   }
   for (const w of woelfe) {
     w.biss -= dt;
@@ -332,6 +332,25 @@ function tiereUpdate(dt) {
   woelfe = woelfe.filter(w => w.hp > 0 && (istNacht() || naechsterSpieler(w).d < 900));
 }
 
+// Gruseliges Brüllen mit Web Audio (tiefes, rauschendes Knurren)
+let audio = null;
+function bruellen(laut) {
+  try {
+    audio = audio || new AudioContext();
+    const t = audio.currentTime, dauer = 1.4;
+    const o = audio.createOscillator(), o2 = audio.createOscillator(), v = audio.createGain(), f = audio.createBiquadFilter();
+    o.type = 'sawtooth'; o2.type = 'square';
+    o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(45, t + dauer);
+    o2.frequency.setValueAtTime(73, t); o2.frequency.exponentialRampToValueAtTime(30, t + dauer);
+    const zitter = audio.createOscillator(), zg = audio.createGain();   // macht das Knurren "rau"
+    zitter.frequency.value = 28; zg.gain.value = 25; zitter.connect(zg); zg.connect(o.frequency);
+    f.type = 'lowpass'; f.frequency.value = 700;
+    v.gain.setValueAtTime(0.001, t); v.gain.exponentialRampToValueAtTime(laut, t + 0.15); v.gain.exponentialRampToValueAtTime(0.001, t + dauer);
+    o.connect(f); o2.connect(f); f.connect(v); v.connect(audio.destination);
+    for (const x of [o, o2, zitter]) { x.start(t); x.stop(t + dauer); }
+  } catch (e) { /* kein Sound möglich */ }
+}
+
 // Beißt dich ein Wolf? Das prüft jeder Spieler selbst für sich.
 function wolfHatAngst(w) { return feuer.some(f => abstand(w, f) < 170) || huetten.some(h => abstand(w, h) < 130); }
 function wolfBisse(dt) {
@@ -339,7 +358,7 @@ function wolfBisse(dt) {
   if (bissPause > 0 || inHuette() || !istNacht()) return;
   for (const w of woelfe) {
     if (w.hp > 0 && abstand(w, spieler) < 34 && !wolfHatAngst(w)) {
-      spieler.leben -= 12; schadenBlitz = 0.3; bissPause = 1;
+      spieler.leben -= 12; schadenBlitz = 0.3; bissPause = 1; bruellen(0.25);
       return;
     }
   }
@@ -493,8 +512,10 @@ const kroneDunkelDurch = durchsichtig(kroneDunkel), kroneHellDurch = durchsichti
 const steinMat = new THREE.MeshStandardMaterial({ color: '#8d949a', flatShading: true, roughness: 1 });
 const buschMat = mat('#2d7d3a'), buschMat2 = mat('#3a9447'), beerenMat = mat('#d42a5a', { emissive: '#3a0010' });
 const hasenMat = mat('#a58a6a'), weissMat = mat('#ffffff');
-const wolfMat = mat('#4b2a63'), wolfMat2 = mat('#6b3d8a'), wolfAugen = new THREE.MeshBasicMaterial({ color: '#ff2a2a' });
-const hornMat = mat('#e8dcc0'), maulMat = new THREE.MeshBasicMaterial({ color: '#1a0008' });
+const wolfMat = mat('#24102b'), wolfMat2 = mat('#45163a'), wolfAugen = new THREE.MeshBasicMaterial({ color: '#ff1a1a' });
+const hornMat = mat('#d8ccb0'), maulMat = new THREE.MeshBasicMaterial({ color: '#b30000' });
+const monsterAugeMat = new THREE.MeshBasicMaterial({ color: '#ffe066' });
+const monsterGlutMat = new THREE.MeshBasicMaterial({ color: '#ff0000', transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending });
 const dachMat = mat('#7a3b22', { transparent: true });
 const wandMat = mat('#7a5232'), dielenMat = mat('#a07a4e');
 const flammeMat1 = new THREE.MeshBasicMaterial({ color: '#ff7b00' }), flammeMat2 = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
@@ -656,26 +677,42 @@ function teil(geo, m, x, y, z, sx = 1, sy = sx, sz = sx) {
 }
 const beinGeo = new THREE.CylinderGeometry(2.5, 2, 14, 6).translate(0, -7, 0);
 function baueWolf() {
-  // Das Monster: läuft auf zwei Beinen, hat ein großes leuchtendes Auge, Hörner und Zähne
+  // Das Monster: groß, dunkel, drei leuchtende Augen, Maul geht auf und zu, lange Krallen
   const g = new THREE.Group();
-  g.add(teil(kugel, wolfMat, 0, 38, 0, 16, 22, 18));                 // dicker Körper
-  g.add(teil(kugel, wolfMat2, 6, 34, 0, 12, 15, 14));                // heller Bauch
-  g.add(teil(kugel, wolfMat, 4, 62, 0, 13, 12, 13));                 // Kopf
-  g.add(teil(kugel, weissMat, 15, 66, 0, 5.5));                      // großes Auge
-  g.add(teil(kugel, wolfAugen, 19.5, 66, 0, 2.8));                   // rote Pupille (leuchtet)
-  g.add(teil(new THREE.BoxGeometry(4, 6, 16), maulMat, 15, 55, 0));  // Maul
-  const zahn = new THREE.ConeGeometry(1.4, 4, 4);
-  for (const z of [-5, -1.7, 1.7, 5]) { const t = teil(zahn, weissMat, 17.5, 56.5, z); t.rotation.x = Math.PI; g.add(t); }
-  const horn = new THREE.ConeGeometry(3, 14, 6);
-  const h1 = teil(horn, hornMat, 0, 75, -8); h1.rotation.x = -0.5; g.add(h1);
-  const h2 = teil(horn, hornMat, 0, 75, 8); h2.rotation.x = 0.5; g.add(h2);
-  for (let i = 0; i < 4; i++) g.add(teil(new THREE.ConeGeometry(3, 8, 4), wolfMat2, -15, 50 - i * 9, 0)); // Stacheln am Rücken
-  const armGeo = new THREE.CylinderGeometry(3.5, 2.5, 26, 6).translate(0, -13, 0);
-  const arme = [-19, 19].map(z => { const a = teil(armGeo, wolfMat, 2, 50, z); g.add(a); return a; });
-  for (const a of arme) for (const z of [-2.5, 0, 2.5]) { const k = teil(new THREE.ConeGeometry(0.8, 5, 4), hornMat, 2, -27, z); k.rotation.z = Math.PI; a.add(k); } // Krallen
+  const k = new THREE.Group(); k.scale.setScalar(1.25); g.add(k);          // alles 25 % größer
+  k.add(teil(kugel, wolfMat, 0, 38, 0, 16, 22, 18));                      // dicker Körper
+  k.add(teil(kugel, wolfMat2, 6, 34, 0, 12, 15, 14));                     // Bauch
+  for (let i = 0; i < 6; i++) k.add(teil(new THREE.ConeGeometry(3.5, 13, 4), wolfMat2, -15 + i * 0.5, 56 - i * 7, 0)); // Stacheln am Rücken
+  // Kopf (wackelt unheimlich)
+  const kopf = new THREE.Group(); kopf.position.set(4, 60, 0); k.add(kopf);
+  kopf.add(teil(kugel, wolfMat, 0, 2, 0, 13, 12, 13));
+  kopf.add(teil(kugel, monsterAugeMat, 11, 7, 0, 5.5));                   // großes Auge in der Mitte
+  kopf.add(teil(kugel, monsterAugeMat, 10, 11, -7, 2.8), teil(kugel, monsterAugeMat, 10, 11, 7, 2.8)); // zwei kleine Augen
+  const pupille = teil(new THREE.BoxGeometry(1, 7, 1.6), wolfAugen, 16.2, 7, 0);                    // Schlitz-Pupille
+  kopf.add(pupille, teil(kugel, wolfAugen, 12.4, 11, -7, 1), teil(kugel, wolfAugen, 12.4, 11, 7, 1));
+  const zahn = new THREE.ConeGeometry(1.3, 5, 4);
+  kopf.add(teil(new THREE.BoxGeometry(6, 3, 18), maulMat, 10, -4, 0));   // glühender Rachen
+  for (const z of [-7, -4.2, -1.4, 1.4, 4.2, 7]) { const t = teil(zahn, weissMat, 12, -4, z); t.rotation.x = Math.PI; kopf.add(t); } // obere Zähne
+  const kiefer = new THREE.Group(); kiefer.position.set(2, -6, 0); kopf.add(kiefer);
+  kiefer.add(teil(new THREE.BoxGeometry(14, 3, 18), wolfMat, 6, -1, 0));
+  for (const z of [-6, -2, 2, 6]) kiefer.add(teil(zahn, weissMat, 11, 2, z));                        // untere Zähne
+  // lange, gebogene Hörner
+  const horn = new THREE.ConeGeometry(3.2, 12, 6);
+  for (const s of [-1, 1]) {
+    const h1 = teil(horn, hornMat, -2, 14, s * 9); h1.rotation.x = s * 0.9; kopf.add(h1);
+    const h2 = teil(new THREE.ConeGeometry(2, 12, 6), hornMat, -4, 22, s * 14); h2.rotation.set(s * 0.2, 0, -0.5); kopf.add(h2);
+  }
+  // Arme mit langen Krallen
+  const armGeo = new THREE.CylinderGeometry(3.5, 2.5, 30, 6).translate(0, -15, 0);
+  const kralle = new THREE.ConeGeometry(0.9, 10, 4);
+  const arme = [-19, 19].map(z => { const a = teil(armGeo, wolfMat, 2, 50, z); k.add(a); return a; });
+  for (const a of arme) for (const z of [-2.5, 0, 2.5]) { const c = teil(kralle, hornMat, 3, -33, z); c.rotation.z = Math.PI - 0.4; a.add(c); }
   const monsterBein = new THREE.CylinderGeometry(5, 4, 20, 6).translate(0, -10, 0);
-  const beine = [-8, 8].map(z => { const b = teil(monsterBein, wolfMat, 0, 20, z); g.add(b); return b; });
-  g.userData = { beine, arme, schritt: 0 };
+  const beine = [-8, 8].map(z => { const b = teil(monsterBein, wolfMat, 0, 20, z); k.add(b); return b; });
+  // roter Schein auf dem Boden
+  const glut = new THREE.Mesh(new THREE.CircleGeometry(45, 24).rotateX(-Math.PI / 2), monsterGlutMat);
+  glut.position.y = 0.6; g.add(glut);
+  g.userData = { beine, arme, kopf, kiefer, pupille, schritt: 0, zeit: Math.random() * 10 };
   return g;
 }
 
@@ -799,6 +836,10 @@ function welt3d(dt) {
     m.userData.schritt += bewegt * 0.12;
     m.userData.beine.forEach((b, i) => { b.rotation.z = Math.sin(m.userData.schritt + i * Math.PI) * 0.6; });
     m.userData.arme.forEach((a, i) => { a.rotation.z = Math.sin(m.userData.schritt + i * Math.PI + Math.PI) * 0.4 + 0.6; }); // Arme greifen nach vorne
+    const u = m.userData; u.zeit += dt;
+    u.kiefer.rotation.z = -0.15 - Math.abs(Math.sin(u.zeit * 3)) * 0.45;           // Maul geht auf und zu
+    u.kopf.rotation.x = Math.sin(u.zeit * 1.3) * 0.15 + (Math.sin(u.zeit * 17) > 0.97 ? 0.3 : 0); // Kopf zuckt manchmal
+    u.pupille.scale.z = 1.6 * (0.6 + Math.abs(Math.sin(u.zeit * 2)) * 0.6);         // Pupille pulsiert
   }
   // Hasen
   abgleichen(hasen, hasenModelle, baueHase);
