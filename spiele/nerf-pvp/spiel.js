@@ -5,13 +5,19 @@ import * as THREE from 'three';
 // ========== Einstellungen (hier kannst du herumprobieren!) ==========
 const SIEG_PUNKTE = 10;          // so viele Gegner muss man ausschalten, um zu gewinnen
 const MAX_LEBEN = 100;
-const SCHADEN = 20;              // Treffer am Körper
-const KOPF_SCHADEN = 40;         // Treffer am Kopf
-const MAGAZIN = 12;              // so viele Darts passen in den Blaster
-const NACHLADE_ZEIT = 1.4;       // Sekunden
-const SCHUSS_PAUSE = 0.16;       // Sekunden zwischen zwei Schüssen
-const DART_TEMPO = 32;           // Meter pro Sekunde
-const DART_SCHWERKRAFT = 3;      // so stark fallen Darts nach unten
+
+// ========== Die Blaster ==========
+// schaden/kopf = Schaden bei Treffer am Körper/Kopf · magazin = so viele Schüsse · pause = Sekunden zwischen Schüssen
+// nachladen = Sekunden · tempo = so schnell fliegen die Darts · fallen = so stark fallen sie nach unten
+// streuung = wie ungenau · darts = Darts pro Schuss · laufen = Lauftempo (1 = normal) · botAbstand = so weit weg bleiben Bots
+const WAFFEN = {
+  blitz:   { name: 'Blitz-Blaster',          emoji: '🔫', schaden: 20, kopf: 40,  magazin: 12, pause: 0.16,  nachladen: 1.4, tempo: 32, fallen: 3,   streuung: 0.012, darts: 1, laufen: 1,    botAbstand: 12 },
+  schrot:  { name: 'Schrot-Blaster',         emoji: '💥', schaden: 11, kopf: 18,  magazin: 5,  pause: 0.75,  nachladen: 1.8, tempo: 26, fallen: 4,   streuung: 0.09,  darts: 7, laufen: 1,    botAbstand: 6 },
+  sniper:  { name: 'Scharfschützen-Blaster', emoji: '🎯', schaden: 60, kopf: 100, magazin: 4,  pause: 1.0,   nachladen: 2.2, tempo: 70, fallen: 0.5, streuung: 0,     darts: 1, laufen: 0.9,  botAbstand: 22 },
+  minigun: { name: 'Mini-Gun',               emoji: '⚡', schaden: 8,  kopf: 14,  magazin: 45, pause: 0.065, nachladen: 2.8, tempo: 30, fallen: 3,   streuung: 0.045, darts: 1, laufen: 0.75, botAbstand: 10 },
+};
+const WAFFEN_LISTE = ['blitz', 'schrot', 'sniper', 'minigun'];   // Taste 1, 2, 3, 4
+const waffeVon = w => WAFFEN[w] ? w : 'blitz';
 const LAUF_TEMPO = 6, RENN_TEMPO = 9, SPRUNG_KRAFT = 6.5, SCHWERKRAFT = 18;
 const MIN_KAEMPFER = 4;          // Bots füllen auf so viele Kämpfer auf
 const BOT_ZIELFEHLER = 0.07;     // kleiner = Bots zielen besser
@@ -21,7 +27,7 @@ const MAUS_EMPFINDLICH = 0.0022;
 const MODI = {
   ffa:        { name: '🎯 Jeder gegen jeden',    text: 'Jeder kämpft für sich. Wer zuerst 10 Gegner erwischt, gewinnt!' },
   team:       { name: '🔴🔵 Team-Kampf',          text: 'Rot gegen Blau! Das Team, das zuerst 20 Punkte hat, gewinnt. Dein eigenes Team kannst du nicht treffen.' },
-  einTreffer: { name: '⚡ Ein Treffer',           text: 'Jeder Treffer haut dich sofort raus! Aber du hast nur 6 Darts im Magazin. Wer zuerst 10 hat, gewinnt.' },
+  einTreffer: { name: '⚡ Ein Treffer',           text: 'Jeder Treffer haut dich sofort raus! Aber jeder Blaster hat nur halb so viele Darts. Wer zuerst 10 hat, gewinnt.' },
   ueberleben: { name: '💀 Letzter Überlebender', text: 'Jeder hat nur 3 Leben. Wer alle verbraucht hat, schaut zu. Wer als Letzter übrig ist, gewinnt!' },
 };
 const TEAM_SIEG = 20;              // so viele Punkte braucht ein Team
@@ -29,7 +35,7 @@ const UEBERLEBEN_LEBEN = 3;        // so viele Leben im Modus "Letzter Überlebe
 const TEAM_FARBE = { rot: '#ff4040', blau: '#2f8cff' };
 const TEAM_NAME = { rot: '🔴 Team Rot', blau: '🔵 Team Blau' };
 let modus = 'ffa';
-function magazin() { return modus === 'einTreffer' ? 6 : MAGAZIN; }
+function magazinVon(w) { const m = WAFFEN[waffeVon(w)].magazin; return modus === 'einTreffer' ? Math.max(2, Math.ceil(m / 2)) : m; }
 const RADIUS = 0.35, HOEHE = 1.75, AUGEN = 1.55;
 const FARBEN = ['#ff7a1a', '#2f8cff', '#2fd05a', '#e04fd0', '#ffd21f', '#ff4040', '#8f6bff', '#20d0c0'];
 const BOT_FARBEN = ['#9aa3b5', '#c9a26b', '#7fb3a0', '#b58fc4', '#d68a8a', '#8fa8d6', '#a3c46b'];
@@ -171,14 +177,45 @@ function klotz(b, h, t, m, x, y, z) {
   const k = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), m);
   k.position.set(x, y, z); k.castShadow = true; return k;
 }
-function baueBlaster() {
+const dunkelMat = mat('#2a2f3a'), lilaMat = mat('#8f6bff'), gruenMat = mat('#2fd05a'), rotMat = mat('#ff4040');
+function rohr(radius, laenge, m, x, y, z) {   // ein Zylinder, der nach vorne zeigt
+  const k = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, laenge, 10).rotateX(Math.PI / 2), m);
+  k.position.set(x, y, z); k.castShadow = true; return k;
+}
+function baueBlaster(w = 'blitz') {
   const g = new THREE.Group();
-  g.add(klotz(0.12, 0.14, 0.5, blasterOrange, 0, 0, 0));       // Körper
-  g.add(klotz(0.07, 0.07, 0.35, blasterBlau, 0, 0.02, -0.4));  // Lauf
-  g.add(klotz(0.09, 0.09, 0.06, blasterGelb, 0, 0.02, -0.6));  // Mündung
-  g.add(klotz(0.08, 0.2, 0.1, blasterBlau, 0, -0.15, 0.13));   // Griff
-  g.add(klotz(0.1, 0.16, 0.12, blasterGelb, 0, -0.13, -0.12)); // Magazin
-  g.add(klotz(0.05, 0.06, 0.16, blasterBlau, 0, 0.1, 0.05));   // Visier
+  g.userData = { muendung: -0.6, drehen: null };
+  if (w === 'schrot') {          // kurz, breit, zwei Läufe
+    g.add(klotz(0.16, 0.15, 0.45, gruenMat, 0, 0, 0));
+    g.add(rohr(0.04, 0.4, dunkelMat, -0.04, 0.03, -0.38), rohr(0.04, 0.4, dunkelMat, 0.04, 0.03, -0.38));
+    g.add(klotz(0.14, 0.08, 0.16, blasterOrange, 0, -0.06, -0.3));   // Pump-Griff
+    g.add(klotz(0.08, 0.2, 0.1, dunkelMat, 0, -0.15, 0.13));
+    g.userData.muendung = -0.58;
+  } else if (w === 'sniper') {   // lang mit Zielfernrohr
+    g.add(klotz(0.1, 0.13, 0.6, lilaMat, 0, 0, 0.05));
+    g.add(rohr(0.03, 0.6, dunkelMat, 0, 0.02, -0.55));
+    g.add(rohr(0.045, 0.3, dunkelMat, 0, 0.12, -0.02));               // Zielfernrohr
+    g.add(rohr(0.05, 0.02, rotMat, 0, 0.12, -0.17));
+    g.add(klotz(0.08, 0.2, 0.1, dunkelMat, 0, -0.15, 0.15));
+    g.add(klotz(0.09, 0.16, 0.22, lilaMat, 0, -0.04, 0.42));           // Schulterstütze
+    g.userData.muendung = -0.85;
+  } else if (w === 'minigun') {  // viele Läufe, die sich drehen
+    g.add(klotz(0.2, 0.2, 0.4, blasterGelb, 0, 0, 0.05));
+    const trommel = new THREE.Group(); trommel.position.set(0, 0, -0.3);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; trommel.add(rohr(0.025, 0.5, dunkelMat, Math.cos(a) * 0.06, Math.sin(a) * 0.06, -0.1)); }
+    trommel.add(rohr(0.09, 0.05, rotMat, 0, 0, 0.08));
+    g.add(trommel);
+    g.add(klotz(0.08, 0.2, 0.1, dunkelMat, 0, -0.18, 0.13));
+    g.add(klotz(0.16, 0.18, 0.16, rotMat, 0.15, -0.05, 0.08));         // Munitionskiste
+    g.userData.muendung = -0.62; g.userData.drehen = trommel;
+  } else {                       // Blitz-Blaster
+    g.add(klotz(0.12, 0.14, 0.5, blasterOrange, 0, 0, 0));       // Körper
+    g.add(klotz(0.07, 0.07, 0.35, blasterBlau, 0, 0.02, -0.4));  // Lauf
+    g.add(klotz(0.09, 0.09, 0.06, blasterGelb, 0, 0.02, -0.6));  // Mündung
+    g.add(klotz(0.08, 0.2, 0.1, blasterBlau, 0, -0.15, 0.13));   // Griff
+    g.add(klotz(0.1, 0.16, 0.12, blasterGelb, 0, -0.13, -0.12)); // Magazin
+    g.add(klotz(0.05, 0.06, 0.16, blasterBlau, 0, 0.1, 0.05));   // Visier
+  }
   return g;
 }
 function namensSchild(text, farbe) {
@@ -205,16 +242,21 @@ function baueFigur(farbe, name) {
   g.add(klotz(0.38, 0.12, 0.06, brilleMat, 0, 1.72, -0.19));   // Nerf-Schutzbrille
   g.add(klotz(0.3, 0.07, 0.02, glasMat, 0, 1.72, -0.225));
   g.add(klotz(0.13, 0.13, 0.45, jacke, -0.3, 1.32, -0.2), klotz(0.13, 0.13, 0.45, jacke, 0.3, 1.32, -0.2)); // Arme nach vorne
-  const blaster = baueBlaster(); blaster.position.set(0.05, 1.32, -0.55); g.add(blaster);
+  const halter = new THREE.Group(); halter.position.set(0.05, 1.32, -0.55); g.add(halter);   // hier kommt der Blaster rein
   g.add(namensSchild(name, farbe));
-  g.userData = { b1, b2, schritt: 0 };
+  g.userData = { b1, b2, schritt: 0, halter, waffe: null };
   return g;
 }
 
 // Der Blaster, den DU in der Hand hältst (hängt an der Kamera)
-const meinBlaster = baueBlaster();
-meinBlaster.traverse(m => { m.castShadow = false; });
+let meinBlaster = baueBlaster();
 kamera.add(meinBlaster);
+function meinenBlasterBauen() {
+  kamera.remove(meinBlaster);
+  meinBlaster = baueBlaster(waffe);
+  meinBlaster.traverse(m => { m.castShadow = false; });
+  kamera.add(meinBlaster);
+}
 
 // ========== Darts ==========
 const dartKoerperGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8).translate(0, -0.04, 0);
@@ -222,16 +264,23 @@ const dartSpitzeGeo = new THREE.SphereGeometry(0.045, 8, 6).translate(0, 0.07, 0
 const dartBlau = mat('#2f8cff'), dartOrange = mat('#ff7a1a');
 const OBEN = new THREE.Vector3(0, 1, 0);
 let darts = [];
-function neuerDart(von, o, r) {
+const dartMat = { blitz: dartBlau, schrot: mat('#2fd05a'), sniper: mat('#8f6bff'), minigun: mat('#ffd21f') };
+const dartGroesse = { blitz: [1, 1], schrot: [0.75, 0.7], sniper: [1, 1.8], minigun: [0.7, 0.8] };   // [dicke, länge]
+function neuerDart(von, w, o, r) {
   const mesh = new THREE.Group();
-  mesh.add(new THREE.Mesh(dartKoerperGeo, dartBlau), new THREE.Mesh(dartSpitzeGeo, dartOrange));
+  mesh.add(new THREE.Mesh(dartKoerperGeo, dartMat[w]), new THREE.Mesh(dartSpitzeGeo, dartOrange));
+  const [dicke, laenge] = dartGroesse[w];
+  mesh.scale.set(dicke, laenge, dicke);
   scene.add(mesh);
   const pos = new THREE.Vector3(o[0], o[1], o[2]);
-  darts.push({ von, pos, alt: pos.clone(), vel: new THREE.Vector3(r[0], r[1], r[2]).multiplyScalar(DART_TEMPO), mesh, steckt: false, uhr: 3 });
+  darts.push({ von, waffe: w, pos, alt: pos.clone(), vel: new THREE.Vector3(r[0], r[1], r[2]).normalize().multiplyScalar(WAFFEN[w].tempo), mesh, steckt: false, uhr: 3 });
   mesh.position.copy(pos);
-  // Ton: je weiter weg, desto leiser
-  const weit = kamera.position.distanceTo(pos);
-  pfumpSound(1 / (1 + weit / 8));
+}
+function schussEmpfangen(von, w, o, liste) {   // ein Schuss kann mehrere Darts haben (Schrot-Blaster)
+  w = waffeVon(w);
+  for (const r of liste.slice(0, 8)) neuerDart(von, w, o, r);
+  const weit = kamera.position.distanceTo(tmp.set(o[0], o[1], o[2]));   // Ton: je weiter weg, desto leiser
+  pfumpSound(1 / (1 + weit / 8), w);
 }
 
 // Trifft ein Punkt p den Kämpfer k? (k.x/k.y/k.z = Füße)
@@ -247,7 +296,7 @@ function dartsBewegen(dt) {
   for (const d of darts) {
     if (d.steckt) { d.uhr -= dt; if (d.uhr <= 0) d.weg = true; continue; }
     d.alt.copy(d.pos);
-    d.vel.y -= DART_SCHWERKRAFT * dt;
+    d.vel.y -= WAFFEN[d.waffe].fallen * dt;
     d.pos.addScaledVector(d.vel, dt);
     d.uhr -= dt;
     if (d.uhr <= 0) d.weg = true;
@@ -274,7 +323,8 @@ function dartsBewegen(dt) {
 }
 
 function treffer(d, k, art) {
-  const schaden = modus === 'einTreffer' ? MAX_LEBEN : art === 'kopf' ? KOPF_SCHADEN : SCHADEN;
+  const W = WAFFEN[d.waffe];
+  const schaden = modus === 'einTreffer' ? MAX_LEBEN : art === 'kopf' ? W.kopf : W.schaden;
   if (k === ich) getroffen(schaden, d.von);
   else if (k.bot && istChef()) botGetroffen(k, schaden, d.von);
   if (d.von === ich.id) {   // DU hast getroffen!
@@ -321,8 +371,11 @@ function wiederbeleben(k) {
   k.x = bester[0]; k.z = bester[1]; k.y = 0; k.vy = 0;
   k.hp = MAX_LEBEN; k.tot = false; k.ruheUhr = 0;
   k.b = Math.atan2(k.x, k.z); k.n = 0;   // schaut zur Mitte
-  if (k.bot) { k.munition = magazin(); k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0; }
-  if (k === ich) { munition = magazin(); nachladeUhr = 0; }
+  if (k.bot) {
+    k.waffe = WAFFEN_LISTE[Math.floor(Math.random() * WAFFEN_LISTE.length)];   // Bots bekommen einen zufälligen Blaster
+    k.munition = magazinVon(k.waffe); k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0;
+  }
+  if (k === ich) { for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; }
 }
 
 function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
@@ -333,7 +386,20 @@ function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
 // ---------- Du ----------
 const tasten = {};
 let maus = false, gesperrt = false, laeuft = false;
-let munition = magazin(), nachladeUhr = 0, schussUhr = 0, rueckstoss = 0, laufPhase = 0, todHoehe = 0;
+let munition = 12, nachladeUhr = 0, schussUhr = 0, rueckstoss = 0, laufPhase = 0, todHoehe = 0;
+let waffe = 'blitz', wechselUhr = 0, zoom = false, rechtsMaus = false;
+const vorrat = {};   // Munition für jeden Blaster
+
+function waffeWechseln(w) {
+  if (w === waffe || !WAFFEN[w]) return;
+  vorrat[waffe] = munition;
+  waffe = w; ich.waffe = w;
+  munition = vorrat[w] ?? magazinVon(w);
+  nachladeUhr = 0; wechselUhr = 0.35;
+  meinenBlasterBauen();
+  waffenLeiste();
+  ton(440, 0.05, 'square', 0.05);
+}
 
 function getroffen(schaden, von) {
   if (ich.tot) return;
@@ -347,28 +413,34 @@ function getroffen(schaden, von) {
 }
 
 function nachladen() {
-  if (nachladeUhr > 0 || munition === magazin() || ich.tot) return;
-  nachladeUhr = NACHLADE_ZEIT;
+  if (nachladeUhr > 0 || munition === magazinVon(waffe) || ich.tot) return;
+  nachladeUhr = WAFFEN[waffe].nachladen;
   ton(300, 0.06, 'square', 0.06);
-  setTimeout(() => ton(520, 0.08, 'square', 0.06), NACHLADE_ZEIT * 800);
+  setTimeout(() => ton(520, 0.08, 'square', 0.06), nachladeUhr * 800);
 }
 
 function schiessen() {
-  munition--; schussUhr = SCHUSS_PAUSE; rueckstoss = 1;
+  const W = WAFFEN[waffe];
+  munition--; schussUhr = W.pause; rueckstoss = W.darts > 1 || waffe === 'sniper' ? 2 : 1;
   const blick = new THREE.Vector3(); kamera.getWorldDirection(blick);
-  const zielPunkt = kamera.position.clone().addScaledVector(blick, 30);
-  const o = new THREE.Vector3(0.2, -0.2, -0.95).applyQuaternion(kamera.quaternion).add(kamera.position);  // vorne am Blaster
-  const r = zielPunkt.sub(o).normalize();
-  r.x += (Math.random() - 0.5) * 0.012; r.y += (Math.random() - 0.5) * 0.012; r.z += (Math.random() - 0.5) * 0.012;
-  r.normalize();
-  feuern(ich.id, o, r);
+  const zielPunkt = kamera.position.clone().addScaledVector(blick, 40);
+  const o = zoom ? kamera.position.clone().addScaledVector(blick, 0.5)   // mit Zoom kommt der Dart genau aus der Mitte
+    : new THREE.Vector3(0.22, -0.2, -0.45 + meinBlaster.userData.muendung).applyQuaternion(kamera.quaternion).add(kamera.position);
+  const mitte = zielPunkt.sub(o).normalize();
+  const liste = [];
+  for (let i = 0; i < W.darts; i++) {
+    const r = mitte.clone();
+    r.x += (Math.random() - 0.5) * W.streuung; r.y += (Math.random() - 0.5) * W.streuung; r.z += (Math.random() - 0.5) * W.streuung;
+    liste.push(r.normalize());
+  }
+  feuern(ich.id, waffe, o, liste);
 }
 
-function feuern(von, o, r) {
-  const oa = [o.x, o.y, o.z], ra = [r.x, r.y, r.z];
-  neuerDart(von, oa, ra);
-  if (rolle === 'host') anAlle({ t: 'schuss', von, o: oa, r: ra });
-  if (rolle === 'gast') anHost({ t: 'schuss', o: oa, r: ra });
+function feuern(von, w, o, liste) {
+  const oa = [o.x, o.y, o.z], ra = liste.map(r => [r.x, r.y, r.z]);
+  schussEmpfangen(von, w, oa, ra);
+  if (rolle === 'host') anAlle({ t: 'schuss', von, w, o: oa, r: ra });
+  if (rolle === 'gast') anHost({ t: 'schuss', w, o: oa, r: ra });
 }
 
 function spielerUpdate(dt) {
@@ -386,19 +458,27 @@ function spielerUpdate(dt) {
   if (tasten.KeyD) seit += 1;
   if (tasten.KeyA) seit -= 1;
   const laenge = Math.hypot(vor, seit) || 1;
-  const tempo = (tasten.ShiftLeft || tasten.ShiftRight ? RENN_TEMPO : LAUF_TEMPO) * dt / laenge;
+  const tempo = (tasten.ShiftLeft || tasten.ShiftRight ? RENN_TEMPO : LAUF_TEMPO) * WAFFEN[waffe].laufen * (zoom ? 0.5 : 1) * dt / laenge;
   const fx = -Math.sin(ich.b), fz = -Math.cos(ich.b), rx = Math.cos(ich.b), rz = -Math.sin(ich.b);
   if (tasten.Space && ich.amBoden) ich.vy = SPRUNG_KRAFT;
   bewegen(ich, (fx * vor + rx * seit) * tempo, (fz * vor + rz * seit) * tempo, dt);
 
   schussUhr -= dt;
-  if (nachladeUhr > 0) { nachladeUhr -= dt; if (nachladeUhr <= 0) munition = magazin(); }
-  if (maus && gesperrt && schussUhr <= 0 && nachladeUhr <= 0) {
+  wechselUhr = Math.max(0, wechselUhr - dt);
+  zoom = rechtsMaus && waffe === 'sniper' && nachladeUhr <= 0;
+  if (nachladeUhr > 0) { nachladeUhr -= dt; if (nachladeUhr <= 0) munition = magazinVon(waffe); }
+  if (maus && gesperrt && schussUhr <= 0 && nachladeUhr <= 0 && wechselUhr <= 0) {
     if (munition > 0) schiessen();
     else { ton(1200, 0.03, 'square', 0.05); schussUhr = 0.25; nachladen(); }
   }
 }
 
+function zoomZeigen(an, dt) {
+  const ziel = an ? 22 : 75;
+  if (Math.abs(kamera.fov - ziel) > 0.1) { kamera.fov += (ziel - kamera.fov) * Math.min(1, dt * 15); kamera.updateProjectionMatrix(); }
+  el('zielfernrohr').style.display = an && kamera.fov < 40 ? 'block' : 'none';
+  el('fadenkreuz').style.display = an ? 'none' : 'block';
+}
 function kameraUpdate(dt) {
   if (ich.tot) {   // tot: Kamera schwebt nach oben
     todHoehe = Math.min(3, todHoehe + dt * 1.5);
@@ -409,18 +489,21 @@ function kameraUpdate(dt) {
       kamera.position.set(Math.sin(menuWinkel) * 22, 15, Math.cos(menuWinkel) * 22);
       kamera.lookAt(0, 0, 0);
     }
-    meinBlaster.visible = false;
+    meinBlaster.visible = false; zoomZeigen(false, dt);
     return;
   }
-  todHoehe = 0; meinBlaster.visible = true;
+  todHoehe = 0; meinBlaster.visible = !zoom;
+  zoomZeigen(zoom, dt);
+  if (meinBlaster.userData.drehen && maus && munition > 0 && nachladeUhr <= 0) meinBlaster.userData.drehen.rotation.z += dt * 25;
   const laufen = ich.amBoden && (tasten.KeyW || tasten.KeyA || tasten.KeyS || tasten.KeyD);
   if (laufen) laufPhase += dt * (tasten.ShiftLeft ? 13 : 9);
   const wippen = laufen ? Math.sin(laufPhase) * 0.035 : 0;
   kamera.position.set(ich.x, ich.y + AUGEN + Math.abs(wippen), ich.z);
   kamera.rotation.set(ich.n, ich.b, 0);
   rueckstoss = Math.max(0, rueckstoss - dt * 8);
-  const lade = nachladeUhr > 0 ? Math.sin((1 - nachladeUhr / NACHLADE_ZEIT) * Math.PI) : 0;
-  meinBlaster.position.set(0.22 + wippen * 0.5, -0.22 - lade * 0.15 + Math.abs(wippen) * 0.3, -0.45 + rueckstoss * 0.08);
+  const lade = nachladeUhr > 0 ? Math.sin((1 - nachladeUhr / WAFFEN[waffe].nachladen) * Math.PI) : 0;
+  const wechsel = wechselUhr / 0.35;   // beim Wechseln kommt der neue Blaster von unten
+  meinBlaster.position.set(0.22 + wippen * 0.5, -0.22 - lade * 0.15 - wechsel * 0.35 + Math.abs(wippen) * 0.3, -0.45 + rueckstoss * 0.08);
   meinBlaster.rotation.set(rueckstoss * 0.12 - lade * 0.7, 0, lade * 0.4);
 }
 
@@ -430,7 +513,7 @@ function neuerBot() {
   const i = naechsteBotNr++, team = neuesTeam();
   const b = { id: 'b' + i, name: BOT_NAMEN[i % BOT_NAMEN.length], farbe: team ? TEAM_FARBE[team] : BOT_FARBEN[i % BOT_FARBEN.length], bot: true, team,
     x: 0, y: 0, z: 0, vy: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: false, ruheUhr: 0,
-    munition: magazin(), schussUhr: 1, nachladeUhr: 0, sehUhr: 0, seitwaerts: 0, seitUhr: 0, wegpunkt: null, steckUhr: 0 };
+    waffe: 'blitz', munition: 12, schussUhr: 1, nachladeUhr: 0, sehUhr: 0, seitwaerts: 0, seitUhr: 0, wegpunkt: null, steckUhr: 0 };
   punkte[b.id] = { name: b.name, farbe: b.farbe, team, kills: 0, tode: 0 };
   kaempferHinzu(b);
   wiederbeleben(b);
@@ -467,11 +550,11 @@ function botDenken(b, dt) {
   if (b.tot) { b.wiederUhr -= dt; if (b.wiederUhr <= 0 && !ausgeschieden(b.id)) wiederbeleben(b); return; }
   erholen(b, dt);
   b.schussUhr -= dt;
-  if (b.nachladeUhr > 0) { b.nachladeUhr -= dt; if (b.nachladeUhr <= 0) b.munition = magazin(); }
+  if (b.nachladeUhr > 0) { b.nachladeUhr -= dt; if (b.nachladeUhr <= 0) b.munition = magazinVon(b.waffe); }
 
   // Den nächsten Gegner suchen, den der Bot sehen kann
   auge.set(b.x, b.y + AUGEN, b.z);
-  let ziel = null, zielWeite = 35;
+  let ziel = null, zielWeite = b.waffe === 'sniper' ? 45 : 35;
   for (const k of alleKaempfer()) {
     if (k === b || k.tot || gleichesTeam(k.id, b.id)) continue;
     const weite = Math.hypot(k.x - b.x, k.y - b.y, k.z - b.z);
@@ -482,8 +565,9 @@ function botDenken(b, dt) {
   if (ziel) {
     b.sehUhr += dt;
     const dx = ziel.x - b.x, dz = ziel.z - b.z, flach = Math.hypot(dx, dz);
-    const flugZeit = flach / DART_TEMPO;
-    const dy = ziel.y + 1.2 - (b.y + AUGEN) + 0.5 * DART_SCHWERKRAFT * flugZeit * flugZeit;  // etwas höher zielen, weil der Dart fällt
+    const W = WAFFEN[b.waffe];
+    const flugZeit = flach / W.tempo;
+    const dy = ziel.y + 1.2 - (b.y + AUGEN) + 0.5 * W.fallen * flugZeit * flugZeit;  // etwas höher zielen, weil der Dart fällt
     const sollB = Math.atan2(-dx, -dz), sollN = Math.atan2(dy, flach);
     b.b = dreheZu(b.b, sollB, 5 * dt);
     b.n += (sollN - b.n) * Math.min(1, 8 * dt);
@@ -495,15 +579,22 @@ function botDenken(b, dt) {
       if (b.amBoden && Math.random() < 0.15) b.vy = SPRUNG_KRAFT;
     }
     seit = b.seitwaerts * 0.7;
-    if (flach > 14) vor = 0.8; else if (flach < 5) vor = -0.6;
+    if (flach > W.botAbstand + 2) vor = 0.8; else if (flach < Math.max(3, W.botAbstand - 7)) vor = -0.6;   // jeder Blaster hat seinen Lieblings-Abstand
     // schießen
     if (b.sehUhr > 0.45 && Math.abs(winkelDiff(b.b, sollB)) < 0.12 && b.schussUhr <= 0 && b.nachladeUhr <= 0) {
-      if (b.munition <= 0) b.nachladeUhr = NACHLADE_ZEIT + 0.6;
+      if (b.munition <= 0) b.nachladeUhr = W.nachladen + 0.6;
       else {
-        b.munition--; b.schussUhr = 0.3 + Math.random() * 0.35;
-        const bb = b.b + (Math.random() - 0.5) * BOT_ZIELFEHLER, nn = b.n + (Math.random() - 0.5) * BOT_ZIELFEHLER;
-        const r = new THREE.Vector3(-Math.sin(bb) * Math.cos(nn), Math.sin(nn), -Math.cos(bb) * Math.cos(nn));
-        feuern(b.id, auge.clone().addScaledVector(r, 0.7), r);
+        b.munition--; b.schussUhr = W.pause * 1.5 + 0.1 + Math.random() * 0.25;
+        const fehler = BOT_ZIELFEHLER * (b.waffe === 'sniper' ? 0.5 : 1);
+        const bb = b.b + (Math.random() - 0.5) * fehler, nn = b.n + (Math.random() - 0.5) * fehler;
+        const mitte = new THREE.Vector3(-Math.sin(bb) * Math.cos(nn), Math.sin(nn), -Math.cos(bb) * Math.cos(nn));
+        const liste = [];
+        for (let i = 0; i < W.darts; i++) {
+          const r = mitte.clone();
+          r.x += (Math.random() - 0.5) * W.streuung; r.y += (Math.random() - 0.5) * W.streuung; r.z += (Math.random() - 0.5) * W.streuung;
+          liste.push(r.normalize());
+        }
+        feuern(b.id, b.waffe, auge.clone().addScaledVector(mitte, 0.7), liste);
       }
     }
   } else {
@@ -634,11 +725,11 @@ function freieNummer() {
 }
 function positionUebernehmen(k, d) {
   if (k.tot && !d.tot) { k.x = d.x; k.y = d.y; k.z = d.z; k.b = d.b; }   // gerade wiederbelebt: hinspringen
-  k.zx = d.x; k.zy = d.y; k.zz = d.z; k.zb = d.b; k.n = d.n; k.tot = d.tot;
+  k.zx = d.x; k.zy = d.y; k.zz = d.z; k.zb = d.b; k.n = d.n; k.tot = d.tot; k.waffe = waffeVon(d.w);
 }
 function hostEmpfaengt(v, d) {
   if (d.t === 'pos') { const k = andere.get(v.id); if (k) positionUebernehmen(k, d); }
-  else if (d.t === 'schuss') { neuerDart(v.id, d.o, d.r); anAlle({ t: 'schuss', von: v.id, o: d.o, r: d.r }, v); }
+  else if (d.t === 'schuss') { const w = waffeVon(d.w); schussEmpfangen(v.id, w, d.o, d.r); anAlle({ t: 'schuss', von: v.id, w, o: d.o, r: d.r }, v); }
   else if (d.t === 'raus') raus(v.id, d.von);
 }
 
@@ -682,7 +773,7 @@ function gastEmpfaengt(d) {
       positionUebernehmen(k, e);
     }
     for (const id of [...andere.keys()]) if (!da.has(id)) kaempferWeg(id);
-  } else if (d.t === 'schuss') neuerDart(d.von, d.o, d.r);
+  } else if (d.t === 'schuss') schussEmpfangen(d.von, d.w, d.o, d.r);
   else if (d.t === 'raus') zeigeRaus(d.opfer, d.von);
   else if (d.t === 'sieg') zeigeSieg(d.id);
   else if (d.t === 'neustart') { for (const p of Object.values(punkte)) { p.kills = 0; p.tode = 0; } wiederbeleben(ich); mitte('🔄 Neue Runde!', 2); }
@@ -697,10 +788,10 @@ function netzTick(dt) {
   netzUhr = 1 / 15;   // 15-mal pro Sekunde
   if (rolle === 'host') {
     const liste = alleKaempfer().map(k => ({ id: k.id, name: k.name, farbe: k.farbe, bot: !!k.bot,
-      x: r2(k.x), y: r2(k.y), z: r2(k.z), b: r2(k.b), n: r2(k.n), tot: k.tot }));
+      x: r2(k.x), y: r2(k.y), z: r2(k.z), b: r2(k.b), n: r2(k.n), tot: k.tot, w: k.waffe }));
     anAlle({ t: 'welt', k: liste, p: punkte });
   } else {
-    anHost({ t: 'pos', x: r2(ich.x), y: r2(ich.y), z: r2(ich.z), b: r2(ich.b), n: r2(ich.n), tot: ich.tot });
+    anHost({ t: 'pos', x: r2(ich.x), y: r2(ich.y), z: r2(ich.z), b: r2(ich.b), n: r2(ich.n), tot: ich.tot, w: waffe });
   }
 }
 
@@ -717,6 +808,10 @@ function modelleUpdate(dt) {
     m.position.set(k.x, k.y, k.z);
     m.rotation.y = k.b;
     m.visible = !k.tot;
+    if (u.waffe !== (k.waffe || 'blitz')) {   // anderer Blaster? Dann neu bauen
+      u.waffe = k.waffe || 'blitz';
+      u.halter.clear(); u.halter.add(baueBlaster(u.waffe));
+    }
     u.schritt += bewegt * 3;
     u.b1.rotation.x = Math.sin(u.schritt) * 0.7;
     u.b2.rotation.x = -Math.sin(u.schritt) * 0.7;
@@ -741,7 +836,10 @@ function ton(frequenz, dauer, typ = 'sine', laut = 0.2, ende) {
     o.connect(v); v.connect(a.destination); o.start(t); o.stop(t + dauer + 0.02);
   });
 }
-function pfumpSound(laut) {   // Luftstoß vom Blaster
+function pfumpSound(laut, w = 'blitz') {   // Luftstoß vom Blaster
+  const hoehe = { blitz: 1, schrot: 0.6, sniper: 1.5, minigun: 1.2 }[w];
+  if (w === 'schrot') laut *= 1.5;
+  if (w === 'minigun') laut *= 0.6;
   klang((a, t) => {
     if (!rauschPuffer) {
       rauschPuffer = a.createBuffer(1, a.sampleRate * 0.3, a.sampleRate);
@@ -750,11 +848,12 @@ function pfumpSound(laut) {   // Luftstoß vom Blaster
     }
     const n = a.createBufferSource(), f = a.createBiquadFilter(), v = a.createGain();
     n.buffer = rauschPuffer;
-    f.type = 'bandpass'; f.frequency.setValueAtTime(1800, t); f.frequency.exponentialRampToValueAtTime(400, t + 0.12);
+    f.type = 'bandpass'; f.frequency.setValueAtTime(1800 * hoehe, t); f.frequency.exponentialRampToValueAtTime(400 * hoehe, t + 0.12);
     v.gain.setValueAtTime(0.45 * laut, t); v.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
     n.connect(f); f.connect(v); v.connect(a.destination); n.start(t); n.stop(t + 0.16);
   });
-  ton(200, 0.1, 'sine', 0.35 * laut, 70);
+  ton(200 * hoehe, 0.1, 'sine', 0.35 * laut, 70 * hoehe);
+  if (w === 'sniper') ton(1800, 0.15, 'triangle', 0.08 * laut, 600);   // Zisch!
 }
 
 // ========== Anzeige (HUD) ==========
@@ -768,11 +867,15 @@ function feed(html) {
   while (el('feed').children.length > 5) el('feed').lastChild.remove();
   setTimeout(() => zeile.remove(), 6000);
 }
+function waffenLeiste() {
+  el('waffen').innerHTML = WAFFEN_LISTE.map((w, i) =>
+    `<div class="${w === waffe ? 'gewaehlt' : ''}"><small>${i + 1}</small> ${WAFFEN[w].emoji} ${WAFFEN[w].name}</div>`).join('');
+}
 function hudUpdate(dt) {
   el('lebenText').textContent = '❤️ ' + Math.ceil(ich.hp) + (modus === 'ueberleben' && punkte[ich.id] ? '   ·   💀 Leben übrig: ' + Math.max(0, UEBERLEBEN_LEBEN - punkte[ich.id].tode) : '');
   el('lebenFuell').style.width = ich.hp + '%';
   el('lebenFuell').style.background = ich.hp > 60 ? '#2fd05a' : ich.hp > 30 ? '#ffd21f' : '#ff4040';
-  el('munition').textContent = nachladeUhr > 0 ? '🔄 Nachladen …' : '🎯 ' + munition + ' / ' + magazin();
+  el('munition').textContent = nachladeUhr > 0 ? '🔄 Nachladen …' : WAFFEN[waffe].emoji + ' ' + munition + ' / ' + magazinVon(waffe);
   el('munition').style.color = munition === 0 ? '#ff4040' : '#fff';
   rotUhr = Math.max(0, rotUhr - dt); el('rot').style.opacity = rotUhr * 2;
   trefferUhr = Math.max(0, trefferUhr - dt); el('trefferX').style.opacity = trefferUhr * 4;
@@ -805,21 +908,30 @@ addEventListener('keydown', e => {
   tasten[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyR' && laeuft) nachladen();
+  const nr = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
+  if (nr >= 0 && laeuft && !ich.tot) waffeWechseln(WAFFEN_LISTE[nr]);
 });
 addEventListener('keyup', e => { tasten[e.code] = false; });
 addEventListener('mousemove', e => {
   if (!gesperrt) return;
-  ich.b -= e.movementX * MAUS_EMPFINDLICH;
-  ich.n = Math.max(-1.45, Math.min(1.45, ich.n - e.movementY * MAUS_EMPFINDLICH));
+  const empf = MAUS_EMPFINDLICH * kamera.fov / 75;   // mit Zoom langsamer drehen
+  ich.b -= e.movementX * empf;
+  ich.n = Math.max(-1.45, Math.min(1.45, ich.n - e.movementY * empf));
 });
-addEventListener('mousedown', e => { if (gesperrt && e.button === 0) maus = true; });
-addEventListener('mouseup', e => { if (e.button === 0) maus = false; });
+addEventListener('mousedown', e => { if (gesperrt && e.button === 0) maus = true; if (gesperrt && e.button === 2) rechtsMaus = true; });
+addEventListener('mouseup', e => { if (e.button === 0) maus = false; if (e.button === 2) rechtsMaus = false; });
+addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('wheel', e => {   // Mausrad: Blaster wechseln
+  if (!gesperrt || ich.tot) return;
+  const i = WAFFEN_LISTE.indexOf(waffe) + (e.deltaY > 0 ? 1 : -1);
+  waffeWechseln(WAFFEN_LISTE[(i + WAFFEN_LISTE.length) % WAFFEN_LISTE.length]);
+});
 function mausFangen() {
   try { const p = leinwand.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* geht nicht */ }
 }
 document.addEventListener('pointerlockchange', () => {
   gesperrt = document.pointerLockElement === leinwand;
-  if (!gesperrt) { maus = false; for (const k in tasten) tasten[k] = false; }
+  if (!gesperrt) { maus = false; rechtsMaus = false; for (const k in tasten) tasten[k] = false; }
   el('pause').classList.toggle('versteckt', !laeuft || gesperrt);
 });
 el('pause').onclick = mausFangen;
@@ -837,6 +949,9 @@ function spielStarten() {
   }
   el('code').textContent = MODI[modus].name + (rolle === 'host' ? '  ·  🌐 Raum-Code: ' + raumCode + ' – sag ihn deinen Freunden!' : rolle === 'gast' ? '  ·  🌐 Raum ' + raumCode : '');
   if (ich.team) setTimeout(() => mitte('Du bist in ' + TEAM_NAME[ich.team] + '!', 2.5, TEAM_FARBE[ich.team]), 2600);
+  ich.waffe = waffe;
+  meinenBlasterBauen();
+  waffenLeiste();
   wiederbeleben(ich);
   mitte('🔫 Los geht\'s! Triff die anderen!', 2.5, '#ffd21f');
 }

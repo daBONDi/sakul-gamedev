@@ -27,6 +27,14 @@
     #lebenBalken { width: 230px; height: 16px; background: rgba(0,0,0,.5); border-radius: 8px; overflow: hidden; margin-top: 4px; }
     #lebenFuell { height: 100%; width: 100%; background: #2fd05a; }
     #munition { position: absolute; right: 24px; bottom: 20px; font-size: 32px; font-weight: bold; }
+    #waffen { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 6px; }
+    #waffen div { background: rgba(0,0,0,.45); padding: 6px 10px; border-radius: 10px; font-size: 15px; border: 2px solid transparent; white-space: nowrap; }
+    #waffen div.gewaehlt { background: rgba(255,122,26,.85); border-color: #fff; font-weight: bold; }
+    #waffen small { opacity: .75; }
+    #zielfernrohr { position: fixed; inset: 0; pointer-events: none; display: none;
+      background: radial-gradient(circle at center, transparent 0 34vmin, #000 34.5vmin),
+        linear-gradient(#000, #000) center / 2px 68vmin no-repeat, linear-gradient(#000, #000) center / 68vmin 2px no-repeat; }
+    @media (max-width: 900px) { #waffen div { font-size: 12px; padding: 4px 6px; } }
 
     /* ---------- Menü ---------- */
     .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
@@ -69,7 +77,9 @@
     <div id="mitte"></div>
     <div id="lebenBox"><div id="lebenText">❤️ 100</div><div id="lebenBalken"><div id="lebenFuell"></div></div></div>
     <div id="munition"></div>
+    <div id="waffen"></div>
   </div>
+  <div id="zielfernrohr"></div>
 
   <div id="menu" class="overlay">
     <h1>🔫 Nerf PvP</h1>
@@ -86,6 +96,7 @@
     </div>
     <p>WASD: laufen · Shift: rennen · Leertaste: springen<br>
       Maus: zielen · Linksklick: schießen (gedrückt halten) · R: nachladen<br>
+      1 2 3 4 oder Mausrad: Blaster wechseln · Rechtsklick: Zoom (Scharfschützen-Blaster)<br>
       ESC: Maus wieder freigeben</p>
     <button id="soloKnopf">🤖 Gegen Bots spielen</button>
     <div id="online">
