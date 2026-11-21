@@ -29,7 +29,7 @@
     #munition { position: absolute; right: 24px; bottom: 20px; font-size: 32px; font-weight: bold; }
 
     /* ---------- Menü ---------- */
-    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
       text-align: center; padding: 1rem; overflow-y: auto; }
     #menu { background: rgba(10, 20, 50, .72); }
     #menu h1 { font-size: 4rem; margin: .2rem; color: #ff7a1a; text-shadow: 4px 4px 0 #2b59c3; }
@@ -44,6 +44,15 @@
     #netzInfo { font-size: 1rem; color: #cde; min-height: 2.4em; }
     #pause { background: rgba(0, 0, 0, .55); font-size: 2.2rem; font-weight: bold; cursor: pointer; }
     #pause small { font-size: 1.1rem; font-weight: normal; }
+    #menuKnopf { margin-top: 1.5rem; background: #ffd21f; color: #222; font-size: 1.1rem; }
+    #modi { padding: .2rem 1rem .4rem; border: 2px solid #ff7a1a; border-radius: 14px; background: rgba(120, 50, 0, .35); }
+    #modi h2 { margin: .3rem; color: #ffb27a; }
+    #modusKnoepfe { display: flex; flex-wrap: wrap; justify-content: center; }
+    .modusKnopf { width: 10rem; min-height: 5.5rem; font-size: 1.05rem; background: rgba(255,255,255,.15); color: #fff;
+      border: 3px solid transparent; line-height: 1.4; }
+    .modusKnopf:hover { background: rgba(255,255,255,.28); }
+    .modusKnopf.gewaehlt { background: #ff7a1a; border-color: #fff; transform: scale(1.06); }
+    #modusText { min-height: 3em; margin: .4rem auto; font-size: 1.05rem; color: #ffe2c9; }
   </style>
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
@@ -64,8 +73,17 @@
 
   <div id="menu" class="overlay">
     <h1>🔫 Nerf PvP</h1>
-    <p>Schnapp dir deinen Blaster und triff die anderen mit Schaumstoff-Darts!<br>
-      Wer zuerst <b>10 Gegner</b> ausschaltet, gewinnt. 🏆</p>
+    <p>Schnapp dir deinen Blaster und triff die anderen mit Schaumstoff-Darts! 🎯</p>
+    <div id="modi">
+      <h2>Spielmodus wählen</h2>
+      <div id="modusKnoepfe">
+        <button class="modusKnopf" data-modus="ffa">🎯<br>Jeder gegen jeden</button>
+        <button class="modusKnopf" data-modus="team">🔴🔵<br>Team-Kampf</button>
+        <button class="modusKnopf" data-modus="einTreffer">⚡<br>Ein Treffer</button>
+        <button class="modusKnopf" data-modus="ueberleben">💀<br>Letzter Überlebender</button>
+      </div>
+      <p id="modusText"></p>
+    </div>
     <p>WASD: laufen · Shift: rennen · Leertaste: springen<br>
       Maus: zielen · Linksklick: schießen (gedrückt halten) · R: nachladen<br>
       ESC: Maus wieder freigeben</p>
@@ -77,11 +95,12 @@
         <input id="codeFeld" maxlength="4" placeholder="CODE" autocomplete="off">
         <button id="beitretenKnopf">Beitreten</button>
       </div>
-      <p id="netzInfo">Erstelle einen Raum und sag deinen Freunden den Code.<br>Sind weniger als 4 Spieler da, kämpfen Bots mit.</p>
+      <p id="netzInfo">Erstelle einen Raum und sag deinen Freunden den Code. Wer den Raum erstellt, bestimmt den Spielmodus.<br>Sind weniger als 4 Spieler da, kämpfen Bots mit.</p>
     </div>
   </div>
 
-  <div id="pause" class="overlay versteckt">🖱️ Klicke, um zu spielen<br><small>ESC = Maus freigeben</small></div>
+  <div id="pause" class="overlay versteckt">🖱️ Klicke, um zu spielen<br><small>ESC = Maus freigeben</small>
+    <button id="menuKnopf">🏠 Zurück zum Menü</button></div>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script type="module" src="spiel.js"></script>

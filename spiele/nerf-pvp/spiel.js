@@ -16,6 +16,20 @@ const LAUF_TEMPO = 6, RENN_TEMPO = 9, SPRUNG_KRAFT = 6.5, SCHWERKRAFT = 18;
 const MIN_KAEMPFER = 4;          // Bots füllen auf so viele Kämpfer auf
 const BOT_ZIELFEHLER = 0.07;     // kleiner = Bots zielen besser
 const MAUS_EMPFINDLICH = 0.0022;
+
+// ========== Spielmodi ==========
+const MODI = {
+  ffa:        { name: '🎯 Jeder gegen jeden',    text: 'Jeder kämpft für sich. Wer zuerst 10 Gegner erwischt, gewinnt!' },
+  team:       { name: '🔴🔵 Team-Kampf',          text: 'Rot gegen Blau! Das Team, das zuerst 20 Punkte hat, gewinnt. Dein eigenes Team kannst du nicht treffen.' },
+  einTreffer: { name: '⚡ Ein Treffer',           text: 'Jeder Treffer haut dich sofort raus! Aber du hast nur 6 Darts im Magazin. Wer zuerst 10 hat, gewinnt.' },
+  ueberleben: { name: '💀 Letzter Überlebender', text: 'Jeder hat nur 3 Leben. Wer alle verbraucht hat, schaut zu. Wer als Letzter übrig ist, gewinnt!' },
+};
+const TEAM_SIEG = 20;              // so viele Punkte braucht ein Team
+const UEBERLEBEN_LEBEN = 3;        // so viele Leben im Modus "Letzter Überlebender"
+const TEAM_FARBE = { rot: '#ff4040', blau: '#2f8cff' };
+const TEAM_NAME = { rot: '🔴 Team Rot', blau: '🔵 Team Blau' };
+let modus = 'ffa';
+function magazin() { return modus === 'einTreffer' ? 6 : MAGAZIN; }
 const RADIUS = 0.35, HOEHE = 1.75, AUGEN = 1.55;
 const FARBEN = ['#ff7a1a', '#2f8cff', '#2fd05a', '#e04fd0', '#ffd21f', '#ff4040', '#8f6bff', '#20d0c0'];
 const BOT_FARBEN = ['#9aa3b5', '#c9a26b', '#7fb3a0', '#b58fc4', '#d68a8a', '#8fa8d6', '#a3c46b'];
@@ -242,7 +256,7 @@ function dartsBewegen(dt) {
     suche: for (let i = 1; i <= schritte; i++) {
       const p = tmp.copy(d.alt).lerp(d.pos, i / schritte);
       for (const k of alleKaempfer()) {
-        if (k.id === d.von || k.tot) continue;
+        if (k.id === d.von || k.tot || gleichesTeam(k.id, d.von)) continue;   // eigenes Team: Dart fliegt durch
         const art = trifft(p, k);
         if (art) { treffer(d, k, art); d.weg = true; break suche; }
       }
@@ -260,7 +274,7 @@ function dartsBewegen(dt) {
 }
 
 function treffer(d, k, art) {
-  const schaden = art === 'kopf' ? KOPF_SCHADEN : SCHADEN;
+  const schaden = modus === 'einTreffer' ? MAX_LEBEN : art === 'kopf' ? KOPF_SCHADEN : SCHADEN;
   if (k === ich) getroffen(schaden, d.von);
   else if (k.bot && istChef()) botGetroffen(k, schaden, d.von);
   if (d.von === ich.id) {   // DU hast getroffen!
@@ -277,6 +291,12 @@ function alleKaempfer() { return [ich, ...andere.values()]; }
 function nameVon(id) { return punkte[id] ? String(punkte[id].name) : '???'; }
 const sicher = t => String(t).replace(/[&<>"']/g, z => '&#' + z.charCodeAt(0) + ';');   // Text sicher für HTML machen
 function farbeVon(id) { return punkte[id] ? punkte[id].farbe : '#fff'; }
+function teamVon(id) { return punkte[id] ? punkte[id].team : null; }
+function gleichesTeam(a, b) { return modus === 'team' && !!teamVon(a) && teamVon(a) === teamVon(b); }
+function teamGroesse(t) { return Object.values(punkte).filter(p => p.team === t).length; }
+function teamPunkte(t) { return Object.values(punkte).filter(p => p.team === t).reduce((summe, p) => summe + p.kills, 0); }
+function neuesTeam() { return modus !== 'team' ? null : teamGroesse('rot') <= teamGroesse('blau') ? 'rot' : 'blau'; }
+function ausgeschieden(id) { return modus === 'ueberleben' && !!punkte[id] && punkte[id].tode >= UEBERLEBEN_LEBEN; }
 
 function kaempferHinzu(k) {
   k.modell = baueFigur(k.farbe, k.name);
@@ -294,15 +314,15 @@ function wiederbeleben(k) {
   let bester = STARTPUNKTE[0], besteWeite = -1;
   for (const s of STARTPUNKTE) {
     let weite = 999;
-    for (const o of alleKaempfer()) if (o !== k && !o.tot) weite = Math.min(weite, Math.hypot(o.x - s[0], o.z - s[1]));
+    for (const o of alleKaempfer()) if (o !== k && !o.tot && !gleichesTeam(o.id, k.id)) weite = Math.min(weite, Math.hypot(o.x - s[0], o.z - s[1]));
     weite += Math.random() * 4;
     if (weite > besteWeite) { besteWeite = weite; bester = s; }
   }
   k.x = bester[0]; k.z = bester[1]; k.y = 0; k.vy = 0;
   k.hp = MAX_LEBEN; k.tot = false; k.ruheUhr = 0;
   k.b = Math.atan2(k.x, k.z); k.n = 0;   // schaut zur Mitte
-  if (k.bot) { k.munition = MAGAZIN; k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0; }
-  if (k === ich) { munition = MAGAZIN; nachladeUhr = 0; }
+  if (k.bot) { k.munition = magazin(); k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0; }
+  if (k === ich) { munition = magazin(); nachladeUhr = 0; }
 }
 
 function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
@@ -313,7 +333,7 @@ function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
 // ---------- Du ----------
 const tasten = {};
 let maus = false, gesperrt = false, laeuft = false;
-let munition = MAGAZIN, nachladeUhr = 0, schussUhr = 0, rueckstoss = 0, laufPhase = 0, todHoehe = 0;
+let munition = magazin(), nachladeUhr = 0, schussUhr = 0, rueckstoss = 0, laufPhase = 0, todHoehe = 0;
 
 function getroffen(schaden, von) {
   if (ich.tot) return;
@@ -327,7 +347,7 @@ function getroffen(schaden, von) {
 }
 
 function nachladen() {
-  if (nachladeUhr > 0 || munition === MAGAZIN || ich.tot) return;
+  if (nachladeUhr > 0 || munition === magazin() || ich.tot) return;
   nachladeUhr = NACHLADE_ZEIT;
   ton(300, 0.06, 'square', 0.06);
   setTimeout(() => ton(520, 0.08, 'square', 0.06), NACHLADE_ZEIT * 800);
@@ -354,6 +374,7 @@ function feuern(von, o, r) {
 function spielerUpdate(dt) {
   if (ich.tot) {
     ich.wiederUhr -= dt;
+    if (ausgeschieden(ich.id)) { mitte('👻 Keine Leben mehr – schau zu, wer gewinnt!', 0.1, '#ccc'); return; }
     mitte('💥 Getroffen von ' + nameVon(ich.killer) + '!  Zurück in ' + Math.ceil(ich.wiederUhr) + ' …', 0.1, farbeVon(ich.killer));
     if (ich.wiederUhr <= 0) wiederbeleben(ich);
     return;
@@ -371,7 +392,7 @@ function spielerUpdate(dt) {
   bewegen(ich, (fx * vor + rx * seit) * tempo, (fz * vor + rz * seit) * tempo, dt);
 
   schussUhr -= dt;
-  if (nachladeUhr > 0) { nachladeUhr -= dt; if (nachladeUhr <= 0) munition = MAGAZIN; }
+  if (nachladeUhr > 0) { nachladeUhr -= dt; if (nachladeUhr <= 0) munition = magazin(); }
   if (maus && gesperrt && schussUhr <= 0 && nachladeUhr <= 0) {
     if (munition > 0) schiessen();
     else { ton(1200, 0.03, 'square', 0.05); schussUhr = 0.25; nachladen(); }
@@ -383,6 +404,11 @@ function kameraUpdate(dt) {
     todHoehe = Math.min(3, todHoehe + dt * 1.5);
     kamera.position.set(ich.x, ich.y + AUGEN + todHoehe, ich.z);
     kamera.rotation.set(-0.9, ich.b, 0);
+    if (ausgeschieden(ich.id) && todHoehe >= 3) {   // Zuschauer: Kamera kreist über der Arena
+      menuWinkel += dt * 0.2;
+      kamera.position.set(Math.sin(menuWinkel) * 22, 15, Math.cos(menuWinkel) * 22);
+      kamera.lookAt(0, 0, 0);
+    }
     meinBlaster.visible = false;
     return;
   }
@@ -401,11 +427,11 @@ function kameraUpdate(dt) {
 // ---------- Bots (nur der Chef/Host steuert sie) ----------
 let naechsteBotNr = 0;
 function neuerBot() {
-  const i = naechsteBotNr++;
-  const b = { id: 'b' + i, name: BOT_NAMEN[i % BOT_NAMEN.length], farbe: BOT_FARBEN[i % BOT_FARBEN.length], bot: true,
+  const i = naechsteBotNr++, team = neuesTeam();
+  const b = { id: 'b' + i, name: BOT_NAMEN[i % BOT_NAMEN.length], farbe: team ? TEAM_FARBE[team] : BOT_FARBEN[i % BOT_FARBEN.length], bot: true, team,
     x: 0, y: 0, z: 0, vy: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: false, ruheUhr: 0,
-    munition: MAGAZIN, schussUhr: 1, nachladeUhr: 0, sehUhr: 0, seitwaerts: 0, seitUhr: 0, wegpunkt: null, steckUhr: 0 };
-  punkte[b.id] = { name: b.name, farbe: b.farbe, kills: 0, tode: 0 };
+    munition: magazin(), schussUhr: 1, nachladeUhr: 0, sehUhr: 0, seitwaerts: 0, seitUhr: 0, wegpunkt: null, steckUhr: 0 };
+  punkte[b.id] = { name: b.name, farbe: b.farbe, team, kills: 0, tode: 0 };
   kaempferHinzu(b);
   wiederbeleben(b);
 }
@@ -413,7 +439,16 @@ function botsAnpassen() {   // Bots füllen auf MIN_KAEMPFER auf
   const soll = Math.max(0, MIN_KAEMPFER - 1 - gaeste.size);
   const bots = [...andere.values()].filter(k => k.bot);
   for (let i = bots.length; i < soll; i++) neuerBot();
-  for (let i = bots.length - 1; i >= soll; i--) { kaempferWeg(bots[i].id); delete punkte[bots[i].id]; }
+  while (bots.length > soll) {
+    let nr = bots.length - 1;
+    if (modus === 'team') {   // aus dem größeren Team einen Bot wegnehmen, damit es fair bleibt
+      const gross = teamGroesse('rot') >= teamGroesse('blau') ? 'rot' : 'blau';
+      const i = bots.findIndex(b => b.team === gross);
+      if (i >= 0) nr = i;
+    }
+    const weg = bots.splice(nr, 1)[0];
+    kaempferWeg(weg.id); delete punkte[weg.id];
+  }
 }
 function zufallsPunkt() {
   for (let i = 0; i < 40; i++) {
@@ -429,16 +464,16 @@ function botGetroffen(b, schaden, von) {
 
 const auge = new THREE.Vector3(), zielAuge = new THREE.Vector3();
 function botDenken(b, dt) {
-  if (b.tot) { b.wiederUhr -= dt; if (b.wiederUhr <= 0) wiederbeleben(b); return; }
+  if (b.tot) { b.wiederUhr -= dt; if (b.wiederUhr <= 0 && !ausgeschieden(b.id)) wiederbeleben(b); return; }
   erholen(b, dt);
   b.schussUhr -= dt;
-  if (b.nachladeUhr > 0) { b.nachladeUhr -= dt; if (b.nachladeUhr <= 0) b.munition = MAGAZIN; }
+  if (b.nachladeUhr > 0) { b.nachladeUhr -= dt; if (b.nachladeUhr <= 0) b.munition = magazin(); }
 
   // Den nächsten Gegner suchen, den der Bot sehen kann
   auge.set(b.x, b.y + AUGEN, b.z);
   let ziel = null, zielWeite = 35;
   for (const k of alleKaempfer()) {
-    if (k === b || k.tot) continue;
+    if (k === b || k.tot || gleichesTeam(k.id, b.id)) continue;
     const weite = Math.hypot(k.x - b.x, k.y - b.y, k.z - b.z);
     if (weite < zielWeite && sichtlinie(auge, zielAuge.set(k.x, k.y + 1.2, k.z))) { ziel = k; zielWeite = weite; }
   }
@@ -502,11 +537,18 @@ function raus(opfer, von) {   // nur beim Chef
   if (punkte[opfer]) punkte[opfer].tode++;
   anAlle({ t: 'raus', opfer, von });
   zeigeRaus(opfer, von);
-  if (punkte[von] && punkte[von].kills >= SIEG_PUNKTE) {
-    siegPause = 5;
-    anAlle({ t: 'sieg', id: von });
-    zeigeSieg(von);
-  }
+  if (modus === 'team') {
+    const t = teamVon(von);
+    if (t && teamPunkte(t) >= TEAM_SIEG) siegen('team-' + t);
+  } else if (modus === 'ueberleben') {
+    const uebrig = Object.keys(punkte).filter(id => !ausgeschieden(id));
+    if (uebrig.length <= 1) siegen(uebrig[0] || von);
+  } else if (punkte[von] && punkte[von].kills >= SIEG_PUNKTE) siegen(von);
+}
+function siegen(id) {
+  siegPause = 5;
+  anAlle({ t: 'sieg', id });
+  zeigeSieg(id);
 }
 function neueRunde() {   // nur beim Chef
   for (const p of Object.values(punkte)) { p.kills = 0; p.tode = 0; }
@@ -523,7 +565,10 @@ function zeigeRaus(opfer, von) {
   }
 }
 function zeigeSieg(id) {
-  mitte(id === ich.id ? '🏆 DU HAST GEWONNEN! 🏆' : '🏆 ' + nameVon(id) + ' gewinnt! 🏆', 5, farbeVon(id));
+  if (id.startsWith('team-')) {
+    const t = id.slice(5);
+    mitte('🏆 ' + TEAM_NAME[t] + ' gewinnt! 🏆' + (teamVon(ich.id) === t ? ' Das ist DEIN Team! 🎉' : ''), 5, TEAM_FARBE[t]);
+  } else mitte(id === ich.id ? '🏆 DU HAST GEWONNEN! 🏆' : '🏆 ' + nameVon(id) + ' gewinnt! 🏆', 5, farbeVon(id));
   [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => ton(f, 0.25, 'triangle', 0.15), i * 150));
 }
 
@@ -552,7 +597,6 @@ function raumErstellen() {
   peer = new Peer(peerName(raumCode));
   peer.on('open', () => {
     rolle = 'host';
-    document.getElementById('code').textContent = '🌐 Raum-Code: ' + raumCode + ' – sag ihn deinen Freunden!';
     spielStarten();
   });
   peer.on('connection', v => {
@@ -560,10 +604,10 @@ function raumErstellen() {
       if (gaeste.size >= FARBEN.length - 1) { v.send({ t: 'voll' }); setTimeout(() => v.close(), 500); return; }
       v.nr = freieNummer(); v.id = 'p' + v.nr;
       gaeste.set(v.peer, v);
-      const name = 'Spieler ' + v.nr, farbe = FARBEN[v.nr - 1];
-      punkte[v.id] = { name, farbe, kills: 0, tode: 0 };
+      const team = neuesTeam(), name = 'Spieler ' + v.nr, farbe = team ? TEAM_FARBE[team] : FARBEN[v.nr - 1];
+      punkte[v.id] = { name, farbe, team, kills: 0, tode: 0 };
       kaempferHinzu({ id: v.id, name, farbe, x: 0, y: 0, z: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: true });
-      v.send({ t: 'hallo', nr: v.nr });
+      v.send({ t: 'hallo', nr: v.nr, modus, team });
       botsAnpassen();
       feed(`👋 <span style="color:${farbe}">${name}</span> ist da!`);
       ton(660, 0.1, 'triangle', 0.1);
@@ -622,8 +666,9 @@ function raumBeitreten(code) {
 function gastEmpfaengt(d) {
   if (d.t === 'hallo') {
     rolle = 'gast';
-    ich.id = 'p' + d.nr; ich.name = 'Spieler ' + d.nr; ich.farbe = FARBEN[d.nr - 1];
-    document.getElementById('code').textContent = '🌐 Raum ' + raumCode;
+    modus = MODI[d.modus] ? d.modus : 'ffa';
+    ich.id = 'p' + d.nr; ich.name = 'Spieler ' + d.nr; ich.team = d.team || null;
+    ich.farbe = d.team ? TEAM_FARBE[d.team] : FARBEN[d.nr - 1];
     spielStarten();
   } else if (d.t === 'welt') {
     punkte = d.p;
@@ -640,7 +685,7 @@ function gastEmpfaengt(d) {
   } else if (d.t === 'schuss') neuerDart(d.von, d.o, d.r);
   else if (d.t === 'raus') zeigeRaus(d.opfer, d.von);
   else if (d.t === 'sieg') zeigeSieg(d.id);
-  else if (d.t === 'neustart') { wiederbeleben(ich); mitte('🔄 Neue Runde!', 2); }
+  else if (d.t === 'neustart') { for (const p of Object.values(punkte)) { p.kills = 0; p.tode = 0; } wiederbeleben(ich); mitte('🔄 Neue Runde!', 2); }
   else if (d.t === 'voll') netzInfo('😕 Der Raum ist voll.');
 }
 
@@ -724,10 +769,10 @@ function feed(html) {
   setTimeout(() => zeile.remove(), 6000);
 }
 function hudUpdate(dt) {
-  el('lebenText').textContent = '❤️ ' + Math.ceil(ich.hp);
+  el('lebenText').textContent = '❤️ ' + Math.ceil(ich.hp) + (modus === 'ueberleben' && punkte[ich.id] ? '   ·   💀 Leben übrig: ' + Math.max(0, UEBERLEBEN_LEBEN - punkte[ich.id].tode) : '');
   el('lebenFuell').style.width = ich.hp + '%';
   el('lebenFuell').style.background = ich.hp > 60 ? '#2fd05a' : ich.hp > 30 ? '#ffd21f' : '#ff4040';
-  el('munition').textContent = nachladeUhr > 0 ? '🔄 Nachladen …' : '🎯 ' + munition + ' / ' + MAGAZIN;
+  el('munition').textContent = nachladeUhr > 0 ? '🔄 Nachladen …' : '🎯 ' + munition + ' / ' + magazin();
   el('munition').style.color = munition === 0 ? '#ff4040' : '#fff';
   rotUhr = Math.max(0, rotUhr - dt); el('rot').style.opacity = rotUhr * 2;
   trefferUhr = Math.max(0, trefferUhr - dt); el('trefferX').style.opacity = trefferUhr * 4;
@@ -735,9 +780,23 @@ function hudUpdate(dt) {
   tabelleUhr -= dt;
   if (tabelleUhr <= 0) {
     tabelleUhr = 0.25;
+    const zeile = (id, p, wert) => `<div class="${id === ich.id ? 'ich' : ''}"><span style="color:${sicher(p.farbe)}">●</span> ${sicher(p.name)}${id === ich.id ? ' (Du)' : ''} <b>${sicher(wert)}</b></div>`;
     const liste = Object.entries(punkte).sort((a, b) => b[1].kills - a[1].kills);
-    el('tabelle').innerHTML = `<div>🏆 Wer zuerst ${SIEG_PUNKTE} hat</div>` + liste.map(([id, p]) =>
-      `<div class="${id === ich.id ? 'ich' : ''}"><span style="color:${sicher(p.farbe)}">●</span> ${sicher(p.name)}${id === ich.id ? ' (Du)' : ''} <b>${sicher(p.kills)}</b></div>`).join('');
+    let html = '';
+    if (modus === 'team') {
+      html = `<div>🏆 Welches Team hat zuerst ${TEAM_SIEG}?</div>`;
+      for (const t of ['rot', 'blau']) {
+        html += `<div style="color:${TEAM_FARBE[t]};margin-top:4px">${TEAM_NAME[t]} <b>${teamPunkte(t)}</b></div>`;
+        html += liste.filter(([, p]) => p.team === t).map(([id, p]) => zeile(id, p, p.kills)).join('');
+      }
+    } else if (modus === 'ueberleben') {
+      html = '<div>💀 Wer bleibt übrig?</div>' + liste
+        .sort((a, b) => a[1].tode - b[1].tode || b[1].kills - a[1].kills)
+        .map(([id, p]) => zeile(id, p, ausgeschieden(id) ? '👻' : '❤️'.repeat(Math.max(0, UEBERLEBEN_LEBEN - p.tode)))).join('');
+    } else {
+      html = `<div>🏆 Wer zuerst ${SIEG_PUNKTE} hat</div>` + liste.map(([id, p]) => zeile(id, p, p.kills)).join('');
+    }
+    el('tabelle').innerHTML = html;
   }
 }
 
@@ -771,12 +830,29 @@ function spielStarten() {
   el('hud').classList.remove('versteckt');
   el('pause').classList.toggle('versteckt', gesperrt);
   if (istChef()) {
-    punkte[ich.id] = { name: ich.name, farbe: ich.farbe, kills: 0, tode: 0 };
+    ich.team = modus === 'team' ? 'rot' : null;
+    if (ich.team) ich.farbe = TEAM_FARBE.rot;
+    punkte[ich.id] = { name: ich.name, farbe: ich.farbe, team: ich.team, kills: 0, tode: 0 };
     botsAnpassen();
   }
+  el('code').textContent = MODI[modus].name + (rolle === 'host' ? '  ·  🌐 Raum-Code: ' + raumCode + ' – sag ihn deinen Freunden!' : rolle === 'gast' ? '  ·  🌐 Raum ' + raumCode : '');
+  if (ich.team) setTimeout(() => mitte('Du bist in ' + TEAM_NAME[ich.team] + '!', 2.5, TEAM_FARBE[ich.team]), 2600);
   wiederbeleben(ich);
   mitte('🔫 Los geht\'s! Triff die anderen!', 2.5, '#ffd21f');
 }
+// Spielmodus-Auswahl im Menü
+function modusWaehlen(m) {
+  modus = m;
+  for (const k of document.querySelectorAll('.modusKnopf')) k.classList.toggle('gewaehlt', k.dataset.modus === m);
+  el('modusText').textContent = MODI[m].text;
+  try { localStorage.setItem('nerf-pvp-modus', m); } catch (e) { /* egal */ }
+}
+for (const k of document.querySelectorAll('.modusKnopf')) k.onclick = () => modusWaehlen(k.dataset.modus);
+let gemerkt = 'ffa';
+try { gemerkt = localStorage.getItem('nerf-pvp-modus') || 'ffa'; } catch (e) { /* egal */ }
+modusWaehlen(MODI[gemerkt] ? gemerkt : 'ffa');
+el('menuKnopf').onclick = e => { e.stopPropagation(); location.reload(); };
+
 el('soloKnopf').onclick = () => { rolle = 'solo'; spielStarten(); mausFangen(); };
 el('hostKnopf').onclick = raumErstellen;
 el('beitretenKnopf').onclick = () => raumBeitreten(el('codeFeld').value);
