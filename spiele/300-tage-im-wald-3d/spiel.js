@@ -17,6 +17,22 @@ const NACHT_ANTEIL = 0.5;   // so viel vom Tag ist Nacht (0.5 = die Hälfte)
 const WELT = 3000;          // Größe der Welt in Pixeln
 const SPEICHER = 'wald300-3d-spielstand';
 
+// Die 3 Monster-Arten. Hier kannst du sie stärker oder schwächer machen!
+// leben = so oft musst du sie treffen, tempo = wie schnell, biss = so viel Leben nehmen sie dir,
+// fleisch = Belohnung, reichweite = so nah müssen sie zum Beißen sein, chance = wie oft sie kommen, abTag = ab welchem Tag
+const MONSTER_ARTEN = {
+  schatten: { name: 'Schattenbestie', emoji: '👹', leben: 3, tempo: 135, biss: 12, fleisch: 2, reichweite: 34, chance: 50, abTag: 1, ton: 1 },
+  kriecher: { name: 'Giftkriecher',   emoji: '🕷️', leben: 1, tempo: 205, biss: 6,  fleisch: 1, reichweite: 28, chance: 35, abTag: 1, ton: 2.2 },
+  riese:    { name: 'Moosriese',      emoji: '🌳', leben: 8, tempo: 80,  biss: 25, fleisch: 5, reichweite: 46, chance: 15, abTag: 5, ton: 0.55 },
+};
+function zufallsMonsterArt() {
+  const arten = Object.keys(MONSTER_ARTEN).filter(a => tag >= MONSTER_ARTEN[a].abTag);
+  let wurf = Math.random() * arten.reduce((summe, a) => summe + MONSTER_ARTEN[a].chance, 0);
+  for (const a of arten) { wurf -= MONSTER_ARTEN[a].chance; if (wurf <= 0) return a; }
+  return arten[0];
+}
+const monsterArt = w => MONSTER_ARTEN[w.art] || MONSTER_ARTEN.schatten;
+
 // Zufall mit festem Startwert -> der Wald sieht immer gleich aus
 let seed = 12345;
 function zufall() {
@@ -202,7 +218,7 @@ function interagieren() {
       w.hp -= schaden; angriffPause = 0.35;
       anHost({ t: 'treffer', art: 'wolf', id: w.id, schaden });
       const d = abstand(p, w) || 1; w.x += (w.x - p.x) / d * 30; w.y += (w.y - p.y) / d * 30;
-      if (w.hp <= 0) { inv.fleisch += 2; sag('👹 Monster besiegt! +2 Fleisch', '#ffd166'); }
+      if (w.hp <= 0) { const m = monsterArt(w); inv.fleisch += m.fleisch; sag(m.emoji + ' ' + m.name + ' besiegt! +' + m.fleisch + ' Fleisch', '#ffd166'); }
       return;
     }
   }
@@ -313,12 +329,16 @@ function tiereUpdate(dt) {
   const maxWoelfe = istNacht() ? Math.min(8, 1 + Math.floor(tag / 30) + (istWinter() ? 1 : 0)) : 0;
   if (woelfe.length < maxWoelfe && Math.random() < dt * 0.4) {
     const pos = spawnWeitWeg(600, 800, zufallsSpieler());
-    if (pos) { woelfe.push({ ...pos, id: naechsteId++, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('👹 Ein Monster brüllt in der Dunkelheit...', '#ff8080'); bruellen(0.5); }
+    if (pos) {
+      const art = zufallsMonsterArt(), m = MONSTER_ARTEN[art];
+      woelfe.push({ ...pos, id: naechsteId++, art, hp: m.leben + Math.floor(tag / 60), biss: 0 });
+      sag(m.emoji + ' Ein ' + m.name + ' lauert in der Dunkelheit...', '#ff8080'); bruellen(0.5, m.ton);
+    }
   }
   for (const w of woelfe) {
     w.biss -= dt;
     const n = naechsterSpieler(w);   // der Wolf jagt den Spieler, der am nächsten ist
-    let zx = n.s.x, zy = n.s.y, tempo = 135, flucht = false;
+    let zx = n.s.x, zy = n.s.y, tempo = monsterArt(w).tempo, flucht = false;
     // Angst vor Feuer
     for (const f of feuer) {
       if (abstand(w, f) < 170) { zx = w.x * 2 - f.x; zy = w.y * 2 - f.y; tempo = 160; flucht = true; }
@@ -327,24 +347,24 @@ function tiereUpdate(dt) {
     if (!istNacht()) { zx = w.x * 2 - n.s.x; zy = w.y * 2 - n.s.y; flucht = true; }
     const a = Math.atan2(zy - w.y, zx - w.x);
     w.blick = a;
-    if (flucht || n.d > 30) bewegeMitKollision(w, Math.cos(a) * tempo * dt, Math.sin(a) * tempo * dt);
+    if (flucht || n.d > monsterArt(w).reichweite - 4) bewegeMitKollision(w, Math.cos(a) * tempo * dt, Math.sin(a) * tempo * dt);
   }
   woelfe = woelfe.filter(w => w.hp > 0 && (istNacht() || naechsterSpieler(w).d < 900));
 }
 
 // Gruseliges Brüllen mit Web Audio (tiefes, rauschendes Knurren)
 let audio = null;
-function bruellen(laut) {
+function bruellen(laut, hoehe = 1) {   // hoehe: 2 = hohes Fauchen, 0.5 = ganz tiefes Grollen
   try {
     audio = audio || new AudioContext();
     const t = audio.currentTime, dauer = 1.4;
     const o = audio.createOscillator(), o2 = audio.createOscillator(), v = audio.createGain(), f = audio.createBiquadFilter();
     o.type = 'sawtooth'; o2.type = 'square';
-    o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(45, t + dauer);
-    o2.frequency.setValueAtTime(73, t); o2.frequency.exponentialRampToValueAtTime(30, t + dauer);
+    o.frequency.setValueAtTime(110 * hoehe, t); o.frequency.exponentialRampToValueAtTime(45 * hoehe, t + dauer);
+    o2.frequency.setValueAtTime(73 * hoehe, t); o2.frequency.exponentialRampToValueAtTime(30 * hoehe, t + dauer);
     const zitter = audio.createOscillator(), zg = audio.createGain();   // macht das Knurren "rau"
     zitter.frequency.value = 28; zg.gain.value = 25; zitter.connect(zg); zg.connect(o.frequency);
-    f.type = 'lowpass'; f.frequency.value = 700;
+    f.type = 'lowpass'; f.frequency.value = 700 * hoehe;
     v.gain.setValueAtTime(0.001, t); v.gain.exponentialRampToValueAtTime(laut, t + 0.15); v.gain.exponentialRampToValueAtTime(0.001, t + dauer);
     o.connect(f); o2.connect(f); f.connect(v); v.connect(audio.destination);
     for (const x of [o, o2, zitter]) { x.start(t); x.stop(t + dauer); }
@@ -357,8 +377,9 @@ function wolfBisse(dt) {
   bissPause -= dt;
   if (bissPause > 0 || inHuette() || !istNacht()) return;
   for (const w of woelfe) {
-    if (w.hp > 0 && abstand(w, spieler) < 34 && !wolfHatAngst(w)) {
-      spieler.leben -= 12; schadenBlitz = 0.3; bissPause = 1; bruellen(0.25);
+    const m = monsterArt(w);
+    if (w.hp > 0 && abstand(w, spieler) < m.reichweite && !wolfHatAngst(w)) {
+      spieler.leben -= m.biss; schadenBlitz = 0.3; bissPause = 1; bruellen(0.25, m.ton);
       return;
     }
   }
@@ -676,8 +697,8 @@ function teil(geo, m, x, y, z, sx = 1, sy = sx, sz = sx) {
   const k = new THREE.Mesh(geo, m); k.position.set(x, y, z); k.scale.set(sx, sy, sz); k.castShadow = true; return k;
 }
 const beinGeo = new THREE.CylinderGeometry(2.5, 2, 14, 6).translate(0, -7, 0);
-function baueWolf() {
-  // Das Monster: groß, dunkel, drei leuchtende Augen, Maul geht auf und zu, lange Krallen
+function baueSchattenbestie() {
+  // Schattenbestie: groß, dunkel, drei leuchtende Augen, Maul geht auf und zu, lange Krallen
   const g = new THREE.Group();
   const k = new THREE.Group(); k.scale.setScalar(1.25); g.add(k);          // alles 25 % größer
   k.add(teil(kugel, wolfMat, 0, 38, 0, 16, 22, 18));                      // dicker Körper
@@ -712,8 +733,78 @@ function baueWolf() {
   // roter Schein auf dem Boden
   const glut = new THREE.Mesh(new THREE.CircleGeometry(45, 24).rotateX(-Math.PI / 2), monsterGlutMat);
   glut.position.y = 0.6; g.add(glut);
-  g.userData = { beine, arme, kopf, kiefer, pupille, schritt: 0, zeit: Math.random() * 10 };
+  g.userData = { schritt: 0, zeit: Math.random() * 10, animiere(u, dt) {
+    beine.forEach((b, i) => { b.rotation.z = Math.sin(u.schritt + i * Math.PI) * 0.6; });
+    arme.forEach((a, i) => { a.rotation.z = Math.sin(u.schritt + i * Math.PI + Math.PI) * 0.4 + 0.6; }); // Arme greifen nach vorne
+    kiefer.rotation.z = -0.15 - Math.abs(Math.sin(u.zeit * 3)) * 0.45;           // Maul geht auf und zu
+    kopf.rotation.x = Math.sin(u.zeit * 1.3) * 0.15 + (Math.sin(u.zeit * 17) > 0.97 ? 0.3 : 0); // Kopf zuckt manchmal
+    pupille.scale.z = 1.6 * (0.6 + Math.abs(Math.sin(u.zeit * 2)) * 0.6);         // Pupille pulsiert
+  } };
   return g;
+}
+
+// ---------- Monster 2: Giftkriecher (klein, schnell, 6 Beine, viele Augen) ----------
+const kriecherMat = mat('#16240f'), kriecherMat2 = mat('#2b3d1a');
+const giftMat = new THREE.MeshBasicMaterial({ color: '#7dff3a' });
+const giftGlutMat = new THREE.MeshBasicMaterial({ color: '#4dff00', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending });
+function baueKriecher() {
+  const g = new THREE.Group();
+  g.add(teil(kugel, kriecherMat, 0, 12, 0, 11, 7, 10));                     // Vorderkörper
+  g.add(teil(kugel, kriecherMat2, -18, 15, 0, 14, 11, 12));                 // dicker Hinterleib
+  for (const [x, y, z] of [[-16, 25, 0], [-24, 21, -6], [-24, 21, 6], [-11, 22, -7], [-11, 22, 7]]) g.add(teil(kugel, giftMat, x, y, z, 2.2)); // Giftflecken leuchten
+  g.add(teil(kugel, kriecherMat, 11, 13, 0, 7, 6, 7));                      // Kopf
+  for (const [y, z] of [[16, -2], [16, 2], [18, -4.5], [18, 4.5], [14, -5], [14, 5]]) g.add(teil(kugel, wolfAugen, 17, y, z, 1.3)); // 6 rote Augen
+  const zange = new THREE.ConeGeometry(1.3, 8, 4);
+  const zangen = [-2.5, 2.5].map(z => { const t = teil(zange, giftMat, 18, 8, z); t.rotation.z = Math.PI * 0.75; g.add(t); return t; });
+  const beinGeo = new THREE.CylinderGeometry(1.4, 0.8, 24, 5).translate(0, -12, 0);
+  const beine = [];
+  for (const [x, phase] of [[8, 0], [0, 1], [-8, 0]]) for (const seite of [-1, 1]) {
+    const gelenk = new THREE.Group(); gelenk.position.set(x, 13, seite * 5);
+    const b = teil(beinGeo, kriecherMat, 0, 0, 0); b.rotation.x = -seite * 1.05; gelenk.add(b);
+    g.add(gelenk); beine.push({ gelenk, phase: (phase + (seite > 0 ? 1 : 0)) % 2 });
+  }
+  const glut = new THREE.Mesh(new THREE.CircleGeometry(30, 20).rotateX(-Math.PI / 2), giftGlutMat);
+  glut.position.y = 0.6; g.add(glut);
+  g.userData = { schritt: 0, zeit: Math.random() * 10, animiere(u, dt) {
+    beine.forEach(b => { b.gelenk.rotation.y = Math.sin(u.schritt * 1.8 + b.phase * Math.PI) * 0.45; });  // trippeln
+    zangen.forEach((t, i) => { t.rotation.x = (i ? 1 : -1) * Math.abs(Math.sin(u.zeit * 6)) * 0.5; });  // Zangen schnappen
+  } };
+  return g;
+}
+
+// ---------- Monster 3: Moosriese (riesig, langsam, sehr stark) ----------
+const rindeMat = mat('#3d2a1a'), mooosMat = mat('#2f5a1f');
+const riesenAugeMat = new THREE.MeshBasicMaterial({ color: '#b6ff3a' });
+function baueRiese() {
+  const g = new THREE.Group();
+  const k = new THREE.Group(); g.add(k);
+  const stamm = new THREE.CylinderGeometry(1, 1, 1, 8);
+  k.add(teil(stamm, rindeMat, 0, 58, 0, 20, 56, 20));                        // Körper wie ein Baumstamm
+  k.add(teil(kugel, mooosMat, -4, 82, 0, 22, 12, 23));                      // Moos auf den Schultern
+  k.add(teil(kugel, mooosMat, 8, 55, -10, 9), teil(kugel, mooosMat, 6, 45, 12, 8));
+  const kopf = new THREE.Group(); kopf.position.set(4, 96, 0); k.add(kopf);
+  kopf.add(teil(new THREE.BoxGeometry(24, 22, 24), rindeMat, 0, 0, 0));
+  kopf.add(teil(kugel, riesenAugeMat, 12.5, 4, -5.5, 3), teil(kugel, riesenAugeMat, 12.5, 4, 5.5, 3)); // grüne Augen
+  kopf.add(teil(new THREE.BoxGeometry(2, 5, 14), maulMat, 12.5, -6, 0));    // glühender Mund
+  const ast = new THREE.CylinderGeometry(1.2, 2.5, 22, 5);
+  for (const [z, rx, y] of [[-8, -0.6, 16], [8, 0.6, 16], [0, 0, 18], [-4, -0.3, 22]]) { const a = teil(ast, rindeMat, -2, y, z); a.rotation.x = rx; kopf.add(a); } // Äste als Geweih
+  const armGeo = new THREE.CylinderGeometry(6, 5, 48, 7).translate(0, -24, 0);
+  const arme = [-26, 26].map(z => { const a = teil(armGeo, rindeMat, 0, 84, z); k.add(a); a.add(teil(kugel, mooosMat, 2, -48, 0, 9)); return a; }); // Fäuste aus Moos
+  const beinGeo = new THREE.CylinderGeometry(8, 9, 30, 7).translate(0, -15, 0);
+  const beine = [-10, 10].map(z => { const b = teil(beinGeo, rindeMat, 0, 30, z); k.add(b); return b; });
+  g.userData = { schritt: 0, zeit: Math.random() * 10, animiere(u, dt) {
+    beine.forEach((b, i) => { b.rotation.z = Math.sin(u.schritt * 0.5 + i * Math.PI) * 0.4; });
+    arme.forEach((a, i) => { a.rotation.z = Math.sin(u.schritt * 0.5 + i * Math.PI + Math.PI) * 0.35 + 0.15; });
+    k.position.y = Math.abs(Math.sin(u.schritt * 0.5)) * 3;                    // stampft schwer
+    kopf.rotation.y = Math.sin(u.zeit * 0.7) * 0.3;                            // schaut sich um
+  } };
+  return g;
+}
+
+function baueWolf(w) {   // sucht das passende Monster-Modell aus
+  if (w.art === 'kriecher') return baueKriecher();
+  if (w.art === 'riese') return baueRiese();
+  return baueSchattenbestie();
 }
 
 // ---------- Hase ----------
@@ -834,12 +925,8 @@ function welt3d(dt) {
     m.rotation.y = -(w.blick || 0);
     const bewegt = alt.distanceTo(m.position);
     m.userData.schritt += bewegt * 0.12;
-    m.userData.beine.forEach((b, i) => { b.rotation.z = Math.sin(m.userData.schritt + i * Math.PI) * 0.6; });
-    m.userData.arme.forEach((a, i) => { a.rotation.z = Math.sin(m.userData.schritt + i * Math.PI + Math.PI) * 0.4 + 0.6; }); // Arme greifen nach vorne
-    const u = m.userData; u.zeit += dt;
-    u.kiefer.rotation.z = -0.15 - Math.abs(Math.sin(u.zeit * 3)) * 0.45;           // Maul geht auf und zu
-    u.kopf.rotation.x = Math.sin(u.zeit * 1.3) * 0.15 + (Math.sin(u.zeit * 17) > 0.97 ? 0.3 : 0); // Kopf zuckt manchmal
-    u.pupille.scale.z = 1.6 * (0.6 + Math.abs(Math.sin(u.zeit * 2)) * 0.6);         // Pupille pulsiert
+    m.userData.zeit += dt;
+    m.userData.animiere(m.userData, dt);
   }
   // Hasen
   abgleichen(hasen, hasenModelle, baueHase);
@@ -1152,7 +1239,7 @@ function netzTick(dt) {
     for (const a of Object.values(andere)) liste.push({ nr: a.nr, x: a.zx, y: a.zy, blick: a.blick, laufen: a.laufen, speer: a.speer, inH: a.inH });
     anAlle({
       t: 'lage', zeit, tag, spieler: liste,
-      woelfe: woelfe.map(w => rund({ id: w.id, x: w.x, y: w.y, blick: +(w.blick || 0).toFixed(2), hp: w.hp })),
+      woelfe: woelfe.map(w => rund({ id: w.id, art: w.art, x: w.x, y: w.y, blick: +(w.blick || 0).toFixed(2), hp: w.hp })),
       hasen: hasen.map(h => rund({ id: h.id, x: h.x, y: h.y, ziel: +h.ziel.toFixed(2), hp: h.hp })),
       feuer: feuer.map(f => rund({ id: f.id, x: f.x, y: f.y, brennstoff: Math.round(f.brennstoff) })),
       huetten,
