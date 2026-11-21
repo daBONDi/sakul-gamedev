@@ -1,6 +1,6 @@
 // ===== 300 Tage im Wald – 3D =====
 // Überlebe 300 Tage! Sammle Holz, Steine und Beeren, trinke am See,
-// mach Lagerfeuer gegen Kälte und Wölfe, bau dir eine Hütte.
+// mach Lagerfeuer gegen Kälte und Monster, bau dir eine Hütte.
 // Die 3D-Grafik macht Three.js. Die Balken und Texte werden in 2D darübergemalt.
 import * as THREE from 'three';
 
@@ -202,7 +202,7 @@ function interagieren() {
       w.hp -= schaden; angriffPause = 0.35;
       anHost({ t: 'treffer', art: 'wolf', id: w.id, schaden });
       const d = abstand(p, w) || 1; w.x += (w.x - p.x) / d * 30; w.y += (w.y - p.y) / d * 30;
-      if (w.hp <= 0) { inv.fleisch += 2; sag('🐺 Wolf besiegt! +2 Fleisch', '#ffd166'); }
+      if (w.hp <= 0) { inv.fleisch += 2; sag('👹 Monster besiegt! +2 Fleisch', '#ffd166'); }
       return;
     }
   }
@@ -313,7 +313,7 @@ function tiereUpdate(dt) {
   const maxWoelfe = istNacht() ? Math.min(8, 1 + Math.floor(tag / 30) + (istWinter() ? 1 : 0)) : 0;
   if (woelfe.length < maxWoelfe && Math.random() < dt * 0.4) {
     const pos = spawnWeitWeg(600, 800, zufallsSpieler());
-    if (pos) { woelfe.push({ ...pos, id: naechsteId++, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('🐺 Ein Wolf heult in der Dunkelheit...', '#ff8080'); }
+    if (pos) { woelfe.push({ ...pos, id: naechsteId++, hp: 3 + Math.floor(tag / 60), biss: 0 }); sag('👹 Ein Monster brüllt in der Dunkelheit...', '#ff8080'); }
   }
   for (const w of woelfe) {
     w.biss -= dt;
@@ -493,7 +493,8 @@ const kroneDunkelDurch = durchsichtig(kroneDunkel), kroneHellDurch = durchsichti
 const steinMat = new THREE.MeshStandardMaterial({ color: '#8d949a', flatShading: true, roughness: 1 });
 const buschMat = mat('#2d7d3a'), buschMat2 = mat('#3a9447'), beerenMat = mat('#d42a5a', { emissive: '#3a0010' });
 const hasenMat = mat('#a58a6a'), weissMat = mat('#ffffff');
-const wolfMat = mat('#4a4f55'), wolfMat2 = mat('#5d636a'), wolfAugen = new THREE.MeshBasicMaterial({ color: '#ffdd33' });
+const wolfMat = mat('#4b2a63'), wolfMat2 = mat('#6b3d8a'), wolfAugen = new THREE.MeshBasicMaterial({ color: '#ff2a2a' });
+const hornMat = mat('#e8dcc0'), maulMat = new THREE.MeshBasicMaterial({ color: '#1a0008' });
 const dachMat = mat('#7a3b22', { transparent: true });
 const wandMat = mat('#7a5232'), dielenMat = mat('#a07a4e');
 const flammeMat1 = new THREE.MeshBasicMaterial({ color: '#ff7b00' }), flammeMat2 = new THREE.MeshBasicMaterial({ color: '#ffd23f' });
@@ -648,24 +649,33 @@ function baueHuette(h) {
   return g;
 }
 
-// ---------- Wolf ----------
+// ---------- Monster (im Code heißt es noch "Wolf") ----------
 const kugel = new THREE.SphereGeometry(1, 12, 9);
 function teil(geo, m, x, y, z, sx = 1, sy = sx, sz = sx) {
   const k = new THREE.Mesh(geo, m); k.position.set(x, y, z); k.scale.set(sx, sy, sz); k.castShadow = true; return k;
 }
 const beinGeo = new THREE.CylinderGeometry(2.5, 2, 14, 6).translate(0, -7, 0);
 function baueWolf() {
+  // Das Monster: läuft auf zwei Beinen, hat ein großes leuchtendes Auge, Hörner und Zähne
   const g = new THREE.Group();
-  g.add(teil(kugel, wolfMat, 0, 22, 0, 22, 12, 11));                // Körper
-  g.add(teil(kugel, wolfMat2, 20, 30, 0, 10, 9, 9));                // Kopf
-  g.add(teil(new THREE.BoxGeometry(12, 6, 7), wolfMat2, 30, 27, 0)); // Schnauze
-  g.add(teil(kugel, schwarzMat, 36, 28, 0, 2));                     // Nase
-  const ohr = new THREE.ConeGeometry(3, 8, 4);
-  g.add(teil(ohr, wolfMat, 17, 40, -5), teil(ohr, wolfMat, 17, 40, 5));
-  g.add(teil(kugel, wolfAugen, 27, 32, -4, 2), teil(kugel, wolfAugen, 27, 32, 4, 2)); // leuchtende Augen
-  const schwanz = teil(new THREE.CylinderGeometry(2, 4, 20, 6), wolfMat2, -26, 22, 0); schwanz.rotation.z = 1.1; g.add(schwanz);
-  const beine = [[12, -6], [12, 6], [-12, -6], [-12, 6]].map(([x, z]) => { const b = teil(beinGeo, wolfMat, x, 16, z); g.add(b); return b; });
-  g.userData = { beine, schritt: 0 };
+  g.add(teil(kugel, wolfMat, 0, 38, 0, 16, 22, 18));                 // dicker Körper
+  g.add(teil(kugel, wolfMat2, 6, 34, 0, 12, 15, 14));                // heller Bauch
+  g.add(teil(kugel, wolfMat, 4, 62, 0, 13, 12, 13));                 // Kopf
+  g.add(teil(kugel, weissMat, 15, 66, 0, 5.5));                      // großes Auge
+  g.add(teil(kugel, wolfAugen, 19.5, 66, 0, 2.8));                   // rote Pupille (leuchtet)
+  g.add(teil(new THREE.BoxGeometry(4, 6, 16), maulMat, 15, 55, 0));  // Maul
+  const zahn = new THREE.ConeGeometry(1.4, 4, 4);
+  for (const z of [-5, -1.7, 1.7, 5]) { const t = teil(zahn, weissMat, 17.5, 56.5, z); t.rotation.x = Math.PI; g.add(t); }
+  const horn = new THREE.ConeGeometry(3, 14, 6);
+  const h1 = teil(horn, hornMat, 0, 75, -8); h1.rotation.x = -0.5; g.add(h1);
+  const h2 = teil(horn, hornMat, 0, 75, 8); h2.rotation.x = 0.5; g.add(h2);
+  for (let i = 0; i < 4; i++) g.add(teil(new THREE.ConeGeometry(3, 8, 4), wolfMat2, -15, 50 - i * 9, 0)); // Stacheln am Rücken
+  const armGeo = new THREE.CylinderGeometry(3.5, 2.5, 26, 6).translate(0, -13, 0);
+  const arme = [-19, 19].map(z => { const a = teil(armGeo, wolfMat, 2, 50, z); g.add(a); return a; });
+  for (const a of arme) for (const z of [-2.5, 0, 2.5]) { const k = teil(new THREE.ConeGeometry(0.8, 5, 4), hornMat, 2, -27, z); k.rotation.z = Math.PI; a.add(k); } // Krallen
+  const monsterBein = new THREE.CylinderGeometry(5, 4, 20, 6).translate(0, -10, 0);
+  const beine = [-8, 8].map(z => { const b = teil(monsterBein, wolfMat, 0, 20, z); g.add(b); return b; });
+  g.userData = { beine, arme, schritt: 0 };
   return g;
 }
 
@@ -787,7 +797,8 @@ function welt3d(dt) {
     m.rotation.y = -(w.blick || 0);
     const bewegt = alt.distanceTo(m.position);
     m.userData.schritt += bewegt * 0.12;
-    m.userData.beine.forEach((b, i) => { b.rotation.z = Math.sin(m.userData.schritt + (i % 2) * Math.PI) * 0.6; });
+    m.userData.beine.forEach((b, i) => { b.rotation.z = Math.sin(m.userData.schritt + i * Math.PI) * 0.6; });
+    m.userData.arme.forEach((a, i) => { a.rotation.z = Math.sin(m.userData.schritt + i * Math.PI + Math.PI) * 0.4 + 0.6; }); // Arme greifen nach vorne
   }
   // Hasen
   abgleichen(hasen, hasenModelle, baueHase);
@@ -1227,7 +1238,7 @@ function schleife(jetzt) {
   if (zustand === 'spiel' || zustand === 'pause') { zeichneHUD(); zeichneNetzHUD(); }
   if (zustand === 'start') {
     const z = ['Kannst du 300 Tage im Wald überleben?', 'Sammle Holz 🪵, Steine 🪨 und Beeren 🫐.',
-      'Trink am See 💧, baue Lagerfeuer 🔥 und eine Hütte 🛖 gegen Kälte und Wölfe 🐺.', '', '▶ ENTER = Allein spielen'];
+      'Trink am See 💧, baue Lagerfeuer 🔥 und eine Hütte 🛖 gegen Kälte und Monster 👹.', '', '▶ ENTER = Allein spielen'];
     if (hatSpielstand()) z.push('▶ L = Weiterspielen (gespeichert)');
     z.push('👫 M = Mit Freunden spielen (Raum erstellen)', '👫 B = Bei einem Freund mitspielen (Code eingeben)');
     if (netzText) z.push(netzText);
