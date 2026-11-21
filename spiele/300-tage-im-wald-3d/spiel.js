@@ -21,9 +21,9 @@ const SPEICHER = 'wald300-3d-spielstand';
 // leben = so oft musst du sie treffen, tempo = wie schnell, biss = so viel Leben nehmen sie dir,
 // fleisch = Belohnung, reichweite = so nah müssen sie zum Beißen sein, chance = wie oft sie kommen, abTag = ab welchem Tag
 const MONSTER_ARTEN = {
-  schatten: { name: 'Schattenbestie', emoji: '👹', leben: 3, tempo: 135, biss: 12, fleisch: 2, reichweite: 34, chance: 50, abTag: 1, ton: 1 },
-  kriecher: { name: 'Giftkriecher',   emoji: '🕷️', leben: 1, tempo: 205, biss: 6,  fleisch: 1, reichweite: 28, chance: 35, abTag: 1, ton: 2.2 },
-  riese:    { name: 'Moosriese',      emoji: '🌳', leben: 8, tempo: 80,  biss: 25, fleisch: 5, reichweite: 46, chance: 15, abTag: 5, ton: 0.55 },
+  schatten: { name: 'Schattenbestie', emoji: '👹', leben: 5, tempo: 155, biss: 16, fleisch: 2, reichweite: 34, chance: 50, abTag: 1, ton: 1 },
+  kriecher: { name: 'Giftkriecher',   emoji: '🕷️', leben: 2, tempo: 225, biss: 9,  fleisch: 1, reichweite: 28, chance: 35, abTag: 1, ton: 2.2 },
+  riese:    { name: 'Moosriese',      emoji: '🌳', leben: 12, tempo: 95, biss: 32, fleisch: 6, reichweite: 46, chance: 18, abTag: 3, ton: 0.55 },
 };
 function zufallsMonsterArt() {
   const arten = Object.keys(MONSTER_ARTEN).filter(a => tag >= MONSTER_ARTEN[a].abTag);
@@ -326,8 +326,8 @@ function tiereUpdate(dt) {
   }
 
   // Wölfe: kommen in der Nacht. Je später im Spiel, desto mehr.
-  const maxWoelfe = istNacht() ? Math.min(8, 1 + Math.floor(tag / 30) + (istWinter() ? 1 : 0)) : 0;
-  if (woelfe.length < maxWoelfe && Math.random() < dt * 0.4) {
+  const maxWoelfe = istNacht() ? Math.min(10, 2 + Math.floor(tag / 15) + (istWinter() ? 2 : 0)) : 0;   // so viele Monster gleichzeitig
+  if (woelfe.length < maxWoelfe && Math.random() < dt * 0.6) {   // 0.6 = wie schnell neue Monster kommen
     const pos = spawnWeitWeg(600, 800, zufallsSpieler());
     if (pos) {
       const art = zufallsMonsterArt(), m = MONSTER_ARTEN[art];
