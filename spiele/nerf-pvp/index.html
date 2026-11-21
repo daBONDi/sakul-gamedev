@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nerf PvP</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #111; font-family: system-ui, sans-serif; color: #fff; }
+    canvas { display: block; }
+    .versteckt { display: none !important; }
+
+    /* ---------- Anzeige im Spiel (HUD) ---------- */
+    #hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 2px 2px 0 rgba(0,0,0,.6); }
+    #fadenkreuz { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%); }
+    #fadenkreuz::before, #fadenkreuz::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 2px #000; }
+    #fadenkreuz::before { left: 12px; top: 0; width: 2px; height: 26px; }
+    #fadenkreuz::after { top: 12px; left: 0; height: 2px; width: 26px; }
+    #trefferX { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -52%); font-size: 46px; font-weight: bold; opacity: 0; }
+    #rot { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 160px 60px rgba(255, 0, 0, .8); }
+    #code { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 20px; color: #ffd21f; }
+    #feed { position: absolute; top: 12px; left: 12px; font-size: 18px; line-height: 1.6; }
+    #tabelle { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,.45); padding: 8px 14px; border-radius: 10px; font-size: 17px; line-height: 1.5; min-width: 190px; }
+    #tabelle .ich { background: rgba(255,255,255,.15); border-radius: 5px; }
+    #tabelle b { float: right; margin-left: 16px; }
+    #mitte { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 34px; font-weight: bold; }
+    #lebenBox { position: absolute; left: 20px; bottom: 20px; font-size: 26px; font-weight: bold; }
+    #lebenBalken { width: 230px; height: 16px; background: rgba(0,0,0,.5); border-radius: 8px; overflow: hidden; margin-top: 4px; }
+    #lebenFuell { height: 100%; width: 100%; background: #2fd05a; }
+    #munition { position: absolute; right: 24px; bottom: 20px; font-size: 32px; font-weight: bold; }
+
+    /* ---------- Menü ---------- */
+    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 1rem; overflow-y: auto; }
+    #menu { background: rgba(10, 20, 50, .72); }
+    #menu h1 { font-size: 4rem; margin: .2rem; color: #ff7a1a; text-shadow: 4px 4px 0 #2b59c3; }
+    #menu p { font-size: 1.1rem; line-height: 1.5; max-width: 38rem; }
+    button { font-size: 1.4rem; padding: .6rem 1.8rem; border: none; border-radius: 12px; cursor: pointer; margin: .35rem; font-weight: bold; }
+    #soloKnopf { background: #ff7a1a; color: #fff; font-size: 1.7rem; }
+    #online { margin-top: .8rem; padding: .4rem 1.4rem; border: 2px solid #2f8cff; border-radius: 14px; background: rgba(30, 60, 120, .45); }
+    #online h2 { margin: .3rem; color: #8cc4ff; }
+    #online button { background: #2f8cff; color: #fff; font-size: 1.2rem; }
+    #codeFeld { font-size: 1.4rem; width: 6rem; padding: .45rem; border-radius: 10px; border: none; text-align: center;
+      text-transform: uppercase; letter-spacing: .2rem; }
+    #netzInfo { font-size: 1rem; color: #cde; min-height: 2.4em; }
+    #pause { background: rgba(0, 0, 0, .55); font-size: 2.2rem; font-weight: bold; cursor: pointer; }
+    #pause small { font-size: 1.1rem; font-weight: normal; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="hud" class="versteckt">
+    <div id="rot"></div>
+    <div id="fadenkreuz"></div>
+    <div id="trefferX">✕</div>
+    <div id="code"></div>
+    <div id="feed"></div>
+    <div id="tabelle"></div>
+    <div id="mitte"></div>
+    <div id="lebenBox"><div id="lebenText">❤️ 100</div><div id="lebenBalken"><div id="lebenFuell"></div></div></div>
+    <div id="munition"></div>
+  </div>
+
+  <div id="menu" class="overlay">
+    <h1>🔫 Nerf PvP</h1>
+    <p>Schnapp dir deinen Blaster und triff die anderen mit Schaumstoff-Darts!<br>
+      Wer zuerst <b>10 Gegner</b> ausschaltet, gewinnt. 🏆</p>
+    <p>WASD: laufen · Shift: rennen · Leertaste: springen<br>
+      Maus: zielen · Linksklick: schießen (gedrückt halten) · R: nachladen<br>
+      ESC: Maus wieder freigeben</p>
+    <button id="soloKnopf">🤖 Gegen Bots spielen</button>
+    <div id="online">
+      <h2>🌐 Mit Freunden spielen</h2>
+      <button id="hostKnopf">Raum erstellen</button>
+      <div>
+        <input id="codeFeld" maxlength="4" placeholder="CODE" autocomplete="off">
+        <button id="beitretenKnopf">Beitreten</button>
+      </div>
+      <p id="netzInfo">Erstelle einen Raum und sag deinen Freunden den Code.<br>Sind weniger als 4 Spieler da, kämpfen Bots mit.</p>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay versteckt">🖱️ Klicke, um zu spielen<br><small>ESC = Maus freigeben</small></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script type="module" src="spiel.js"></script>
+</body>
+</html>
