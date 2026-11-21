@@ -12,8 +12,8 @@ addEventListener('resize', groesse); groesse();
 
 // ---------- Einstellungen ----------
 const ZIEL_TAGE = 300;
-const TAG_LAENGE = 90;      // Sekunden pro Tag (Tag + Nacht)
-const NACHT_ANTEIL = 0.35;  // so viel vom Tag ist Nacht
+const TAG_LAENGE = 120;     // Sekunden pro Tag (Tag + Nacht)
+const NACHT_ANTEIL = 0.5;   // so viel vom Tag ist Nacht (0.5 = die Hälfte)
 const WELT = 3000;          // Größe der Welt in Pixeln
 const SPEICHER = 'wald300-3d-spielstand';
 
