@@ -54,14 +54,16 @@
     #pause { background: rgba(0, 0, 0, .55); font-size: 2.2rem; font-weight: bold; cursor: pointer; }
     #pause small { font-size: 1.1rem; font-weight: normal; }
     #menuKnopf { margin-top: 1.5rem; background: #ffd21f; color: #222; font-size: 1.1rem; }
-    #modi { padding: .2rem 1rem .4rem; border: 2px solid #ff7a1a; border-radius: 14px; background: rgba(120, 50, 0, .35); }
+    #modi, #kartenBox { padding: .2rem 1rem .4rem; border: 2px solid #ff7a1a; border-radius: 14px; background: rgba(120, 50, 0, .35); }
     #modi h2 { margin: .3rem; color: #ffb27a; }
-    #modusKnoepfe { display: flex; flex-wrap: wrap; justify-content: center; }
+    #modusKnoepfe, #karteKnoepfe { display: flex; flex-wrap: wrap; justify-content: center; }
     .modusKnopf { width: 10rem; min-height: 5.5rem; font-size: 1.05rem; background: rgba(255,255,255,.15); color: #fff;
       border: 3px solid transparent; line-height: 1.4; }
     .modusKnopf:hover { background: rgba(255,255,255,.28); }
     .modusKnopf.gewaehlt { background: #ff7a1a; border-color: #fff; transform: scale(1.06); }
-    #modusText { min-height: 3em; margin: .4rem auto; font-size: 1.05rem; color: #ffe2c9; }
+    #kartenBox { margin-top: .6rem; border-color: #2fd05a; background: rgba(0, 80, 30, .35); }
+    #kartenBox h2 { margin: .3rem; color: #9ff0b4; }
+    #modusText, #karteText { min-height: 3em; margin: .4rem auto; font-size: 1.05rem; color: #ffe2c9; }
   </style>
   <script type="importmap">
     { "imports": {
@@ -99,6 +101,11 @@
       </div>
       <p id="modusText"></p>
     </div>
+    <div id="kartenBox">
+      <h2>Karte wählen</h2>
+      <div id="karteKnoepfe"></div>
+      <p id="karteText"></p>
+    </div>
     <p>WASD: laufen · Shift: rennen · Leertaste: springen<br>
       🐰 Bunny-Hop: Leertaste gedrückt halten · in der Luft A/D + Maus in dieselbe Richtung drehen = schneller!<br>
       Maus: zielen · Linksklick: schießen (gedrückt halten) · R: nachladen<br>
@@ -112,7 +119,7 @@
         <input id="codeFeld" maxlength="4" placeholder="CODE" autocomplete="off">
         <button id="beitretenKnopf">Beitreten</button>
       </div>
-      <p id="netzInfo">Erstelle einen Raum und sag deinen Freunden den Code. Wer den Raum erstellt, bestimmt den Spielmodus.<br>Sind weniger als 4 Spieler da, kämpfen Bots mit.</p>
+      <p id="netzInfo">Erstelle einen Raum und sag deinen Freunden den Code. Wer den Raum erstellt, bestimmt Spielmodus und Karte.<br>Sind weniger als 4 Spieler da, kämpfen Bots mit.</p>
     </div>
   </div>
 

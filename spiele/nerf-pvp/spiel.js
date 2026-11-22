@@ -75,7 +75,8 @@ addEventListener('resize', () => {
   kamera.aspect = innerWidth / innerHeight; kamera.updateProjectionMatrix();
 });
 
-scene.add(new THREE.HemisphereLight('#ffffff', '#6a7a8a', 1.7));
+const himmelLicht = new THREE.HemisphereLight('#ffffff', '#6a7a8a', 1.7);
+scene.add(himmelLicht);
 const sonne = new THREE.DirectionalLight('#ffffff', 2.2);
 sonne.position.set(15, 30, 10);
 sonne.castShadow = true;
@@ -94,11 +95,6 @@ function malTextur(groesse, malen) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
-const bodenTex = malTextur(256, (g, s) => {
-  g.fillStyle = '#e4e8f0'; g.fillRect(0, 0, s, s);
-  g.strokeStyle = '#c3cad8'; g.lineWidth = 8; g.strokeRect(0, 0, s, s);
-});
-bodenTex.repeat.set(20, 20);
 const kistenTex = malTextur(128, (g, s) => {
   g.fillStyle = '#fff'; g.fillRect(0, 0, s, s);
   g.fillStyle = 'rgba(255,255,255,.3)';
@@ -107,46 +103,303 @@ const kistenTex = malTextur(128, (g, s) => {
   g.fillRect(0, 0, s, 8); g.fillRect(0, s - 8, s, 8); g.fillRect(0, 0, 8, s); g.fillRect(s - 8, 0, 8, s);
 });
 
-// ========== Die Arena ==========
-const G = 20;   // die Arena geht von -20 bis +20 Meter
-const boden = new THREE.Mesh(new THREE.PlaneGeometry(G * 2 + 2, G * 2 + 2).rotateX(-Math.PI / 2),
-  new THREE.MeshLambertMaterial({ map: bodenTex }));
-boden.receiveShadow = true;
-scene.add(boden);
 
+// ========== Die Karten (Maps) ==========
+// Jede Karte hat: Größe G, Himmelsfarbe, Licht, Boden, Startpunkte und eine bauen()-Funktion.
+// Eine neue Karte bauen? Einfach unten bei KARTEN eine dazuschreiben!
+let G = 20;            // die Arena geht von -G bis +G Meter
+let STARTPUNKTE = [];
+let karte = 'arena';
+let kartenUpdate = null;   // manche Karten bewegen etwas (z. B. Schneeflocken)
 const kisten = [];   // alle Hindernisse als Kästen: x1..x2, y1..y2, z1..z2
-function kiste(cx, cz, b, t, h, farbe, y0 = 0) {
+const arena = new THREE.Group();   // alles, was zur Karte gehört
+scene.add(arena);
+
+function kollision(cx, cz, b, t, h, y0 = 0) {   // unsichtbares Hindernis
   kisten.push({ x1: cx - b / 2, x2: cx + b / 2, z1: cz - t / 2, z2: cz + t / 2, y1: y0, y2: y0 + h });
-  const m = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), new THREE.MeshLambertMaterial({ color: farbe, map: kistenTex }));
+}
+function kiste(cx, cz, b, t, h, farbe, y0 = 0, textur = kistenTex) {
+  kollision(cx, cz, b, t, h, y0);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), new THREE.MeshLambertMaterial({ color: farbe, map: textur }));
   m.position.set(cx, y0 + h / 2, cz);
   m.castShadow = m.receiveShadow = true;
-  scene.add(m);
+  arena.add(m);
+  return m;
 }
-// baut ein Hindernis in alle 4 Ecken gespiegelt (damit die Arena fair ist)
-const schonGebaut = new Set();
-function viermal(cx, cz, b, t, h, farbe, y0 = 0) {
+// Deko = nur zum Anschauen, man kann durchlaufen (Hindernis extra mit kollision())
+function deko(geo, farbe, x, y, z, leuchtet = false) {
+  const m = new THREE.Mesh(geo, leuchtet ? new THREE.MeshBasicMaterial({ color: farbe }) : mat(farbe));
+  m.position.set(x, y, z);
+  m.castShadow = !leuchtet; m.receiveShadow = true;
+  arena.add(m);
+  return m;
+}
+// die 4 gespiegelten Punkte (damit die Karte für alle fair ist)
+function vierPunkte(x, z) {
+  const liste = [];
   for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-    const schluessel = [cx * sx, cz * sz, b, t, y0].join();
-    if (schonGebaut.has(schluessel)) continue;
-    schonGebaut.add(schluessel);
-    kiste(cx * sx, cz * sz, b, t, h, farbe, y0);
+    const p = [x * sx || 0, z * sz || 0];
+    if (!liste.some(q => q[0] === p[0] && q[1] === p[1])) liste.push(p);
+  }
+  return liste;
+}
+// baut ein Hindernis in alle 4 Ecken gespiegelt
+function viermal(cx, cz, b, t, h, farbe, y0 = 0, textur) {
+  for (const [x, z] of vierPunkte(cx, cz)) kiste(x, z, b, t, h, farbe, y0, textur);
+}
+// noch mehr selbstgemalte Bilder
+const heckenTex = malTextur(128, (g, s) => {
+  g.fillStyle = '#2f7a34'; g.fillRect(0, 0, s, s);
+  for (let i = 0; i < 260; i++) {
+    g.fillStyle = ['#3f9a44', '#24632a', '#4fae4f', '#1e5223'][i % 4];
+    g.beginPath(); g.arc(Math.random() * s, Math.random() * s, 3 + Math.random() * 5, 0, Math.PI * 2); g.fill();
+  }
+});
+const wuerfelTex = malTextur(128, (g, s) => {
+  g.fillStyle = '#fff'; g.fillRect(0, 0, s, s);
+  g.fillStyle = '#222';
+  for (const [x, y] of [[.25, .25], [.75, .25], [.5, .5], [.25, .75], [.75, .75]]) { g.beginPath(); g.arc(x * s, y * s, s * 0.09, 0, Math.PI * 2); g.fill(); }
+});
+wuerfelTex.wrapS = wuerfelTex.wrapT = THREE.ClampToEdgeWrapping;
+
+// ----- Bausteine für die Karten -----
+function regal(cx, cz, laenge) {   // Lagerhallen-Regal voller Pakete
+  kiste(cx, cz, 1.4, laenge, 3.2, '#c8a165');
+  for (const y of [0, 1.05, 2.1, 3.15]) deko(new THREE.BoxGeometry(1.6, 0.1, laenge + 0.2), '#ff7a1a', cx, y + 0.05, cz);
+  for (const z of [-1, 1]) deko(new THREE.BoxGeometry(1.7, 3.3, 0.15), '#2b59c3', cx, 1.65, cz + z * (laenge / 2 + 0.1));
+}
+function schneemann(x, z) {
+  kollision(x, z, 1.3, 1.3, 2.2);
+  deko(new THREE.SphereGeometry(0.7, 16, 12), '#ffffff', x, 0.6, z);
+  deko(new THREE.SphereGeometry(0.5, 16, 12), '#ffffff', x, 1.5, z);
+  deko(new THREE.SphereGeometry(0.36, 16, 12), '#ffffff', x, 2.15, z);
+  const nase = deko(new THREE.ConeGeometry(0.07, 0.35, 8), '#ff7a1a', x, 2.15, z + 0.45);
+  nase.rotation.x = Math.PI / 2;
+  for (const s of [-1, 1]) deko(new THREE.SphereGeometry(0.05, 6, 4), '#111', x + s * 0.13, 2.27, z + 0.3);
+  deko(new THREE.CylinderGeometry(0.25, 0.25, 0.4, 12), '#222', x, 2.6, z);
+}
+function tanne(x, z) {
+  kollision(x, z, 1.2, 1.2, 4.5);
+  deko(new THREE.CylinderGeometry(0.22, 0.28, 1, 8), '#6b4226', x, 0.5, z);
+  [[1.5, 1.6], [1.15, 2.6], [0.75, 3.5]].forEach(([r, y]) => {
+    deko(new THREE.ConeGeometry(r, 1.5, 10), '#1f6b3a', x, y, z);
+    deko(new THREE.ConeGeometry(r * 0.55, 0.5, 10), '#ffffff', x, y + 0.55, z);
+  });
+}
+function legostein(x, z, b, t, farbe, y0 = 0) {
+  kiste(x, z, b, t, 1, farbe, y0, null);
+  for (let i = 0.5; i < b; i += 1) for (let j = 0.5; j < t; j += 1)
+    deko(new THREE.CylinderGeometry(0.3, 0.3, 0.2, 14), farbe, x - b / 2 + i, y0 + 1.1, z - t / 2 + j);
+}
+function spielzeugAuto(x, z, farbe) {
+  kiste(x, z, 3.2, 1.6, 0.6, farbe, 0.3, null);
+  kiste(x - 0.2, z, 1.6, 1.4, 0.7, '#bfe6ff', 0.9, null);
+  kollision(x, z, 3.2, 1.6, 0.3);   // unter dem Auto kann man nicht durch
+  for (const [dx, dz] of [[-1, -0.85], [1, -0.85], [-1, 0.85], [1, 0.85]]) {
+    const rad = deko(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16), '#222', x + dx, 0.4, z + dz);
+    rad.rotation.x = Math.PI / 2;
   }
 }
-// Außenwände
-kiste(0, -G - 0.5, G * 2 + 2, 1, 4, '#2b59c3'); kiste(0, G + 0.5, G * 2 + 2, 1, 4, '#2b59c3');
-kiste(-G - 0.5, 0, 1, G * 2, 4, '#ff7a1a'); kiste(G + 0.5, 0, 1, G * 2, 4, '#ff7a1a');
-// Turm in der Mitte mit Stufen
-kiste(0, 0, 4, 4, 1.8, '#2f8cff');
-kiste(3, 0, 2, 2, 0.9, '#ff7a1a'); kiste(-3, 0, 2, 2, 0.9, '#ff7a1a');
-// L-Wände
-viermal(10, 12.5, 0.6, 5, 2.5, '#ffd21f'); viermal(12.5, 10, 5, 0.6, 2.5, '#ffd21f');
-// Kisten zum Verstecken und Draufspringen
-viermal(6, 6, 1.4, 1.4, 0.9, '#ff7a1a');
-viermal(16, 16, 1.6, 1.6, 0.9, '#2fd05a'); viermal(16, 16, 1.6, 1.6, 0.9, '#2f8cff', 0.9);
-viermal(15, 0, 0.6, 5, 1.1, '#e04fd0'); viermal(0, 15, 5, 0.6, 1.1, '#e04fd0');
-viermal(7, 15.5, 1.5, 1.5, 0.9, '#ff7a1a'); viermal(15.5, 7, 1.5, 1.5, 0.9, '#ff7a1a');
+function teddy(x, z) {
+  kollision(x, z, 2.6, 2.6, 4);
+  const fell = '#b07a4a', hell = '#e0b98a';
+  deko(new THREE.SphereGeometry(1.3, 20, 14), fell, x, 1.3, z);
+  deko(new THREE.SphereGeometry(0.85, 20, 14), hell, x * 0.97, 1.2, z * 0.97);
+  deko(new THREE.SphereGeometry(0.9, 20, 14), fell, x, 3.0, z);
+  const zur = Math.atan2(-x, -z);   // Teddy schaut zur Mitte
+  const vx = Math.sin(zur), vz = Math.cos(zur), qx = Math.cos(zur), qz = -Math.sin(zur);
+  deko(new THREE.SphereGeometry(0.35, 12, 8), hell, x + vx * 0.75, 2.85, z + vz * 0.75);
+  deko(new THREE.SphereGeometry(0.12, 8, 6), '#222', x + vx * 1.05, 2.95, z + vz * 1.05);
+  for (const s of [-1, 1]) {
+    deko(new THREE.SphereGeometry(0.3, 12, 8), fell, x + qx * s * 0.65, 3.75, z + qz * s * 0.65);
+    deko(new THREE.SphereGeometry(0.1, 8, 6), '#111', x + vx * 0.75 + qx * s * 0.3, 3.2, z + vz * 0.75 + qz * s * 0.3);
+  }
+}
+function ball(x, z, r, farbe) {
+  kollision(x, z, r * 1.6, r * 1.6, r * 2);
+  deko(new THREE.SphereGeometry(r, 24, 16), farbe, x, r, z);
+  const streifen = deko(new THREE.TorusGeometry(r * 1.005, r * 0.12, 8, 32), '#ffffff', x, r, z);
+  streifen.rotation.y = x + z;
+}
+function hecke(cx, cz, b, t) { viermal(cx, cz, b, t, 2.6, '#ffffff', 0, heckenTex); }
 
-const STARTPUNKTE = [[18, 0], [-18, 0], [0, 18], [0, -18], [18, 18], [-18, 18], [18, -18], [-18, -18], [8, 0], [-8, 0], [0, 8], [0, -8]];
+const KARTEN = {
+  arena: {
+    name: '🏟️ Spiel-Arena', text: 'Die bunte Arena mit dem Turm in der Mitte. Gut für den Anfang!',
+    G: 20, himmel: '#8fd0ff', nebel: [45, 100], licht: [1.7, 2.2], wand: ['#2b59c3', '#ff7a1a'], wandHoehe: 4,
+    boden: (g, s) => { g.fillStyle = '#e4e8f0'; g.fillRect(0, 0, s, s); g.strokeStyle = '#c3cad8'; g.lineWidth = 8; g.strokeRect(0, 0, s, s); },
+    start: [[18, 0], [0, 18], [18, 18], [8, 0], [0, 8]],
+    bauen() {
+      // Turm in der Mitte mit Stufen
+      kiste(0, 0, 4, 4, 1.8, '#2f8cff');
+      kiste(3, 0, 2, 2, 0.9, '#ff7a1a'); kiste(-3, 0, 2, 2, 0.9, '#ff7a1a');
+      // L-Wände
+      viermal(10, 12.5, 0.6, 5, 2.5, '#ffd21f'); viermal(12.5, 10, 5, 0.6, 2.5, '#ffd21f');
+      // Kisten zum Verstecken und Draufspringen
+      viermal(6, 6, 1.4, 1.4, 0.9, '#ff7a1a');
+      viermal(16, 16, 1.6, 1.6, 0.9, '#2fd05a'); viermal(16, 16, 1.6, 1.6, 0.9, '#2f8cff', 0.9);
+      viermal(15, 0, 0.6, 5, 1.1, '#e04fd0'); viermal(0, 15, 5, 0.6, 1.1, '#e04fd0');
+      viermal(7, 15.5, 1.5, 1.5, 0.9, '#ff7a1a'); viermal(15.5, 7, 1.5, 1.5, 0.9, '#ff7a1a');
+    },
+  },
+  lager: {
+    name: '📦 Lagerhalle', text: 'Dunkle Halle mit hohen Regalen und langen Gängen. Oben auf den Laderampen kann man gut zielen!',
+    G: 22, himmel: '#2c3038', nebel: [28, 75], licht: [1.2, 1.5], wand: ['#6b7280', '#5b6270'], wandHoehe: 7,
+    boden: (g, s) => {
+      g.fillStyle = '#8d939b'; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < 400; i++) { g.fillStyle = Math.random() < 0.5 ? '#80868e' : '#9aa0a8'; g.fillRect(Math.random() * s, Math.random() * s, 3, 3); }
+      g.strokeStyle = '#767c84'; g.lineWidth = 4; g.strokeRect(0, 0, s, s);
+    },
+    start: [[19, 0], [10.5, 0], [0, 14], [19, 19], [10.5, 11], [3.5, 8]],
+    bauen() {
+      for (const [x, z] of vierPunkte(7, 11)) regal(x, z, 11);
+      for (const [x, z] of vierPunkte(14, 11)) regal(x, z, 11);
+      // Paletten-Pyramide in der Mitte
+      kiste(0, 0, 3.4, 3.4, 0.9, '#c8a165'); kiste(0, 0, 1.8, 1.8, 0.9, '#a0784a', 0.9);
+      viermal(10.5, 2, 1.3, 1.3, 0.9, '#c8a165'); viermal(4, 2.8, 1.2, 1.2, 0.9, '#a0784a');
+      viermal(19, 11, 1.4, 1.4, 0.9, '#c8a165'); viermal(19, 11, 1.1, 1.1, 0.9, '#a0784a', 0.9);
+      // Laderampen an beiden Enden mit Treppe
+      viermal(0, 20, 10, 4, 1.8, '#7a828c'); viermal(0, 17, 3, 2, 0.9, '#ffd21f');
+      // Lampen an der Decke
+      for (const x of [-10.5, 0, 10.5]) for (const z of [-11, 0, 11]) deko(new THREE.BoxGeometry(2.2, 0.15, 0.6), '#fff6c9', x, 6.5, z, true);
+    },
+  },
+  schnee: {
+    name: '❄️ Schneefestung', text: 'Zwei Festungen aus Schnee! Super für Team-Kampf. Hinter Schneemännern und Tannen kann man sich verstecken.',
+    G: 24, himmel: '#cfe0f0', nebel: [30, 90], licht: [1.9, 1.7], wand: ['#e8f4ff', '#d6ebff'], wandHoehe: 3,
+    boden: (g, s) => {
+      g.fillStyle = '#f4f8fc'; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < 300; i++) { g.fillStyle = Math.random() < 0.5 ? '#e3edf7' : '#ffffff'; g.beginPath(); g.arc(Math.random() * s, Math.random() * s, 2 + Math.random() * 4, 0, Math.PI * 2); g.fill(); }
+    },
+    start: [[0, 19], [5, 20], [16, 20], [20, 0], [10, 7], [0, 8]],
+    bauen() {
+      // die zwei Festungen (vorne mit Tor in der Mitte)
+      viermal(5.5, 12, 7, 1, 1.4, '#ffffff');
+      viermal(9.5, 17, 1, 11, 1.4, '#ffffff');
+      viermal(9.5, 12, 2, 2, 1.8, '#dff0ff');            // Türme an den Ecken
+      viermal(7.6, 13.8, 1.2, 1.2, 0.9, '#bfe3ff');      // Eisblock zum Hochklettern
+      viermal(16, 17, 1.6, 1.6, 0.9, '#bfe3ff');
+      // Mitte: Schneewall und Schneemänner
+      kiste(0, 0, 6, 0.8, 1.1, '#ffffff');
+      viermal(14, 5, 4, 0.8, 1.1, '#ffffff');
+      for (const [x, z] of vierPunkte(6, 4)) schneemann(x, z);
+      for (const [x, z] of vierPunkte(20, 5)) tanne(x, z);
+      for (const [x, z] of vierPunkte(3, 7.5)) tanne(x, z);
+      // Schneeflocken
+      const anzahl = 1500, orte = new Float32Array(anzahl * 3);
+      for (let i = 0; i < anzahl; i++) { orte[i * 3] = (Math.random() * 2 - 1) * G; orte[i * 3 + 1] = Math.random() * 20; orte[i * 3 + 2] = (Math.random() * 2 - 1) * G; }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(orte, 3));
+      const flocken = new THREE.Points(geo, new THREE.PointsMaterial({ color: '#ffffff', size: 0.12 }));
+      arena.add(flocken);
+      kartenUpdate = dt => {
+        for (let i = 0; i < anzahl; i++) {
+          orte[i * 3 + 1] -= dt * 1.6;
+          orte[i * 3] += Math.sin(orte[i * 3 + 1] + i) * dt * 0.3;
+          if (orte[i * 3 + 1] < 0) orte[i * 3 + 1] += 20;
+        }
+        geo.attributes.position.needsUpdate = true;
+      };
+    },
+  },
+  zimmer: {
+    name: '🧸 Riesen-Kinderzimmer', text: 'Oh nein, du bist geschrumpft! Kämpfe zwischen Riesen-Legosteinen, Würfeln, Spielzeugautos und Teddys. Klettere auf den Bücherturm!',
+    G: 24, himmel: '#fbeed7', nebel: [55, 130], licht: [1.8, 1.6], sonnenFarbe: '#fff3dd', wand: ['#9fd3ff', '#ffb3c7'], wandHoehe: 12,
+    boden: (g, s) => {
+      g.fillStyle = '#c8915a'; g.fillRect(0, 0, s, s);
+      g.strokeStyle = '#b07a45'; g.lineWidth = 2;
+      for (let i = 0; i < 60; i++) { const y = Math.random() * s; g.beginPath(); g.moveTo(Math.random() * s, y); g.lineTo(Math.random() * s, y + 2); g.stroke(); }
+      g.fillStyle = '#9a6633';
+      for (let i = 0; i < 4; i++) g.fillRect(0, i * s / 4, s, 4);
+      g.fillRect(s / 2, 0, 4, s / 4); g.fillRect(s / 5, s / 4, 4, s / 4); g.fillRect(s * 0.7, s / 2, 4, s / 4); g.fillRect(s * 0.4, s * 0.75, 4, s / 4);
+    },
+    start: [[20, 0], [0, 20], [20, 14], [11, 4], [4, 11]],
+    bauen() {
+      // Bücherturm in der Mitte – jedes Buch ist eine Stufe
+      [[6.5, 4.5, '#e63946'], [5.4, 3.8, '#2b59c3'], [4.3, 3.1, '#2fd05a'], [3.2, 2.4, '#ffd21f'], [2.2, 1.8, '#8f6bff']].forEach(([b, t, farbe], i) => {
+        kiste(0, 0, b, t, 0.55, farbe, i * 0.55, null);
+        deko(new THREE.BoxGeometry(b - 0.25, 0.4, t + 0.02), '#fffaf0', 0.1, i * 0.55 + 0.275, 0);   // Seiten
+      });
+      viermal(9, 9, 1.6, 1.6, 1.6, '#ffffff', 0, wuerfelTex);
+      const farben = ['#e63946', '#ffd21f', '#2b59c3', '#2fd05a'];
+      vierPunkte(15, 4).forEach(([x, z], i) => legostein(x, z, 4, 2, farben[i]));
+      vierPunkte(15, 13).forEach(([x, z], i) => { legostein(x, z, 4, 2, farben[(i + 1) % 4]); legostein(x, z, 2, 2, farben[(i + 2) % 4], 1); });
+      vierPunkte(6, 15).forEach(([x, z], i) => spielzeugAuto(x, z, farben[(i + 3) % 4]));
+      for (const [x, z] of vierPunkte(20.5, 20.5)) teddy(x, z);
+      ball(0, 12, 0.9, '#ff7a1a'); ball(0, -12, 0.9, '#e04fd0'); ball(12, 0, 0.9, '#20d0c0'); ball(-12, 0, 0.9, '#8f6bff');
+    },
+  },
+  hecke: {
+    name: '🌇 Hecken-Labyrinth', text: 'Ein Garten-Labyrinth im Abendlicht. Enge Gänge, überall Ecken – hier ist der Schrot-Blaster stark!',
+    G: 20, himmel: '#ffb37a', nebel: [28, 80], licht: [1.4, 2.0], sonnenFarbe: '#ffcf99', wand: ['#2f7a34', '#2f7a34'], wandHoehe: 3,
+    boden: (g, s) => {
+      g.fillStyle = '#d9c7a3'; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < 500; i++) { g.fillStyle = ['#c9b590', '#e6d6b5', '#bfa982'][i % 3]; g.fillRect(Math.random() * s, Math.random() * s, 3, 3); }
+    },
+    start: [[17.5, 0], [0, 17.5], [12.5, 0], [0, 12.5], [7.5, 7.5], [17.5, 14], [14, 17.5]],
+    bauen() {
+      hecke(3.3, 5, 4.2, 0.8); hecke(5, 3.3, 0.8, 4.2);         // innerer Ring, Tore in der Mitte
+      hecke(0, 10, 15, 0.8); hecke(10, 0, 0.8, 15);             // mittlerer Ring, offen an den Ecken
+      hecke(8.45, 15, 13.9, 0.8); hecke(15, 8.45, 0.8, 13.9);   // äußerer Ring, Tore in der Mitte
+      hecke(11.7, 5, 2.6, 0.8); hecke(5, 11.7, 0.8, 2.6);       // Sackgassen
+      hecke(16.7, 10, 2.6, 0.8); hecke(10, 16.7, 0.8, 2.6);
+      viermal(17.5, 17.5, 1.4, 1.4, 0.9, '#c58b4a');
+      // Springbrunnen in der Mitte
+      kiste(0, 0, 2.6, 2.6, 0.7, '#b8b2a7', 0, null);
+      deko(new THREE.BoxGeometry(2.2, 0.05, 2.2), '#4fb3ff', 0, 0.71, 0);
+      kiste(0, 0, 0.5, 0.5, 1.6, '#b8b2a7', 0.7, null);
+      // Laternen
+      for (const [x, z] of vierPunkte(10, 10)) {
+        deko(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), '#333', x, 1.3, z);
+        deko(new THREE.SphereGeometry(0.22, 10, 8), '#fff1a8', x, 2.7, z, true);
+      }
+    },
+  },
+};
+const KARTEN_LISTE = Object.keys(KARTEN);
+
+const bodenMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial());
+bodenMesh.receiveShadow = true;
+scene.add(bodenMesh);
+
+function karteBauen(name) {
+  karte = KARTEN[name] ? name : 'arena';
+  const K = KARTEN[karte];
+  // alte Karte wegräumen
+  arena.traverse(o => {
+    if (!o.geometry) return;
+    o.geometry.dispose();
+    if (o.material.map && o.material.map !== kistenTex && o.material.map !== heckenTex && o.material.map !== wuerfelTex) o.material.map.dispose();
+    o.material.dispose();
+  });
+  arena.clear();
+  kisten.length = 0;
+  kartenUpdate = null;
+  for (const d of darts) scene.remove(d.mesh);
+  darts = [];
+  // Himmel, Licht und Boden
+  G = K.G;
+  scene.background = new THREE.Color(K.himmel);
+  scene.fog = new THREE.Fog(K.himmel, K.nebel[0], K.nebel[1]);
+  himmelLicht.intensity = K.licht[0];
+  sonne.intensity = K.licht[1];
+  sonne.color.set(K.sonnenFarbe || '#ffffff');
+  sonne.position.set(G * 0.75, 30, G * 0.5);
+  Object.assign(sonne.shadow.camera, { left: -G - 5, right: G + 5, top: G + 5, bottom: -G - 5, far: 90 });
+  sonne.shadow.camera.updateProjectionMatrix();
+  if (bodenMesh.material.map) bodenMesh.material.map.dispose();
+  bodenMesh.material.map = malTextur(256, K.boden);
+  bodenMesh.material.map.repeat.set(G, G);
+  bodenMesh.material.needsUpdate = true;
+  bodenMesh.scale.set(G * 2 + 2, 1, G * 2 + 2);
+  // Außenwände
+  const [w1, w2] = K.wand, wh = K.wandHoehe;
+  kiste(0, -G - 0.5, G * 2 + 2, 1, wh, w1); kiste(0, G + 0.5, G * 2 + 2, 1, wh, w1);
+  kiste(-G - 0.5, 0, 1, G * 2, wh, w2); kiste(G + 0.5, 0, 1, G * 2, wh, w2);
+  K.bauen();
+  // Startpunkte (gespiegelt), aber nur die, wo kein Hindernis steht
+  STARTPUNKTE = K.start.flatMap(([x, z]) => vierPunkte(x, z)).filter(([x, z]) => !stoesst({ x, y: 0, z }));
+}
 
 function inKiste(p) {
   for (const k of kisten) if (p.x > k.x1 && p.x < k.x2 && p.y > k.y1 && p.y < k.y2 && p.z > k.z1 && p.z < k.z2) return true;
@@ -715,10 +968,11 @@ function botsAnpassen() {   // Bots füllen auf MIN_KAEMPFER auf
 }
 function zufallsPunkt() {
   for (let i = 0; i < 40; i++) {
-    const p = { x: (Math.random() * 2 - 1) * 18, y: 0, z: (Math.random() * 2 - 1) * 18 };
+    const p = { x: (Math.random() * 2 - 1) * (G - 2), y: 0, z: (Math.random() * 2 - 1) * (G - 2) };
     if (!stoesst(p)) return p;
   }
-  return { x: 0, y: 0, z: 8 };
+  const s = STARTPUNKTE[Math.floor(Math.random() * STARTPUNKTE.length)];
+  return { x: s[0], y: 0, z: s[1] };
 }
 function botGetroffen(b, schaden, von) {
   b.hp -= schaden; b.ruheUhr = 0;
@@ -822,11 +1076,13 @@ function siegen(id) {
   zeigeSieg(id);
 }
 function neueRunde() {   // nur beim Chef
+  if (kartenWechsel) karteBauen(KARTEN_LISTE[(KARTEN_LISTE.indexOf(karte) + 1) % KARTEN_LISTE.length]);
   for (const p of Object.values(punkte)) { p.kills = 0; p.tode = 0; }
   wiederbeleben(ich);
   for (const k of andere.values()) if (k.bot) wiederbeleben(k);
-  anAlle({ t: 'neustart' });
-  mitte('🔄 Neue Runde!', 2);
+  anAlle({ t: 'neustart', karte });
+  mitte('🔄 Neue Runde!' + (kartenWechsel ? '  Karte: ' + KARTEN[karte].name : ''), 2.5);
+  codeZeigen();
 }
 function zeigeRaus(opfer, von) {
   feed(`<span style="color:${sicher(farbeVon(von))}">${sicher(nameVon(von))}</span> 🔫 <span style="color:${sicher(farbeVon(opfer))}">${sicher(nameVon(opfer))}</span>`);
@@ -878,7 +1134,7 @@ function raumErstellen() {
       const team = neuesTeam(), name = 'Spieler ' + v.nr, farbe = team ? TEAM_FARBE[team] : FARBEN[v.nr - 1];
       punkte[v.id] = { name, farbe, team, kills: 0, tode: 0 };
       kaempferHinzu({ id: v.id, name, farbe, x: 0, y: 0, z: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: true });
-      v.send({ t: 'hallo', nr: v.nr, modus, team });
+      v.send({ t: 'hallo', nr: v.nr, modus, team, karte });
       botsAnpassen();
       feed(`👋 <span style="color:${farbe}">${name}</span> ist da!`);
       ton(660, 0.1, 'triangle', 0.1);
@@ -938,6 +1194,7 @@ function gastEmpfaengt(d) {
   if (d.t === 'hallo') {
     rolle = 'gast';
     modus = MODI[d.modus] ? d.modus : 'ffa';
+    karteBauen(d.karte);
     ich.id = 'p' + d.nr; ich.name = 'Spieler ' + d.nr; ich.team = d.team || null;
     ich.farbe = d.team ? TEAM_FARBE[d.team] : FARBEN[d.nr - 1];
     spielStarten();
@@ -956,7 +1213,11 @@ function gastEmpfaengt(d) {
   } else if (d.t === 'schuss') schussEmpfangen(d.von, d.w, d.o, d.r);
   else if (d.t === 'raus') zeigeRaus(d.opfer, d.von);
   else if (d.t === 'sieg') zeigeSieg(d.id);
-  else if (d.t === 'neustart') { for (const p of Object.values(punkte)) { p.kills = 0; p.tode = 0; } wiederbeleben(ich); mitte('🔄 Neue Runde!', 2); }
+  else if (d.t === 'neustart') {
+    if (d.karte && d.karte !== karte) karteBauen(d.karte);
+    for (const p of Object.values(punkte)) { p.kills = 0; p.tode = 0; }
+    wiederbeleben(ich); mitte('🔄 Neue Runde!  Karte: ' + KARTEN[karte].name, 2.5); codeZeigen();
+  }
   else if (d.t === 'voll') netzInfo('😕 Der Raum ist voll.');
 }
 
@@ -1156,7 +1417,7 @@ function spielStarten() {
     punkte[ich.id] = { name: ich.name, farbe: ich.farbe, team: ich.team, kills: 0, tode: 0 };
     botsAnpassen();
   }
-  el('code').textContent = MODI[modus].name + (rolle === 'host' ? '  ·  🌐 Raum-Code: ' + raumCode + ' – sag ihn deinen Freunden!' : rolle === 'gast' ? '  ·  🌐 Raum ' + raumCode : '');
+  codeZeigen();
   if (ich.team) setTimeout(() => mitte('Du bist in ' + TEAM_NAME[ich.team] + '!', 2.5, TEAM_FARBE[ich.team]), 2600);
   ich.waffe = waffe;
   meinenBlasterBauen();
@@ -1164,6 +1425,32 @@ function spielStarten() {
   wiederbeleben(ich);
   mitte('🔫 Los geht\'s! Triff die anderen!', 2.5, '#ffd21f');
 }
+function codeZeigen() {
+  el('code').textContent = MODI[modus].name + '  ·  ' + KARTEN[karte].name +
+    (rolle === 'host' ? '  ·  🌐 Raum-Code: ' + raumCode + ' – sag ihn deinen Freunden!' : rolle === 'gast' ? '  ·  🌐 Raum ' + raumCode : '');
+}
+// Karten-Auswahl im Menü (die Knöpfe werden aus KARTEN gebaut)
+let kartenWechsel = false;   // true = nach jeder Runde kommt die nächste Karte
+function karteWaehlen(name) {
+  kartenWechsel = name === 'wechsel';
+  if (!kartenWechsel) karteBauen(name);
+  for (const k of document.querySelectorAll('.karteKnopf')) k.classList.toggle('gewaehlt', k.dataset.karte === name);
+  el('karteText').textContent = kartenWechsel ? 'Nach jeder Runde geht es auf der nächsten Karte weiter!' : KARTEN[karte].text;
+  try { localStorage.setItem('nerf-pvp-karte', name); } catch (e) { /* egal */ }
+}
+for (const name of [...KARTEN_LISTE, 'wechsel']) {
+  const k = document.createElement('button');
+  k.className = 'modusKnopf karteKnopf'; k.dataset.karte = name;
+  const [emoji, ...rest] = (name === 'wechsel' ? '🔀 Jede Runde eine andere' : KARTEN[name].name).split(' ');
+  k.innerHTML = emoji + '<br>' + rest.join(' ');
+  k.onclick = () => karteWaehlen(name);
+  el('karteKnoepfe').append(k);
+}
+let gemerkteKarte = 'arena';
+try { gemerkteKarte = localStorage.getItem('nerf-pvp-karte') || 'arena'; } catch (e) { /* egal */ }
+karteWaehlen(KARTEN[gemerkteKarte] || gemerkteKarte === 'wechsel' ? gemerkteKarte : 'arena');
+if (kartenWechsel) karteBauen('arena');
+
 // Spielmodus-Auswahl im Menü
 function modusWaehlen(m) {
   modus = m;
@@ -1202,9 +1489,10 @@ function schleife(jetzt) {
     // Im Menü kreist die Kamera langsam über der Arena
     menuWinkel += dt * 0.15;
     meinBlaster.visible = false;
-    kamera.position.set(Math.sin(menuWinkel) * 26, 13, Math.cos(menuWinkel) * 26);
+    kamera.position.set(Math.sin(menuWinkel) * G * 1.3, G * 0.65, Math.cos(menuWinkel) * G * 1.3);
     kamera.lookAt(0, 0, 0);
   }
+  if (kartenUpdate) kartenUpdate(dt);
   renderer.render(scene, kamera);
   requestAnimationFrame(schleife);
 }
