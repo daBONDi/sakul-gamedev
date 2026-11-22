@@ -436,7 +436,7 @@ function wiederbeleben(k) {
     k.waffe = WAFFEN_LISTE[Math.floor(Math.random() * WAFFEN_LISTE.length)];   // Bots bekommen einen zufälligen Blaster
     k.munition = magazinVon(k.waffe); k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0;
   }
-  if (k === ich) { for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; }
+  if (k === ich) { for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; doppelLaden = null; }
 }
 
 function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
@@ -500,6 +500,7 @@ const weich = t => 1 - Math.pow(1 - t, 3);
 function doppelAnimieren(dt) {
   const D = meinBlaster.userData.doppel;
   seitSchuss += dt;
+  if (doppelLaden) doppelLaden.zeit += dt;
   if (!D) return;
   // Abzug kippt kurz nach hinten, danach fährt der Pump-Schaft zurück und wieder vor
   const zug = seitSchuss < 0.15 ? Math.sin(seitSchuss / 0.15 * Math.PI) : 0;
@@ -515,7 +516,6 @@ function doppelAnimieren(dt) {
   }
   if (!doppelLaden) { D.lauf.rotation.x = 0; return; }
   const L = doppelLaden;
-  L.zeit += dt;
   const rt = L.zeit;
   const einmal = (name, machen) => { if (!L.gespielt.has(name)) { L.gespielt.add(name); machen(); } };
   let auf;
