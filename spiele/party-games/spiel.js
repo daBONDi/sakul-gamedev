@@ -202,11 +202,11 @@ for (const zahl of [1, 6, 2, 5, 3, 4]) wuerfelBilder.push(new THREE.MeshLambertM
   g.fillStyle = zahl === 1 ? '#e0398b' : '#222';
   for (const [x, y] of AUGEN[zahl]) { g.beginPath(); g.arc(x * s, y * s, s * 0.1, 0, Math.PI * 2); g.fill(); }
 }) }));
-const wuerfel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), wuerfelBilder);
-wuerfel.castShadow = true;
+const wuerfel = new THREE.Group();
+for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), wuerfelBilder); w.position.x = s * 0.6; w.castShadow = true; wuerfel.add(w); }
 scene.add(wuerfel);
 const zahlBilder = [];
-for (let i = 0; i <= 9; i++) zahlBilder.push(textBild(String(i), '#ffcc00', 110));
+for (let i = 0; i <= 15; i++) zahlBilder.push(textBild(String(i), '#ffcc00', 110));
 const zahlSchild = new THREE.Sprite(new THREE.SpriteMaterial({ map: zahlBilder[0], depthWrite: false }));
 zahlSchild.scale.set(4, 1, 1);
 scene.add(zahlSchild);
@@ -245,7 +245,7 @@ const botE = [0, 1, 2, 3].map(() => ({ x: 0, z: 0, n: 0 }));
 
 function neuerZustand(liste, runden) {
   return {
-    phase: 'brett', runde: 1, maxRunden: runden, dran: 0, schritt: 'start', uhr: 2, wurf: 0, rest: 0, hopT: 0, weiter: null,
+    phase: 'brett', runde: 1, maxRunden: runden, dran: 0, schritt: 'start', uhr: 2, wurf: 0, wuerfe: [1, 1], rest: 0, hopT: 0, weiter: null,
     pokalFeld: 10 + zufallsZahl(14), meldung: '', meldungUhr: 0, effekte: [], effektNr: 0, spiel: null, ergebnis: null, beutel: [], sieger: null,
     spieler: liste.map((s, i) => ({ ...s, farbe: FARBEN[i], feld: 0, muenzen: START_MUENZEN, pokale: 0, x: feldPos[0].x, y: FELD_Y, z: feldPos[0].z, r: 0, weg: false })),
   };
@@ -336,8 +336,10 @@ function brettLogik(dt) {
     if (Z.uhr <= 0) { Z.schritt = 'wuerfeln'; Z.uhr = zufall(0.8, 1.6); druckReset(); effekt('dran'); }
   } else if (Z.schritt === 'wuerfeln') {
     if (s.art === 'bot' ? Z.uhr <= 0 : gedrueckt(Z.dran)) {
-      Z.wurf = 1 + zufallsZahl(6); Z.rest = Z.wurf;
-      Z.schritt = 'zeigen'; Z.uhr = 0.8;
+      Z.wuerfe = [1 + zufallsZahl(6), 1 + zufallsZahl(6)];   // zwei Würfel!
+      Z.wurf = Z.wuerfe[0] + Z.wuerfe[1]; Z.rest = Z.wurf;
+      Z.schritt = 'zeigen'; Z.uhr = 1;
+      meldung(`🎲 ${Z.wuerfe[0]} + ${Z.wuerfe[1]} = ${Z.wurf}!`, 1.2);
       effekt('wuerfel');
     }
   } else if (Z.schritt === 'zeigen') {
@@ -358,7 +360,7 @@ function brettLogik(dt) {
       else naechsterSpieler();
     }
   }
-  brettPositionen();
+  if (Z.phase === 'brett') brettPositionen();   // (nicht mehr, wenn gerade ein Minispiel angefangen hat)
 }
 function naechsterSpieler() {
   Z.dran++;
@@ -369,8 +371,12 @@ function naechsterSpieler() {
 
 // ========== Minispiele ==========
 function minispielStarten() {
-  if (!Z.beutel.length) Z.beutel = Object.keys(MINISPIELE).sort(() => Math.random() - 0.5);
+  if (!Z.beutel.length) {   // alle Minispiele gemischt in einen Beutel – aber nicht zweimal dasselbe hintereinander
+    Z.beutel = Object.keys(MINISPIELE).sort(() => Math.random() - 0.5);
+    if (Z.beutel.length > 1 && Z.beutel[Z.beutel.length - 1] === Z.letztesSpiel) Z.beutel.unshift(Z.beutel.pop());
+  }
   const typ = Z.beutel.pop();
+  Z.letztesSpiel = typ;
   Z.spiel = { typ, zeit: 0 };
   for (const e of botE) { for (const k in e) if (k !== 'n') delete e[k]; e.x = 0; e.z = 0; }
   MINISPIELE[typ].start(Z.spiel);
@@ -926,9 +932,10 @@ function darstellen(dt) {
     pokal.rotation.y += dt;
     wuerfel.visible = Z.schritt === 'wuerfeln';
     wuerfel.position.set(sp.x, sp.y + 2.7 + Math.sin(uhrzeit * 5) * 0.1, sp.z);
-    wuerfel.rotation.x += dt * 7; wuerfel.rotation.y += dt * 9;
+    wuerfel.lookAt(kamera.position.x, wuerfel.position.y, kamera.position.z);
+    wuerfel.children.forEach((w, i) => { w.rotation.x += dt * (7 + i); w.rotation.y += dt * (9 - i); });
     zahlSchild.visible = Z.schritt === 'zeigen' || (Z.schritt === 'laufen' && Z.rest > 0) || (Z.schritt === 'pokal' && Z.rest > 0);
-    zahlSchild.material.map = zahlBilder[Math.max(0, Math.min(9, Z.rest))];
+    zahlSchild.material.map = zahlBilder[Math.max(0, Math.min(15, Z.rest))];
     zahlSchild.position.set(sp.x, sp.y + 2.6, sp.z);
     ballonsBewegen();
   } else {
