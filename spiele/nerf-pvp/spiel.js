@@ -23,6 +23,16 @@ const WAFFEN_LISTE = ['blitz', 'schrot', 'sniper', 'minigun', 'doppel'];   // Ta
 const DOPPEL_GROESSE = 1.8;      // so viel größer als in echt ist der Doppel-Blaster im Spiel (sonst sieht man ihn kaum)
 const waffeVon = w => WAFFEN[w] ? w : 'blitz';
 const LAUF_TEMPO = 6, RENN_TEMPO = 9, SPRUNG_KRAFT = 6.5, SCHWERKRAFT = 18;
+// ---------- Quake-Bewegung (nur für dich, nicht für Bots) ----------
+// Leertaste gedrückt halten = Bunny-Hop (springt sofort weiter, ohne Schwung zu verlieren)
+// In der Luft A oder D drücken und die Maus in dieselbe Richtung drehen = schneller werden (Strafe-Jumping)
+const QUAKE_BEWEGUNG = true;     // false = wieder normales Laufen wie vorher
+const BODEN_BESCHL = 10;         // wie schnell du am Boden losläufst
+const REIBUNG = 6;               // wie schnell du am Boden abbremst
+const STOPP_TEMPO = 2.5;         // unter diesem Tempo bremst die Reibung extra stark
+const LUFT_BESCHL = 10;          // wie stark du in der Luft lenken kannst
+const LUFT_MAX = 0.7;            // so klein ist der Schubs in der Luft (klein = Strafe-Jumping nötig)
+const HOECHST_TEMPO = 22;        // schneller geht es nicht (Meter pro Sekunde)
 const MIN_KAEMPFER = 4;          // Bots füllen auf so viele Kämpfer auf
 const BOT_ZIELFEHLER = 0.07;     // kleiner = Bots zielen besser
 const MAUS_EMPFINDLICH = 0.0022;
@@ -395,7 +405,7 @@ function treffer(d, k, art) {
 }
 
 // ========== Kämpfer (du, Freunde und Bots) ==========
-const ich = { id: 'p1', name: 'Spieler 1', farbe: FARBEN[0], x: 0, y: 0, z: 0, vy: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: true, ruheUhr: 0 };
+const ich = { id: 'p1', name: 'Spieler 1', farbe: FARBEN[0], x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: true, ruheUhr: 0 };
 const andere = new Map();    // alle anderen Kämpfer: id -> Kämpfer
 let punkte = {};             // id -> { name, farbe, kills, tode }
 function alleKaempfer() { return [ich, ...andere.values()]; }
@@ -436,7 +446,7 @@ function wiederbeleben(k) {
     k.waffe = WAFFEN_LISTE[Math.floor(Math.random() * WAFFEN_LISTE.length)];   // Bots bekommen einen zufälligen Blaster
     k.munition = magazinVon(k.waffe); k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0;
   }
-  if (k === ich) { for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; doppelLaden = null; }
+  if (k === ich) { ich.vx = ich.vz = 0; for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; doppelLaden = null; }
 }
 
 function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
@@ -582,10 +592,15 @@ function spielerUpdate(dt) {
   if (tasten.KeyD) seit += 1;
   if (tasten.KeyA) seit -= 1;
   const laenge = Math.hypot(vor, seit) || 1;
-  const tempo = (tasten.ShiftLeft || tasten.ShiftRight ? RENN_TEMPO : LAUF_TEMPO) * WAFFEN[waffe].laufen * (zoom ? 0.5 : 1) * dt / laenge;
+  const maxTempo = (tasten.ShiftLeft || tasten.ShiftRight ? RENN_TEMPO : LAUF_TEMPO) * WAFFEN[waffe].laufen * (zoom ? 0.5 : 1);
   const fx = -Math.sin(ich.b), fz = -Math.cos(ich.b), rx = Math.cos(ich.b), rz = -Math.sin(ich.b);
-  if (tasten.Space && ich.amBoden) ich.vy = SPRUNG_KRAFT;
-  bewegen(ich, (fx * vor + rx * seit) * tempo, (fz * vor + rz * seit) * tempo, dt);
+  if (QUAKE_BEWEGUNG) {
+    quakeBewegen(dt, (fx * vor + rx * seit) / laenge, (fz * vor + rz * seit) / laenge, vor || seit ? maxTempo : 0);
+  } else {
+    const tempo = maxTempo * dt / laenge;
+    if (tasten.Space && ich.amBoden) ich.vy = SPRUNG_KRAFT;
+    bewegen(ich, (fx * vor + rx * seit) * tempo, (fz * vor + rz * seit) * tempo, dt);
+  }
 
   schussUhr -= dt;
   wechselUhr = Math.max(0, wechselUhr - dt);
@@ -595,6 +610,37 @@ function spielerUpdate(dt) {
     if (munition > 0) schiessen();
     else { ton(1200, 0.03, 'square', 0.05); schussUhr = 0.25; nachladen(); }
   }
+}
+
+// So bewegt man sich in Quake: mit Schwung (vx, vz), Reibung am Boden und Lenken in der Luft
+function beschleunigen(wx, wz, wunschTempo, beschl, dt, grenze = wunschTempo) {
+  const jetzt = ich.vx * wx + ich.vz * wz;           // wie schnell bin ich schon in die gewünschte Richtung?
+  const fehlt = grenze - jetzt;
+  if (fehlt <= 0) return;
+  const plus = Math.min(fehlt, beschl * wunschTempo * dt);
+  ich.vx += wx * plus; ich.vz += wz * plus;
+}
+function quakeBewegen(dt, wx, wz, wunschTempo) {
+  if (tasten.Space && ich.amBoden) {   // Springen bremst nicht = Bunny-Hop! (aber man darf noch Schwung holen)
+    ich.vy = SPRUNG_KRAFT;
+    beschleunigen(wx, wz, wunschTempo, BODEN_BESCHL, dt);
+  } else if (ich.amBoden) {
+    const tempo = Math.hypot(ich.vx, ich.vz);       // Reibung: am Boden langsamer werden
+    if (tempo < 0.05) { ich.vx = ich.vz = 0; }
+    else {
+      const neu = Math.max(0, tempo - Math.max(tempo, STOPP_TEMPO) * REIBUNG * dt) / tempo;
+      ich.vx *= neu; ich.vz *= neu;
+    }
+    beschleunigen(wx, wz, wunschTempo, BODEN_BESCHL, dt);
+  } else {
+    beschleunigen(wx, wz, wunschTempo, LUFT_BESCHL, dt, Math.min(wunschTempo, LUFT_MAX));
+  }
+  const tempo = Math.hypot(ich.vx, ich.vz);
+  if (tempo > HOECHST_TEMPO) { ich.vx *= HOECHST_TEMPO / tempo; ich.vz *= HOECHST_TEMPO / tempo; }
+  const altX = ich.x, altZ = ich.z;
+  bewegen(ich, ich.vx * dt, ich.vz * dt, dt);
+  if (ich.vx && ich.x === altX) ich.vx = 0;   // gegen eine Wand gelaufen: Schwung in diese Richtung ist weg
+  if (ich.vz && ich.z === altZ) ich.vz = 0;
 }
 
 function zoomZeigen(an, dt) {
@@ -1035,6 +1081,11 @@ function hudUpdate(dt) {
   el('lebenFuell').style.background = ich.hp > 60 ? '#2fd05a' : ich.hp > 30 ? '#ffd21f' : '#ff4040';
   el('munition').textContent = nachladeUhr > 0 ? '🔄 Nachladen …' : WAFFEN[waffe].emoji + ' ' + munition + ' / ' + magazinVon(waffe);
   el('munition').style.color = munition === 0 ? '#ff4040' : '#fff';
+  if (QUAKE_BEWEGUNG) {   // Tacho: wie schnell bist du gerade?
+    const kmh = Math.round(Math.hypot(ich.vx, ich.vz) * 3.6);
+    el('tacho').textContent = '💨 ' + kmh + ' km/h';
+    el('tacho').style.color = kmh > 45 ? '#ff7a1a' : kmh > 33 ? '#ffd21f' : '#fff';
+  }
   rotUhr = Math.max(0, rotUhr - dt); el('rot').style.opacity = rotUhr * 2;
   trefferUhr = Math.max(0, trefferUhr - dt); el('trefferX').style.opacity = trefferUhr * 4;
   mitteUhr -= dt; if (mitteUhr <= 0) el('mitte').textContent = '';
