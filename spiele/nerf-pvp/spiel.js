@@ -399,6 +399,54 @@ function karteBauen(name) {
   K.bauen();
   // Startpunkte (gespiegelt), aber nur die, wo kein Hindernis steht
   STARTPUNKTE = K.start.flatMap(([x, z]) => vierPunkte(x, z)).filter(([x, z]) => !stoesst({ x, y: 0, z }));
+  rasterBauen();
+}
+
+// ---------- Wegfinden für Bots ----------
+// Die Karte wird in 1-Meter-Felder aufgeteilt. Frei = Bots können da laufen (niedrige Kisten springen sie hoch).
+let frei = new Uint8Array(0), rasterN = 0;
+function rasterBauen() {
+  rasterN = G * 2;
+  frei = new Uint8Array(rasterN * rasterN);
+  for (let i = 0; i < rasterN; i++) for (let j = 0; j < rasterN; j++) {
+    const x = -G + i + 0.5, z = -G + j + 0.5;
+    frei[i * rasterN + j] = kisten.some(q => x + 0.45 > q.x1 && x - 0.45 < q.x2 && z + 0.45 > q.z1 && z - 0.45 < q.z2 && q.y2 > 1 && q.y1 < HOEHE) ? 0 : 1;
+  }
+}
+const feldVon = v => Math.max(0, Math.min(rasterN - 1, Math.floor(v + G)));
+const istFrei = (x, z) => frei[feldVon(x) * rasterN + feldVon(z)] === 1;
+function geradeFrei(ax, az, bx, bz) {   // kann man auf gerader Linie hinlaufen?
+  const schritte = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.3);
+  for (let i = 1; i <= schritte; i++) {
+    const x = ax + (bx - ax) * i / schritte, z = az + (bz - az) * i / schritte;
+    if (!istFrei(x, z) || !istFrei(x + 0.3, z) || !istFrei(x - 0.3, z) || !istFrei(x, z + 0.3) || !istFrei(x, z - 0.3)) return false;
+  }
+  return true;
+}
+// Breitensuche: vom Bot zu einem zufälligen freien Feld
+function wegSuchen(b) {
+  const start = feldVon(b.x) * rasterN + feldVon(b.z);
+  let ziel = -1;
+  for (let i = 0; i < 30 && ziel < 0; i++) { const f = Math.floor(Math.random() * frei.length); if (frei[f]) ziel = f; }
+  if (ziel < 0) return [];
+  const von = new Int32Array(frei.length).fill(-1);
+  von[start] = start;
+  const schlange = [start];
+  for (let k = 0; k < schlange.length && von[ziel] < 0; k++) {
+    const f = schlange[k], i = Math.floor(f / rasterN), j = f % rasterN;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const ni = i + di, nj = j + dj;
+      if (ni < 0 || nj < 0 || ni >= rasterN || nj >= rasterN) continue;
+      const n = ni * rasterN + nj;
+      if (von[n] >= 0 || !frei[n]) continue;
+      if (di && dj && (!frei[ni * rasterN + j] || !frei[i * rasterN + nj])) continue;   // nicht um Ecken schneiden
+      von[n] = f; schlange.push(n);
+    }
+  }
+  if (von[ziel] < 0) return [];
+  const pfad = [];
+  for (let f = ziel; f !== start; f = von[f]) pfad.unshift([Math.floor(f / rasterN) - G + 0.5, f % rasterN - G + 0.5]);
+  return pfad;
 }
 
 function inKiste(p) {
@@ -697,7 +745,7 @@ function wiederbeleben(k) {
   k.b = Math.atan2(k.x, k.z); k.n = 0;   // schaut zur Mitte
   if (k.bot) {
     k.waffe = WAFFEN_LISTE[Math.floor(Math.random() * WAFFEN_LISTE.length)];   // Bots bekommen einen zufälligen Blaster
-    k.munition = magazinVon(k.waffe); k.nachladeUhr = 0; k.wegpunkt = null; k.sehUhr = 0;
+    k.munition = magazinVon(k.waffe); k.nachladeUhr = 0; k.pfad = null; k.sehUhr = 0;
   }
   if (k === ich) { ich.vx = ich.vz = 0; for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; doppelLaden = null; }
 }
@@ -946,7 +994,7 @@ function neuerBot() {
   const i = naechsteBotNr++, team = neuesTeam();
   const b = { id: 'b' + i, name: BOT_NAMEN[i % BOT_NAMEN.length], farbe: team ? TEAM_FARBE[team] : BOT_FARBEN[i % BOT_FARBEN.length], bot: true, team,
     x: 0, y: 0, z: 0, vy: 0, b: 0, n: 0, hp: MAX_LEBEN, tot: false, ruheUhr: 0,
-    waffe: 'blitz', munition: 12, schussUhr: 1, nachladeUhr: 0, sehUhr: 0, seitwaerts: 0, seitUhr: 0, wegpunkt: null, steckUhr: 0 };
+    waffe: 'blitz', munition: 12, schussUhr: 1, nachladeUhr: 0, sehUhr: 0, seitwaerts: 0, seitUhr: 0, pfad: null, abkuerzUhr: 0, steckUhr: 0 };
   punkte[b.id] = { name: b.name, farbe: b.farbe, team, kills: 0, tode: 0 };
   kaempferHinzu(b);
   wiederbeleben(b);
@@ -965,14 +1013,6 @@ function botsAnpassen() {   // Bots füllen auf MIN_KAEMPFER auf
     const weg = bots.splice(nr, 1)[0];
     kaempferWeg(weg.id); delete punkte[weg.id];
   }
-}
-function zufallsPunkt() {
-  for (let i = 0; i < 40; i++) {
-    const p = { x: (Math.random() * 2 - 1) * (G - 2), y: 0, z: (Math.random() * 2 - 1) * (G - 2) };
-    if (!stoesst(p)) return p;
-  }
-  const s = STARTPUNKTE[Math.floor(Math.random() * STARTPUNKTE.length)];
-  return { x: s[0], y: 0, z: s[1] };
 }
 function botGetroffen(b, schaden, von) {
   b.hp -= schaden; b.ruheUhr = 0;
@@ -1034,10 +1074,18 @@ function botDenken(b, dt) {
   } else {
     // Niemand zu sehen: durch die Arena laufen
     b.sehUhr = 0;
-    if (!b.wegpunkt || Math.hypot(b.wegpunkt.x - b.x, b.wegpunkt.z - b.z) < 1.5) b.wegpunkt = zufallsPunkt();
-    b.b = dreheZu(b.b, Math.atan2(-(b.wegpunkt.x - b.x), -(b.wegpunkt.z - b.z)), 4 * dt);
+    if (!b.pfad || !b.pfad.length) { b.pfad = wegSuchen(b); b.abkuerzUhr = 0; }
+    // Abkürzen: wenn man den übernächsten Punkt schon gerade erreichen kann
+    b.abkuerzUhr -= dt;
+    if (b.abkuerzUhr <= 0) { b.abkuerzUhr = 0.25; while (b.pfad.length > 1 && geradeFrei(b.x, b.z, b.pfad[1][0], b.pfad[1][1])) b.pfad.shift(); }
+    const wp = b.pfad[0];
+    if (wp) {
+      if (Math.hypot(wp[0] - b.x, wp[1] - b.z) < 0.6) b.pfad.shift();
+      const soll = Math.atan2(-(wp[0] - b.x), -(wp[1] - b.z));
+      b.b = dreheZu(b.b, soll, 7 * dt);
+      vor = Math.abs(winkelDiff(b.b, soll)) > 0.9 ? 0.25 : 1;   // in engen Kurven langsamer
+    }
     b.n *= 0.9;
-    vor = 1;
   }
 
   const tempo = LAUF_TEMPO * 0.85 * dt;
@@ -1050,7 +1098,7 @@ function botDenken(b, dt) {
   if (gewollt > 0.001 && geschafft < gewollt * 0.3) {
     b.steckUhr += dt;
     if (b.steckUhr > 0.4 && b.amBoden) b.vy = SPRUNG_KRAFT;
-    if (b.steckUhr > 1.2) { b.wegpunkt = zufallsPunkt(); b.steckUhr = 0; }
+    if (b.steckUhr > 1.2) { b.pfad = null; b.steckUhr = 0; }
   } else b.steckUhr = 0;
 }
 
