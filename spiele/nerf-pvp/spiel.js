@@ -1502,11 +1502,11 @@ if (kartenWechsel) karteBauen('arena');
 // Spielmodus-Auswahl im Menü
 function modusWaehlen(m) {
   modus = m;
-  for (const k of document.querySelectorAll('.modusKnopf')) k.classList.toggle('gewaehlt', k.dataset.modus === m);
+  for (const k of document.querySelectorAll('[data-modus]')) k.classList.toggle('gewaehlt', k.dataset.modus === m);
   el('modusText').textContent = MODI[m].text;
   try { localStorage.setItem('nerf-pvp-modus', m); } catch (e) { /* egal */ }
 }
-for (const k of document.querySelectorAll('.modusKnopf')) k.onclick = () => modusWaehlen(k.dataset.modus);
+for (const k of document.querySelectorAll('[data-modus]')) k.onclick = () => modusWaehlen(k.dataset.modus);
 let gemerkt = 'ffa';
 try { gemerkt = localStorage.getItem('nerf-pvp-modus') || 'ffa'; } catch (e) { /* egal */ }
 modusWaehlen(MODI[gemerkt] ? gemerkt : 'ffa');
