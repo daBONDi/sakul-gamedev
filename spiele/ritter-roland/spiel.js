@@ -597,6 +597,20 @@ neuerNPC('fritz', 'Fischer Fritz', 324, 68, { kleid: 0x1565c0, hut: 'stroh', hut
   'Ahoi! Schönes Wetter zum Angeln! 🎣');
 neuerNPC('zwerg', 'Zwerg Zacharias', ZWERG.x, ZWERG.z, { kleid: 0x795548, hut: 'zipfel', hutFarbe: 0xc62828, bart: 0xffffff },
   'Graben, graben, graben … ⛏️', 0.7);
+neuerNPC('wilma', 'Wächterin Wilma', ORTE.turm.x + 6, ORTE.turm.z + 3, { kleid: 0x37474f, hut: 'spitz', hutFarbe: 0x1565c0, haare: 0xffb300 },
+  'Von hier oben sehe ich das ganze Königreich! 🔭');
+neuerNPC('max', 'Müller Max', ORTE.muehle.x - 6, ORTE.muehle.z + 7, { kleid: 0xeeeeee, hut: 'zipfel', hutFarbe: 0xffffff, bart: 0x8d6e63 },
+  'Die Mühle dreht sich, klipp-klapp! 🌬️');
+// Königin Sisi kann nach der Befreiung auch reden
+npcs.sisi = { name: 'Königin Sisi', mesh: sisi, pos: sisi.position, sonst: 'Danke, mein Held! 💖', zuletzt: -99 };
+let sisiImDorf = false;
+function sisiInsDorf() {   // Sisi geht nach der Befreiung ins Dorf
+  if (sisiImDorf) return;
+  sisiImDorf = true;
+  sisi.position.set(-7, 0, 437);
+  sisi.rotation.set(0, 0, 0);
+  hindernis(-7, 437, 1.6, 1.6);
+}
 
 // ---------- Kobolde ----------
 const kobolde = [];
@@ -616,6 +630,17 @@ function neuerKobold(x, z, o = {}) {
   }
   const keule = klotz(0.25, 1.3, 0.25, 0x6d4c2f); keule.position.set(0.6, 1.2, 0.3); keule.rotation.x = 0.6;
   g.add(leib, k, keule);
+  if (o.dieb) {   // Fips hat einen Sack auf dem Rücken
+    const sack = kugel(0.45, 0x8d6e63); sack.position.set(0, 1.4, -0.5); g.add(sack);
+  }
+  if (o.koenig) {   // Krone und roter Umhang
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.25, emissive: 0x553300 });
+    const kr = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.32, 0.4, 8, 1, true), goldMat);
+    kr.material.side = THREE.DoubleSide; kr.position.y = 2.45;
+    for (let i = 0; i < 5; i++) { const z = kegel(0.08, 0.25, 0xffd700, 4); const w = i / 5 * Math.PI * 2; z.position.set(Math.cos(w) * 0.35, 2.75, Math.sin(w) * 0.35); g.add(z); }
+    const umhang = klotz(1.1, 1.4, 0.1, 0xb71c1c); umhang.position.set(0, 1.1, -0.38);
+    g.add(kr, umhang);
+  }
   if (o.hauptmann) {
     const helm = kegel(0.5, 0.7, 0x757575); helm.position.y = 2.5;
     const anhaenger = klotz(0.25, 0.35, 0.1, 0xffd700); anhaenger.position.set(0, 1.2, 0.36);
@@ -629,6 +654,7 @@ function neuerKobold(x, z, o = {}) {
     mesh: g, start: new THREE.Vector3(x, 0, z), lebt: true, umfallen: 0, zufallsWinkel: Math.random() * 6,
     schlagPause: 0, trampelPause: 0, blink: 0, hp: o.hp || 1, maxHp: o.hp || 1, groesse,
     jagdRadius: o.jagd || 16, tempo: o.tempo || 5, beiTod: o.beiTod,
+    flieht: !!o.dieb, istKoenig: !!o.koenig, rufPause: 3, gesprochen: false,
   };
   kobolde.push(kobold);
   return kobold;
@@ -650,6 +676,43 @@ for (let i = 0; i < 4; i++) neuerKobold(-60 - i * 60, -155 - i * 38);
 // Lager vor der Burg und in der Burg
 for (let i = 0; i < 7; i++) neuerKobold(BURG.x - 25 + i * 8, BZ + 32 + (i % 3) * 5);
 for (const [x, z] of [[-8, BZ + 5], [8, BZ + 5], [0, BZ + 10], [-10, BZ - 10], [10, BZ - 10]]) neuerKobold(x, z);
+// ===== Teil 2: Die Jagd auf den Koboldkönig =====
+// Wächter der Ruine (bewachen einen Mondstein)
+const ruinenKobolde = [];
+for (let i = 0; i < 6; i++) {
+  const w = i / 6 * Math.PI * 2;
+  ruinenKobolde.push(neuerKobold(ORTE.ruine.x + Math.cos(w) * 7, ORTE.ruine.z + Math.sin(w) * 7, { jagd: 18, hp: 2 }));
+}
+// Der Flinke Fips: ein Kobold-Dieb, der wegläuft (zu Fuß kriegt man ihn kaum – nimm das Pferd!)
+let fipsGefangen = false, koenigBesiegt = false;
+const fips = neuerKobold(ORTE.muehle.x + 30, ORTE.muehle.z - 20, {
+  dieb: true, groesse: 0.8, tempo: 13, jagd: 28,
+  beiTod: k => {
+    fipsGefangen = true;
+    neuerFund(k.mesh.position.x, k.mesh.position.z, 'mond');
+    nachricht('Fips: „Menno! Da hast du deinen blöden Stein!“ 🌙', 4000);
+  },
+});
+// Der Koboldkönig persönlich – wartet im Steinkreis
+const koenig = neuerKobold(ORTE.steine.x, ORTE.steine.z - 4, {
+  koenig: true, groesse: 2.6, hp: 15, tempo: 4.5, jagd: 30,
+  beiTod: k => {
+    koenigBesiegt = true;
+    neuerFund(k.mesh.position.x, k.mesh.position.z, 'zepter');
+    sounds.brüllen();
+    nachricht('Der Koboldkönig ist besiegt! 👑💫 Er hat das Sternen-Zepter fallen lassen!', 5000);
+    for (const h of helfer) if (h.lebt) h.lebt = false;   // seine Helfer kippen auch um
+  },
+});
+const helfer = [];   // Kobolde, die der König zu Hilfe ruft
+// Fips und der König sind erst da, wenn die Geschichte so weit ist
+function koboldWeg(k) { k.lebt = false; k.umfallen = 99; szene.remove(k.mesh); }
+function koboldAuftauchen(k) {
+  k.lebt = true; k.hp = k.maxHp; k.umfallen = 0; k.mesh.rotation.x = 0;
+  k.mesh.position.copy(k.start);
+  if (!k.mesh.parent) szene.add(k.mesh);
+}
+koboldWeg(fips); koboldWeg(koenig);
 const FESTE_KOBOLDE = kobolde.length; // nur diese werden gespeichert
 // Wanderer im Großen Wald (kommen bei jedem Laden neu)
 for (let n = 0; n < 110; n++) {
@@ -710,6 +773,30 @@ function neuerSchluessel(x, z, typ) {
   schluessel.push(s);
   return s;
 }
+
+// ---------- Fundstücke: Mondsteine 🌙 und das Sternen-Zepter ✨ ----------
+const fundstuecke = [];
+let mondsteine = 0, zepter = false;
+function neuerFund(x, z, typ) {
+  const g = new THREE.Group();
+  if (typ === 'mond') {
+    const stein = new THREE.Mesh(new THREE.OctahedronGeometry(0.7),
+      new THREE.MeshStandardMaterial({ color: 0x9ad7ff, emissive: 0x2a6fd4, roughness: 0.2 }));
+    stein.scale.y = 1.4; g.add(stein);
+    g.add(new THREE.PointLight(0x80c8ff, 2.5, 9));
+  } else {
+    const stab = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2, 8), new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
+    const stern = new THREE.Mesh(new THREE.OctahedronGeometry(0.45), new THREE.MeshStandardMaterial({ color: 0xfff59d, emissive: 0xffd600 }));
+    stern.position.y = 1.2; g.add(stab, stern);
+    g.add(new THREE.PointLight(0xffee58, 3, 10));
+  }
+  g.position.set(x, 1.8, z);
+  szene.add(g);
+  const f = { mesh: g, typ, gefunden: false };
+  fundstuecke.push(f);
+  return f;
+}
+const liegenderFund = typ => fundstuecke.find(f => !f.gefunden && f.typ === typ);
 
 // ---------- Zauberpilze ----------
 const pilze = PILZ_ORTE.map(([x, z]) => {
@@ -819,6 +906,7 @@ let torHoch = 0;
 let startZeit = 0;
 let aktuellesGebiet = '';
 let heilPause = 0;
+let fest = false;
 
 // ---------- Anzeigen ----------
 const hud = document.getElementById('hud');
@@ -827,7 +915,10 @@ let hudAlt = '';
 function hudZeigen() {
   let text = '❤️'.repeat(Math.max(0, leben)) + '🖤'.repeat(MAX_LEBEN - Math.max(0, leben)) +
     '\n🔑 ' + gefunden + '/3   📦 ' + truhen.filter(t => t.offen).length + '/4   👺 ' + besiegt + (pilzAnzahl > 0 && pilzAnzahl < 5 ? '   🍄 ' + pilzAnzahl + '/5' : '');
-  if (drache.lebt && drache.aktiv) text += '\n🐉 ' + '🟥'.repeat(drache.hp) + '⬛'.repeat(drache.maxHp - drache.hp);
+  if (schritt > TEIL2 + 1) text += '   🌙 ' + mondsteine + '/2' + (zepter ? '   ✨' : '');
+  if (koenig.lebt && roland.position.distanceTo(koenig.mesh.position) < 35)
+    text += '\n👑 ' + '🟥'.repeat(koenig.hp) + '⬛'.repeat(koenig.maxHp - koenig.hp);
+  else if (drache.lebt && drache.aktiv) text += '\n🐉 ' + '🟥'.repeat(drache.hp) + '⬛'.repeat(drache.maxHp - drache.hp);
   else if (hauptmann.lebt && roland.position.distanceTo(hauptmann.mesh.position) < 28)
     text += '\n👹 ' + '🟥'.repeat(hauptmann.hp) + '⬛'.repeat(hauptmann.maxHp - hauptmann.hp);
   if (text !== hudAlt) { hud.textContent = text; hudAlt = text; }
@@ -968,8 +1059,80 @@ const auftraege = [
     ort: () => sisi.position,
     fertig: () => gewonnen,
   },
+  // ===================== TEIL 2 =====================
+  {
+    titel: 'Sprich mit <b>Königin Sisi</b>.', npc: 'sisi',
+    text: [
+      'Roland! Mein Held! Du hast mich befreit! 💖',
+      'Aber hör zu: Wo ist eigentlich der Koboldkönig? 🤔',
+      'Er ist durch einen Geheimgang geflohen – und er hat das Sternen-Zepter ✨ des Königreichs mitgenommen!',
+      'Mit dem Zepter will er alle Tiere im Königreich in Kobolde verwandeln! Die Kühe, die Pferde … sogar dein Pferd! 😱',
+      'Wächterin Wilma auf dem Wachturm sieht das ganze Land. Frag sie, wohin er geflohen ist!',
+      'Ich gehe zurück ins Dorf und warte dort auf dich. Viel Glück!',
+    ],
+    belohnung: () => { sisiInsDorf(); leben = MAX_LEBEN; nachricht('👑 Königin Sisi macht sich auf den Weg ins Dorf.', 4000); },
+  },
+  {
+    titel: 'Reite zum <b>Wachturm</b> und frag <b>Wächterin Wilma</b>. 🗼', npc: 'wilma',
+    text: [
+      'Halt! Wer da? … Ach, Ritter Roland! 🔭',
+      'Ja, ich habe den Koboldkönig gesehen! Er ist zum Steinkreis 🗿 ganz im Osten gerannt.',
+      'Dort will er heute Nacht den großen Verwandlungs-Zauber machen.',
+      'Aber für den Zauber braucht er 2 Mondsteine 🌙🌙. Ohne die ist das Zepter nur ein Stock!',
+      'Einen Mondstein bewachen seine Kobolde in der alten Ruine im Nordosten.',
+      'Den anderen hat ein Kobold-Dieb Müller Max geklaut. Hol dir zuerst die Mondsteine!',
+    ],
+  },
+  {
+    titel: () => 'Besiege die Wächter der <b>Ruine</b>: <b>' + anzahlTot(ruinenKobolde) + '/6</b> 🏛️',
+    ort: () => ruinenKobolde.find(k => k.lebt)?.mesh.position,
+    fertig: () => anzahlTot(ruinenKobolde) >= 6,
+    belohnung: () => { neuerFund(ORTE.ruine.x + 2, ORTE.ruine.z + 3, 'mond'); nachricht('Da glitzert etwas in der Ruine! 🌙', 4000); },
+  },
+  {
+    titel: 'Nimm den <b>Mondstein</b> aus der Ruine! 🌙',
+    ort: () => liegenderFund('mond')?.mesh.position,
+    fertig: () => mondsteine >= 1,
+  },
+  {
+    titel: 'Reite zur <b>Windmühle</b> und sprich mit <b>Müller Max</b>. 🌬️', npc: 'max',
+    text: [
+      'Oh je, oh je, Herr Ritter! 😩',
+      'Der Flinke Fips, ein frecher Kobold-Dieb, hat mir meinen Glücksstein geklaut – einen echten Mondstein!',
+      'Er treibt sich noch hier bei der Mühle herum. Aber er ist sooo schnell!',
+      'Zu Fuß kriegst du den nie. Nimm lieber dein Pferd! 🐴💨',
+    ],
+  },
+  {
+    titel: 'Fang den <b>Flinken Fips</b>! 🏃💨 (Tipp: mit dem Pferd)',
+    start: () => { if (!fipsGefangen) koboldAuftauchen(fips); },
+    ort: () => fips.lebt ? fips.mesh.position : liegenderFund('mond')?.mesh.position,
+    fertig: () => mondsteine >= 2,
+  },
+  {
+    titel: 'Stell den <b>Koboldkönig</b> im <b>Steinkreis</b> ganz im Osten! 👑🗿',
+    start: () => { if (!koenigBesiegt) koboldAuftauchen(koenig); },
+    ort: () => koenig.lebt ? koenig.mesh.position : liegenderFund('zepter')?.mesh.position,
+    fertig: () => koenigBesiegt,
+  },
+  {
+    titel: 'Heb das <b>Sternen-Zepter</b> auf! ✨',
+    ort: () => liegenderFund('zepter')?.mesh.position,
+    fertig: () => zepter,
+  },
+  {
+    titel: 'Bring das Zepter zu <b>Königin Sisi</b> ins Dorf! 🏘️', npc: 'sisi',
+    text: [
+      'Roland! Du hast das Sternen-Zepter! ✨',
+      'Jetzt kann der Koboldkönig niemanden mehr verwandeln. Das ganze Königreich ist gerettet! 🎉',
+      'Alle sollen es hören: Ab heute ist Roland der Ritter des Sternen-Zepters! 🛡️⭐',
+      'Und heute Abend feiern wir ein riesiges Fest im Dorf! 🎊🍰',
+    ],
+    belohnung: () => { fest = true; sounds.sieg(); ende(); },
+  },
 ];
 let schritt = 0;
+const TEIL2 = auftraege.findIndex(a => a.npc === 'sisi');   // ab hier beginnt Teil 2
 
 let auftragAlt = '';
 function auftragZeigen() {
@@ -982,8 +1145,10 @@ function naechsterAuftrag() {
   if (a.belohnung) a.belohnung();
   schritt++;
   if (schritt < auftraege.length) {
+    if (auftraege[schritt].start) auftraege[schritt].start();
     sounds.auftrag();
-    nachricht('📜 Neuer Auftrag!');
+    if (schritt === TEIL2) nachricht('📖 Teil 2: Die Jagd auf den Koboldkönig!', 4000);
+    else if (!nachrichtEl.style.opacity || nachrichtEl.style.opacity === '0') nachricht('📜 Neuer Auftrag!');
   }
   auftragZeigen();
   speichern();
@@ -1051,6 +1216,8 @@ function ohnmacht() {
   leben = MAX_LEBEN;
   unverwundbar = 2;
   if (drache.lebt) { drache.hp = drache.maxHp; drache.mesh.position.copy(drache.start); }
+  if (koenig.lebt) { koenig.hp = koenig.maxHp; koenig.mesh.position.copy(koenig.start); koenig.gesprochen = false; }
+  for (const h of helfer) if (h.lebt) koboldWeg(h);
   for (const f of feuerbaelle) szene.remove(f.mesh);
   feuerbaelle.length = 0;
   nachricht('💫 Roland ist umgekippt … und wacht im Dorf wieder auf!', 4000);
@@ -1076,7 +1243,7 @@ function ende() {
   setTimeout(() => {
     document.getElementById('endeTitel').textContent = '🎉 Gewonnen! 🎉';
     document.getElementById('endeText').innerHTML =
-      'Königin Sisi ist frei! 👑<br>„Danke, tapferer Ritter Roland! Du bist der Held des Königreichs!“<br><br>' +
+      'Königin Sisi ist frei und das Sternen-Zepter ist zurück! 👑✨<br>„Danke, tapferer Ritter Roland! Du bist der Held des Königreichs!“<br><br>' +
       '👺 Besiegte Kobolde: ' + besiegt + '<br>⏱️ Spielzeit: ' + minuten + ' Minuten';
     document.getElementById('ende').classList.remove('versteckt');
   }, 3500);
@@ -1101,6 +1268,8 @@ function speichern() {
     toteKobolde: kobolde.slice(0, FESTE_KOBOLDE).map((k, i) => k.lebt ? -1 : i).filter(i => i >= 0),
     drache: drache.lebt,
     schluessel: schluessel.filter(s => !s.gefunden && s.typ).map(s => [s.mesh.position.x, s.mesh.position.z, s.typ]),
+    mondsteine, zepter, fipsGefangen, koenigBesiegt,
+    fundstuecke: fundstuecke.filter(f => !f.gefunden).map(f => [f.mesh.position.x, f.mesh.position.z, f.typ]),
   };
   try {
     localStorage.setItem(SPEICHER_NAME, JSON.stringify(stand));
@@ -1159,6 +1328,13 @@ function laden(stand) {
     pferd.rotation.y = stand.pferd[2];
   }
   pferdHinweis = schritt > 1;
+  // Teil 2
+  mondsteine = stand.mondsteine || 0; zepter = !!stand.zepter;
+  fipsGefangen = !!stand.fipsGefangen; koenigBesiegt = !!stand.koenigBesiegt;
+  for (const [x, z, typ] of stand.fundstuecke || []) neuerFund(x, z, typ);
+  if (schritt >= TEIL2) { gewonnen = true; siegZeit = -99; kaefig.position.y = 8; }
+  if (schritt > TEIL2) sisiInsDorf();
+  if (auftraege[schritt]?.start) auftraege[schritt].start();
   kamera.position.set(roland.position.x - Math.sin(roland.rotation.y) * 10, 6, roland.position.z - Math.cos(roland.rotation.y) * 10);
   auftragZeigen();
 }
@@ -1362,6 +1538,17 @@ function spielLogik(dt, zeit) {
     }
   }
 
+  // --- Mondsteine und Zepter einsammeln ---
+  for (const f of fundstuecke) {
+    if (f.gefunden) continue;
+    if (Math.hypot(f.mesh.position.x - roland.position.x, f.mesh.position.z - roland.position.z) < 3) {
+      f.gefunden = true;
+      szene.remove(f.mesh);
+      if (f.typ === 'mond') { mondsteine++; sounds.schluessel(); nachricht('Mondstein! 🌙 ' + mondsteine + '/2'); }
+      else { zepter = true; sounds.sieg(); nachricht('Das Sternen-Zepter! ✨ Bring es zu Königin Sisi!', 4000); }
+    }
+  }
+
   // --- Schatztruhen öffnen ---
   for (const t of truhen) {
     if (t.offen) continue;
@@ -1404,7 +1591,12 @@ function spielLogik(dt, zeit) {
     const abstand = zuRoland.length();
     if (abstand > 90) continue; // weit weg: schlafen 💤
     let ziel;
-    if (abstand < k.jagdRadius) {
+    if (k.flieht && abstand < k.jagdRadius) {   // Fips rennt weg!
+      if (!k.gesprochen) { k.gesprochen = true; nachricht('Fips: „Hihi! Fang mich doch, du lahme Blechbüchse!“ 🏃💨', 4000); }
+      ziel = zuRoland.clone().negate().normalize();
+      const heim = k.start.clone().sub(m.position); heim.y = 0;
+      if (heim.length() > 40) ziel.add(heim.normalize().multiplyScalar(1.5));   // nicht zu weit weg von der Mühle
+    } else if (abstand < k.jagdRadius) {
       ziel = zuRoland.clone();
     } else {
       k.zufallsWinkel += (Math.random() - 0.5) * dt * 3;
@@ -1415,7 +1607,7 @@ function spielLogik(dt, zeit) {
     if (ziel.length() > 0.01) {
       ziel.normalize();
       const tempo = abstand < k.jagdRadius ? k.tempo : 2;
-      if (abstand > 1.5 * k.groesse) bewegen(m, ziel.x * tempo * dt, ziel.z * tempo * dt, 0.5 * k.groesse);
+      if (abstand > 1.5 * k.groesse || k.flieht) bewegen(m, ziel.x * tempo * dt, ziel.z * tempo * dt, 0.5 * k.groesse);
       m.rotation.y = Math.atan2(ziel.x, ziel.z);
     }
     m.position.y = Math.abs(Math.sin(zeit * 10 + k.zufallsWinkel)) * 0.2;
@@ -1429,7 +1621,17 @@ function spielLogik(dt, zeit) {
       koboldTreffen(k, zuRoland.clone().normalize().negate());
       continue;
     }
-    if (abstand < 1.8 * k.groesse && k.schlagPause <= 0 && unverwundbar <= 0) {
+    // Der Koboldkönig ruft Helfer
+    if (k.istKoenig && abstand < 35) {
+      if (!k.gesprochen) { k.gesprochen = true; sounds.brüllen(); nachricht('Koboldkönig: „DU schon wieder?! Wachen, packt ihn!“ 👑😠', 4000); }
+      k.rufPause -= dt;
+      if (k.rufPause <= 0 && helfer.filter(h => h.lebt).length < 4) {
+        k.rufPause = 7;
+        for (let i = 0; i < 2; i++) helfer.push(neuerKobold(m.position.x + (Math.random() - 0.5) * 10, m.position.z + (Math.random() - 0.5) * 10, { jagd: 40 }));
+        nachricht('Der König ruft Hilfe! 📯', 2000);
+      }
+    }
+    if (!k.flieht && abstand < 1.8 * k.groesse && k.schlagPause <= 0 && unverwundbar <= 0) {
       k.schlagPause = 1;
       schaden();
       const stoss = zuRoland.clone().normalize().multiplyScalar(2.5);
@@ -1497,7 +1699,6 @@ function spielLogik(dt, zeit) {
     siegZeit = zeit;
     sounds.sieg();
     nachricht('Königin Sisi ist frei! 🎉👑', 5000);
-    ende();
   }
 
   // --- Leute: Gespräche & Auftrag prüfen ---
@@ -1578,13 +1779,16 @@ function schleife() {
   // Sieg: Käfig hebt sich, Sisi hüpft vor Freude
   if (gewonnen) {
     kaefig.position.y = Math.min(kaefig.position.y + dt * 3, 8);
-    sisi.position.y = Math.abs(Math.sin((zeit - siegZeit) * 6)) * 0.8;
+    sisi.position.y = zeit - siegZeit < 4 || fest ? Math.abs(Math.sin((zeit - siegZeit) * 6)) * 0.8 : 0;   // Freudensprünge
     sisi.lookAt(roland.position.x, 0, roland.position.z);
   } else {
     sisi.rotation.y = Math.sin(zeit) * 0.5;
   }
 
   fahne.rotation.y = Math.sin(zeit * 2) * 0.2;
+  // Großes Fest: alle Leute hüpfen vor Freude
+  if (fest) for (const id in npcs) if (id !== 'sisi') npcs[id].mesh.position.y = Math.abs(Math.sin(zeit * 5 + id.length)) * 0.7;
+  for (const f of fundstuecke) if (!f.gefunden) { f.mesh.rotation.y += dt * 2; f.mesh.position.y = 1.8 + Math.sin(zeit * 3) * 0.3; }
   muehlenRad.rotation.z += dt * 0.8;
   for (const t of truhen) if (t.offen && t.deckel.rotation.x > -1.9) t.deckel.rotation.x -= dt * 4;
   suppe.material.color.setHSL(0.28, 1, 0.45 + Math.sin(zeit * 4) * 0.1);
