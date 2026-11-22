@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Party Games</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #6cc6ff; font-family: system-ui, sans-serif; color: #fff; }
+    canvas { display: block; }
+    .versteckt { display: none !important; }
+    .schatten { text-shadow: 2px 2px 0 rgba(0,0,0,.55); }
+
+    /* ---------- Anzeige im Spiel ---------- */
+    #hud { position: fixed; inset: 0; pointer-events: none; }
+    #oben { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 24px; font-weight: bold;
+      background: rgba(0,0,0,.35); padding: 4px 18px; border-radius: 12px; white-space: nowrap; }
+    .karte { position: absolute; width: 210px; background: rgba(0,0,0,.45); border-radius: 14px; padding: 8px 12px;
+      font-size: 18px; border: 4px solid transparent; transition: transform .2s; }
+    .karte.dran { transform: scale(1.08); border-color: #fff; }
+    .karte .name { font-weight: bold; font-size: 20px; }
+    .karte .werte { font-size: 22px; margin-top: 2px; }
+    .karte .tasten { font-size: 13px; opacity: .85; }
+    #k0 { left: 10px; top: 54px; } #k1 { right: 10px; top: 54px; } #k2 { left: 10px; bottom: 10px; } #k3 { right: 10px; bottom: 10px; }
+    #meldung { position: absolute; top: 24%; width: 100%; text-align: center; font-size: 38px; font-weight: bold; padding: 0 1rem; box-sizing: border-box; }
+    #hinweis { position: absolute; bottom: 24px; width: 100%; text-align: center; font-size: 26px; font-weight: bold; }
+
+    /* ---------- Fenster (Menü, Minispiel-Info, Ergebnis, Ende) ---------- */
+    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+      text-align: center; padding: 1rem; overflow-y: auto; box-sizing: border-box; }
+    .kasten { background: rgba(20, 10, 60, .78); border-radius: 22px; padding: 1rem 1.6rem; max-width: 44rem; border: 3px solid #ffcc00; }
+    h1 { font-size: 4rem; margin: .2rem; color: #ffcc00; text-shadow: 4px 4px 0 #e0398b; }
+    h2 { margin: .4rem; }
+    p { font-size: 1.1rem; line-height: 1.5; }
+    button { font-size: 1.3rem; padding: .55rem 1.6rem; border: none; border-radius: 12px; cursor: pointer; margin: .3rem; font-weight: bold;
+      background: rgba(255,255,255,.18); color: #fff; border: 3px solid transparent; }
+    button:hover { background: rgba(255,255,255,.3); }
+    button.gewaehlt { background: #e0398b; border-color: #fff; }
+    button.gross { background: #ffcc00; color: #331; font-size: 1.7rem; }
+    #menu { background: rgba(30, 10, 80, .35); }
+    .bereich { margin: .5rem 0; padding: .3rem 1rem .7rem; border-radius: 16px; background: rgba(255,255,255,.08); }
+    #tastenListe { font-size: 1rem; line-height: 1.6; }
+    #codeFeld { font-size: 1.4rem; width: 6rem; padding: .45rem; border-radius: 10px; border: none; text-align: center; text-transform: uppercase; letter-spacing: .2rem; }
+    #netzInfo { font-size: 1rem; color: #dde; min-height: 1.5em; }
+    #lobbyListe { font-size: 1.3rem; line-height: 1.7; }
+    #infoBox .emoji { font-size: 5rem; }
+    #infoZahl { font-size: 3rem; font-weight: bold; color: #ffcc00; }
+    #ergebnisListe, #endeListe { font-size: 1.5rem; line-height: 1.8; text-align: left; display: inline-block; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="hud" class="versteckt schatten">
+    <div id="oben"></div>
+    <div class="karte" id="k0"></div><div class="karte" id="k1"></div><div class="karte" id="k2"></div><div class="karte" id="k3"></div>
+    <div id="meldung"></div>
+    <div id="hinweis"></div>
+  </div>
+
+  <!-- Startmenü -->
+  <div id="menu" class="overlay schatten">
+    <div class="kasten">
+      <h1>🎲 Party Games</h1>
+      <p>Würfle über das Spielbrett, sammle 🪙 Münzen und kauf dir 🏆 Pokale!<br>
+        Nach jeder Runde gibt es ein Minispiel. Wer am Ende die meisten Pokale hat, gewinnt!</p>
+
+      <div class="bereich">
+        <h2>🎮 Am selben Computer</h2>
+        Wie viele Menschen spielen mit?<br>
+        <span id="anzahlKnoepfe"></span>
+        <div id="tastenListe"></div>
+      </div>
+
+      <div class="bereich">
+        <h2>🔁 Wie viele Runden?</h2>
+        <span id="rundenKnoepfe"></span>
+      </div>
+
+      <button id="startKnopf" class="gross">▶ Los geht's!</button>
+
+      <div class="bereich">
+        <h2>🌐 Online mit Freunden</h2>
+        <button id="hostKnopf">Raum erstellen</button>
+        <input id="codeFeld" maxlength="4" placeholder="CODE" autocomplete="off">
+        <button id="beitretenKnopf">Beitreten</button>
+        <p id="netzInfo">Jeder spielt an seinem eigenen Computer. Fehlende Spieler sind Bots.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Warteraum (online) -->
+  <div id="lobby" class="overlay schatten versteckt">
+    <div class="kasten">
+      <h2>🌐 Warteraum</h2>
+      <p id="lobbyCode"></p>
+      <div id="lobbyListe"></div>
+      <div id="lobbyRunden" class="bereich"><h2>🔁 Wie viele Runden?</h2><span id="rundenKnoepfe2"></span></div>
+      <button id="lobbyStart" class="gross">▶ Spiel starten</button>
+      <p id="lobbyText"></p>
+    </div>
+  </div>
+
+  <div id="infoBox" class="overlay schatten versteckt">
+    <div class="kasten">
+      <div class="emoji" id="infoEmoji"></div>
+      <h1 id="infoName" style="font-size:3rem"></h1>
+      <p id="infoText" style="font-size:1.4rem"></p>
+      <p id="infoSteuerung"></p>
+      <div id="infoZahl"></div>
+    </div>
+  </div>
+
+  <div id="ergebnisBox" class="overlay schatten versteckt">
+    <div class="kasten"><h1 style="font-size:2.6rem">🏁 Ergebnis</h1><div id="ergebnisListe"></div></div>
+  </div>
+
+  <div id="endeBox" class="overlay schatten versteckt" style="justify-content:flex-start">
+    <div class="kasten">
+      <h1 id="endeTitel" style="font-size:2.6rem"></h1>
+      <div id="endeListe"></div><br>
+      <button id="nochmalKnopf" class="gross">🔄 Nochmal spielen</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script type="module" src="spiel.js"></script>
+</body>
+</html>
