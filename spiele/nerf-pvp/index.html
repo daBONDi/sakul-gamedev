@@ -63,7 +63,10 @@
     #modusText { min-height: 3em; margin: .4rem auto; font-size: 1.05rem; color: #ffe2c9; }
   </style>
   <script type="importmap">
-    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
   </script>
 </head>
 <body>
@@ -96,7 +99,7 @@
     </div>
     <p>WASD: laufen · Shift: rennen · Leertaste: springen<br>
       Maus: zielen · Linksklick: schießen (gedrückt halten) · R: nachladen<br>
-      1 2 3 4 oder Mausrad: Blaster wechseln · Rechtsklick: Zoom (Scharfschützen-Blaster)<br>
+      1 2 3 4 5 oder Mausrad: Blaster wechseln (5 = ✌️ Doppel-Blaster) · Rechtsklick: Zoom (Scharfschützen-Blaster)<br>
       ESC: Maus wieder freigeben</p>
     <button id="soloKnopf">🤖 Gegen Bots spielen</button>
     <div id="online">

@@ -1,6 +1,7 @@
 // 🔫 NERF PvP – ein 3D-Shooter mit Schaumstoff-Darts
 // Du siehst durch die Augen deiner Figur (Ego-Sicht) und kämpfst gegen Bots oder Freunde online.
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ========== Einstellungen (hier kannst du herumprobieren!) ==========
 const SIEG_PUNKTE = 10;          // so viele Gegner muss man ausschalten, um zu gewinnen
@@ -15,8 +16,11 @@ const WAFFEN = {
   schrot:  { name: 'Schrot-Blaster',         emoji: '💥', schaden: 11, kopf: 18,  magazin: 5,  pause: 0.75,  nachladen: 1.8, tempo: 26, fallen: 4,   streuung: 0.09,  darts: 7, laufen: 1,    botAbstand: 6 },
   sniper:  { name: 'Scharfschützen-Blaster', emoji: '🎯', schaden: 60, kopf: 100, magazin: 4,  pause: 1.0,   nachladen: 2.2, tempo: 70, fallen: 0.5, streuung: 0,     darts: 1, laufen: 0.9,  botAbstand: 22 },
   minigun: { name: 'Mini-Gun',               emoji: '⚡', schaden: 8,  kopf: 14,  magazin: 45, pause: 0.065, nachladen: 2.8, tempo: 30, fallen: 3,   streuung: 0.045, darts: 1, laufen: 0.75, botAbstand: 10 },
+  // Dein echter Blaster als 3D-Modell! Nur 2 Schuss, aber die hauen rein. Nachladen: aufklappen, Darts rein, zuklappen.
+  doppel:  { name: 'Doppel-Blaster',         emoji: '✌️', schaden: 50, kopf: 100, magazin: 2,  pause: 0.35,  nachladen: 2.4, tempo: 34, fallen: 3,   streuung: 0.006, darts: 1, laufen: 1,    botAbstand: 12 },
 };
-const WAFFEN_LISTE = ['blitz', 'schrot', 'sniper', 'minigun'];   // Taste 1, 2, 3, 4
+const WAFFEN_LISTE = ['blitz', 'schrot', 'sniper', 'minigun', 'doppel'];   // Taste 1, 2, 3, 4, 5
+const DOPPEL_GROESSE = 1.8;      // so viel größer als in echt ist der Doppel-Blaster im Spiel (sonst sieht man ihn kaum)
 const waffeVon = w => WAFFEN[w] ? w : 'blitz';
 const LAUF_TEMPO = 6, RENN_TEMPO = 9, SPRUNG_KRAFT = 6.5, SCHWERKRAFT = 18;
 const MIN_KAEMPFER = 4;          // Bots füllen auf so viele Kämpfer auf
@@ -182,10 +186,58 @@ function rohr(radius, laenge, m, x, y, z) {   // ein Zylinder, der nach vorne ze
   const k = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, laenge, 10).rotateX(Math.PI / 2), m);
   k.position.set(x, y, z); k.castShadow = true; return k;
 }
+// 3D-Modelle aus dem assets-Ordner laden (Doppel-Blaster und sein Dart)
+const modelle = { blaster: null, dart: null };
+const gltfLader = new GLTFLoader();
+gltfLader.load('assets/blaster.glb', g => { modelle.blaster = g.scene; blasterModellGeladen(); }, undefined, () => console.warn('blaster.glb fehlt'));
+gltfLader.load('assets/dart.glb', g => { modelle.dart = g.scene; blasterModellGeladen(); }, undefined, () => console.warn('dart.glb fehlt'));
+function blasterModellGeladen() {   // Blaster neu bauen, damit das echte Modell statt der Klötzchen erscheint
+  if (waffe === 'doppel') meinenBlasterBauen();
+  for (const k of andere.values()) if (k.modell) k.modell.userData.waffe = null;
+}
+
+function baueDoppelBlaster(g) {
+  const limette = mat('#b5f04f');
+  if (!modelle.blaster) {   // Modell noch nicht geladen: Ersatz aus Klötzchen
+    g.add(klotz(0.1, 0.16, 0.55, limette, 0, 0, -0.15));
+    g.add(rohr(0.035, 0.1, blasterOrange, 0, 0.03, -0.45), rohr(0.035, 0.1, blasterOrange, 0, -0.04, -0.45));
+    g.add(klotz(0.07, 0.2, 0.1, blasterBlau, 0, -0.15, 0.13));
+    g.userData.muendung = -0.5;
+    return;
+  }
+  const m = modelle.blaster.clone();
+  m.scale.setScalar(DOPPEL_GROESSE);
+  m.position.z = -0.3;
+  m.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  g.add(m);
+  const teil = name => m.getObjectByName(name);
+  const wurzel = teil('Blaster');
+  // Darts, die in den Kammern stecken (sieht man nur, wenn der Blaster aufgeklappt ist)
+  const kammer = ['ChamberTopMouth', 'ChamberBottomMouth'].map(name => {
+    if (!modelle.dart) return null;
+    const mund = teil(name).position;
+    const d = modelle.dart.clone();
+    d.userData.sitzZ = mund.z + 0.023;   // Spitze schaut ca. 2 cm heraus
+    d.userData.startZ = mund.z - 0.07;   // von vorne hineinschieben
+    d.position.set(mund.x, mund.y, d.userData.sitzZ);
+    wurzel.add(d);
+    return d;
+  });
+  const abzug = teil('Trigger'), lauf = teil('Barrels'), pumpe = teil('Slide');
+  g.userData.muendung = -0.65;
+  g.userData.doppel = {
+    abzug, lauf, pumpe, kammer,
+    muendungen: [teil('MuzzleTop'), teil('MuzzleBottom')],   // erst oben, dann unten
+    ruhe: { abzug: abzug.rotation.x, pumpe: pumpe.position.z },
+  };
+}
+
 function baueBlaster(w = 'blitz') {
   const g = new THREE.Group();
   g.userData = { muendung: -0.6, drehen: null };
-  if (w === 'schrot') {          // kurz, breit, zwei Läufe
+  if (w === 'doppel') {
+    baueDoppelBlaster(g);
+  } else if (w === 'schrot') {          // kurz, breit, zwei Läufe
     g.add(klotz(0.16, 0.15, 0.45, gruenMat, 0, 0, 0));
     g.add(rohr(0.04, 0.4, dunkelMat, -0.04, 0.03, -0.38), rohr(0.04, 0.4, dunkelMat, 0.04, 0.03, -0.38));
     g.add(klotz(0.14, 0.08, 0.16, blasterOrange, 0, -0.06, -0.3));   // Pump-Griff
@@ -256,6 +308,7 @@ function meinenBlasterBauen() {
   meinBlaster = baueBlaster(waffe);
   meinBlaster.traverse(m => { m.castShadow = false; });
   kamera.add(meinBlaster);
+  doppelAnimieren(0);
 }
 
 // ========== Darts ==========
@@ -264,13 +317,21 @@ const dartSpitzeGeo = new THREE.SphereGeometry(0.045, 8, 6).translate(0, 0.07, 0
 const dartBlau = mat('#2f8cff'), dartOrange = mat('#ff7a1a');
 const OBEN = new THREE.Vector3(0, 1, 0);
 let darts = [];
-const dartMat = { blitz: dartBlau, schrot: mat('#2fd05a'), sniper: mat('#8f6bff'), minigun: mat('#ffd21f') };
-const dartGroesse = { blitz: [1, 1], schrot: [0.75, 0.7], sniper: [1, 1.8], minigun: [0.7, 0.8] };   // [dicke, länge]
+const dartMat = { blitz: dartBlau, schrot: mat('#2fd05a'), sniper: mat('#8f6bff'), minigun: mat('#ffd21f'), doppel: mat('#2a3f8f') };
+const dartGroesse = { blitz: [1, 1], schrot: [0.75, 0.7], sniper: [1, 1.8], minigun: [0.7, 0.8], doppel: [1, 1] };   // [dicke, länge]
+const DART_MODELL_GROESSE = 3.5;   // der echte Dart ist nur 7 cm lang – im Spiel größer, damit man ihn sieht
 function neuerDart(von, w, o, r) {
   const mesh = new THREE.Group();
-  mesh.add(new THREE.Mesh(dartKoerperGeo, dartMat[w]), new THREE.Mesh(dartSpitzeGeo, dartOrange));
-  const [dicke, laenge] = dartGroesse[w];
-  mesh.scale.set(dicke, laenge, dicke);
+  if (w === 'doppel' && modelle.dart) {   // der Dart aus dem 3D-Modell
+    const d = modelle.dart.clone();
+    d.rotation.x = Math.PI / 2;            // Spitze zeigt im Modell nach vorne (-Z), hier nach oben (+Y)
+    d.scale.setScalar(DART_MODELL_GROESSE);
+    mesh.add(d);
+  } else {
+    mesh.add(new THREE.Mesh(dartKoerperGeo, dartMat[w]), new THREE.Mesh(dartSpitzeGeo, dartOrange));
+    const [dicke, laenge] = dartGroesse[w];
+    mesh.scale.set(dicke, laenge, dicke);
+  }
   scene.add(mesh);
   const pos = new THREE.Vector3(o[0], o[1], o[2]);
   darts.push({ von, waffe: w, pos, alt: pos.clone(), vel: new THREE.Vector3(r[0], r[1], r[2]).normalize().multiplyScalar(WAFFEN[w].tempo), mesh, steckt: false, uhr: 3 });
@@ -387,7 +448,8 @@ function erholen(k, dt) {   // nach 4 Sekunden ohne Treffer kommen Leben zurück
 const tasten = {};
 let maus = false, gesperrt = false, laeuft = false;
 let munition = 12, nachladeUhr = 0, schussUhr = 0, rueckstoss = 0, laufPhase = 0, todHoehe = 0;
-let waffe = 'blitz', wechselUhr = 0, zoom = false, rechtsMaus = false;
+let waffe = 'blitz', wechselUhr = 0, zoom = false, rechtsMaus = false, nachladeDauer = 1;
+let seitSchuss = 10, doppelLaden = null;   // für die Animation vom Doppel-Blaster
 const vorrat = {};   // Munition für jeden Blaster
 
 function waffeWechseln(w) {
@@ -395,7 +457,7 @@ function waffeWechseln(w) {
   vorrat[waffe] = munition;
   waffe = w; ich.waffe = w;
   munition = vorrat[w] ?? magazinVon(w);
-  nachladeUhr = 0; wechselUhr = 0.35;
+  nachladeUhr = 0; wechselUhr = 0.35; doppelLaden = null; seitSchuss = 10;
   meinenBlasterBauen();
   waffenLeiste();
   ton(440, 0.05, 'square', 0.05);
@@ -414,18 +476,80 @@ function getroffen(schaden, von) {
 
 function nachladen() {
   if (nachladeUhr > 0 || munition === magazinVon(waffe) || ich.tot) return;
-  nachladeUhr = WAFFEN[waffe].nachladen;
+  if (waffe === 'doppel') { doppelNachladen(); return; }
+  nachladeUhr = nachladeDauer = WAFFEN[waffe].nachladen;
   ton(300, 0.06, 'square', 0.06);
   setTimeout(() => ton(520, 0.08, 'square', 0.06), nachladeUhr * 800);
 }
 
+// ---------- Doppel-Blaster: Nachladen und Animation ----------
+// Ablauf: aufklappen (0,4 s) → Darts gleiten in die Kammern → zuklappen (0,35 s)
+const AUFKLAPPEN = 0.4, ZUKLAPPEN = 0.35, AUF_WINKEL = THREE.MathUtils.degToRad(95);
+const DART_KLICK_ABSTAND = 1.07;   // im Nachlade-Sound klickt der 2. Dart nach 1,07 s
+const KLICK_VERZOEGERUNG = 0.2;    // der Dart gleitet 0,2 s, dann klickt er ein
+function doppelLauf() { return munition >= 2 ? 0 : 1; }   // 0 = oberer Lauf, 1 = unterer Lauf
+function doppelNachladen() {
+  // Geschossen wird erst oben, dann unten. Fehlt nur einer, ist es der obere.
+  const fehlend = munition <= 0 ? [0, 1] : [0];
+  const laden = (fehlend.length === 2 ? DART_KLICK_ABSTAND + 0.35 : 0.5) + KLICK_VERZOEGERUNG;
+  doppelLaden = { fehlend, laden, zeit: 0, gespielt: new Set() };
+  nachladeUhr = nachladeDauer = AUFKLAPPEN + laden + ZUKLAPPEN;
+  sample('uncocked', 0.8);
+}
+const weich = t => 1 - Math.pow(1 - t, 3);
+function doppelAnimieren(dt) {
+  const D = meinBlaster.userData.doppel;
+  seitSchuss += dt;
+  if (!D) return;
+  // Abzug kippt kurz nach hinten, danach fährt der Pump-Schaft zurück und wieder vor
+  const zug = seitSchuss < 0.15 ? Math.sin(seitSchuss / 0.15 * Math.PI) : 0;
+  D.abzug.rotation.x = D.ruhe.abzug + zug * 0.45;
+  const pt = seitSchuss - 0.12;
+  const pump = pt > 0 && pt < 0.35 ? Math.sin(pt / 0.35 * Math.PI) : 0;
+  D.pumpe.position.z = D.ruhe.pumpe + weich(pump) * 0.04;
+  // Darts in den Kammern zeigen, wenn noch geladen
+  if (D.kammer[0]) {
+    D.kammer[0].visible = munition >= 2;
+    D.kammer[1].visible = munition >= 1;
+    for (const d of D.kammer) if (d) d.position.z = d.userData.sitzZ;
+  }
+  if (!doppelLaden) { D.lauf.rotation.x = 0; return; }
+  const L = doppelLaden;
+  L.zeit += dt;
+  const rt = L.zeit;
+  const einmal = (name, machen) => { if (!L.gespielt.has(name)) { L.gespielt.add(name); machen(); } };
+  let auf;
+  if (rt < AUFKLAPPEN) auf = weich(rt / AUFKLAPPEN);
+  else if (rt < AUFKLAPPEN + L.laden) auf = 1;
+  else auf = 1 - weich(Math.min((rt - AUFKLAPPEN - L.laden) / ZUKLAPPEN, 1));
+  D.lauf.rotation.x = -AUF_WINKEL * auf;
+  if (rt > AUFKLAPPEN) {
+    // fehlt ein Dart: nur der erste Klick vom Sound, fehlen zwei: beide Klicks
+    if (rt > AUFKLAPPEN + KLICK_VERZOEGERUNG) einmal('laden', () => sample('reloading', 0.8, L.fehlend.length === 2 ? undefined : 0.45));
+    L.fehlend.forEach((i, reihe) => {
+      const d = D.kammer[i];
+      if (!d) return;
+      const k = Math.min((rt - AUFKLAPPEN - reihe * DART_KLICK_ABSTAND) / KLICK_VERZOEGERUNG, 1);
+      d.visible = k > 0;
+      d.position.z = THREE.MathUtils.lerp(d.userData.startZ, d.userData.sitzZ, Math.max(k, 0) ** 0.5);
+    });
+  }
+  if (rt > AUFKLAPPEN + L.laden) einmal('zu', () => sample('cocked', 0.8));
+}
+
 function schiessen() {
   const W = WAFFEN[waffe];
-  munition--; schussUhr = W.pause; rueckstoss = W.darts > 1 || waffe === 'sniper' ? 2 : 1;
+  const D = meinBlaster.userData.doppel, lauf = doppelLauf();
+  munition--; schussUhr = W.pause; rueckstoss = W.darts > 1 || waffe === 'sniper' || waffe === 'doppel' ? 2 : 1;
   const blick = new THREE.Vector3(); kamera.getWorldDirection(blick);
   const zielPunkt = kamera.position.clone().addScaledVector(blick, 40);
-  const o = zoom ? kamera.position.clone().addScaledVector(blick, 0.5)   // mit Zoom kommt der Dart genau aus der Mitte
+  let o = zoom ? kamera.position.clone().addScaledVector(blick, 0.5)   // mit Zoom kommt der Dart genau aus der Mitte
     : new THREE.Vector3(0.22, -0.2, -0.45 + meinBlaster.userData.muendung).applyQuaternion(kamera.quaternion).add(kamera.position);
+  if (waffe === 'doppel') {
+    seitSchuss = 0;
+    naechsterDoppelLauf = lauf;
+    if (D) { kamera.updateMatrixWorld(true); o = D.muendungen[lauf].getWorldPosition(new THREE.Vector3()); }   // Dart kommt genau aus dem Lauf
+  }
   const mitte = zielPunkt.sub(o).normalize();
   const liste = [];
   for (let i = 0; i < W.darts; i++) {
@@ -466,7 +590,7 @@ function spielerUpdate(dt) {
   schussUhr -= dt;
   wechselUhr = Math.max(0, wechselUhr - dt);
   zoom = rechtsMaus && waffe === 'sniper' && nachladeUhr <= 0;
-  if (nachladeUhr > 0) { nachladeUhr -= dt; if (nachladeUhr <= 0) munition = magazinVon(waffe); }
+  if (nachladeUhr > 0) { nachladeUhr -= dt; if (nachladeUhr <= 0) { munition = magazinVon(waffe); doppelLaden = null; } }
   if (maus && gesperrt && schussUhr <= 0 && nachladeUhr <= 0 && wechselUhr <= 0) {
     if (munition > 0) schiessen();
     else { ton(1200, 0.03, 'square', 0.05); schussUhr = 0.25; nachladen(); }
@@ -501,8 +625,18 @@ function kameraUpdate(dt) {
   kamera.position.set(ich.x, ich.y + AUGEN + Math.abs(wippen), ich.z);
   kamera.rotation.set(ich.n, ich.b, 0);
   rueckstoss = Math.max(0, rueckstoss - dt * 8);
-  const lade = nachladeUhr > 0 ? Math.sin((1 - nachladeUhr / WAFFEN[waffe].nachladen) * Math.PI) : 0;
   const wechsel = wechselUhr / 0.35;   // beim Wechseln kommt der neue Blaster von unten
+  if (waffe === 'doppel') {
+    // Beim Nachladen den Blaster zur Seite drehen, damit man das Aufklappen und die Darts sieht
+    doppelAnimieren(dt);
+    const L = doppelLaden;
+    const dreh = L ? Math.min(1, L.zeit / 0.3, Math.max(0, nachladeUhr) / 0.3) : 0;
+    const d = weich(dreh);
+    meinBlaster.position.set(0.22 - d * 0.06 + wippen * 0.5, -0.22 + d * 0.04 - wechsel * 0.35 + Math.abs(wippen) * 0.3, -0.45 + rueckstoss * 0.08);
+    meinBlaster.rotation.set(rueckstoss * 0.12 + d * 0.35, d * 0.9, d * 0.3);
+    return;
+  }
+  const lade = nachladeUhr > 0 ? Math.sin((1 - nachladeUhr / nachladeDauer) * Math.PI) : 0;
   meinBlaster.position.set(0.22 + wippen * 0.5, -0.22 - lade * 0.15 - wechsel * 0.35 + Math.abs(wippen) * 0.3, -0.45 + rueckstoss * 0.08);
   meinBlaster.rotation.set(rueckstoss * 0.12 - lade * 0.7, 0, lade * 0.4);
 }
@@ -820,6 +954,25 @@ function modelleUpdate(dt) {
 
 // ========== Töne (Web Audio) ==========
 let audio = null, rauschPuffer = null;
+// Echte Spielzeug-Blaster-Geräusche (CC0, siehe assets/sounds/LIZENZ.txt)
+const SAMPLES = {};
+try {
+  audio = new AudioContext();   // startet stumm, die Browser schalten Ton erst nach dem ersten Klick frei
+  for (const name of ['left-trigger', 'right-trigger', 'uncocked', 'reloading', 'cocked']) {
+    fetch('assets/sounds/' + name + '.mp3').then(r => r.arrayBuffer()).then(b => audio.decodeAudioData(b))
+      .then(puffer => { SAMPLES[name] = puffer; }).catch(() => console.warn('Sound fehlt: ' + name));
+  }
+} catch (e) { /* kein Ton möglich */ }
+function sample(name, laut = 1, dauer) {
+  klang((a, t) => {
+    if (!SAMPLES[name]) return;
+    const q = a.createBufferSource(), v = a.createGain();
+    q.buffer = SAMPLES[name]; v.gain.value = laut;
+    q.connect(v); v.connect(a.destination);
+    q.start(t, 0, dauer);
+  });
+}
+let naechsterDoppelLauf = 0;
 function klang(machen) {
   try {
     audio = audio || new AudioContext();
@@ -837,7 +990,12 @@ function ton(frequenz, dauer, typ = 'sine', laut = 0.2, ende) {
   });
 }
 function pfumpSound(laut, w = 'blitz') {   // Luftstoß vom Blaster
-  const hoehe = { blitz: 1, schrot: 0.6, sniper: 1.5, minigun: 1.2 }[w];
+  if (w === 'doppel') {   // echter Klick vom Spielzeug-Blaster: oberer Lauf links, unterer rechts
+    sample(naechsterDoppelLauf === 0 ? 'left-trigger' : 'right-trigger', Math.min(1, laut * 1.3));
+    naechsterDoppelLauf = Math.round(Math.random());
+    laut *= 0.5;
+  }
+  const hoehe = { blitz: 1, schrot: 0.6, sniper: 1.5, minigun: 1.2, doppel: 0.8 }[w] || 1;
   if (w === 'schrot') laut *= 1.5;
   if (w === 'minigun') laut *= 0.6;
   klang((a, t) => {
@@ -908,7 +1066,7 @@ addEventListener('keydown', e => {
   tasten[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyR' && laeuft) nachladen();
-  const nr = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
+  const nr = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
   if (nr >= 0 && laeuft && !ich.tot) waffeWechseln(WAFFEN_LISTE[nr]);
 });
 addEventListener('keyup', e => { tasten[e.code] = false; });
