@@ -685,7 +685,7 @@ for (let i = 0; i < 6; i++) {
 }
 // Der Flinke Fips: ein Kobold-Dieb, der wegläuft (zu Fuß kriegt man ihn kaum – nimm das Pferd!)
 let fipsGefangen = false, koenigBesiegt = false;
-const fips = neuerKobold(ORTE.muehle.x + 30, ORTE.muehle.z - 20, {
+const fips = neuerKobold(ORTE.muehle.x + 12, ORTE.muehle.z - 10, {
   dieb: true, groesse: 0.8, tempo: 13, jagd: 28,
   beiTod: k => {
     fipsGefangen = true;
@@ -1595,7 +1595,12 @@ function spielLogik(dt, zeit) {
       if (!k.gesprochen) { k.gesprochen = true; nachricht('Fips: „Hihi! Fang mich doch, du lahme Blechbüchse!“ 🏃💨', 4000); }
       ziel = zuRoland.clone().negate().normalize();
       const heim = k.start.clone().sub(m.position); heim.y = 0;
-      if (heim.length() > 40) ziel.add(heim.normalize().multiplyScalar(1.5));   // nicht zu weit weg von der Mühle
+      if (heim.length() > 16) ziel.add(heim.normalize().multiplyScalar(1.3)).normalize();   // auf der Wiese bei der Mühle bleiben
+      // Ist da ein Baum im Weg? Dann schlau seitlich ausweichen
+      for (const w of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8]) {
+        const c = Math.cos(w), sn = Math.sin(w), rx = ziel.x * c - ziel.z * sn, rz = ziel.x * sn + ziel.z * c;
+        if (!stoesst(m.position.x + rx * 1.5, m.position.z + rz * 1.5, 0.5 * k.groesse)) { ziel.set(rx, 0, rz); break; }
+      }
     } else if (abstand < k.jagdRadius) {
       ziel = zuRoland.clone();
     } else {
