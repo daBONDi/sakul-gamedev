@@ -63,6 +63,19 @@
     .modusKnopf.gewaehlt { background: #ff7a1a; border-color: #fff; transform: scale(1.06); }
     #kartenBox { margin-top: .6rem; border-color: #2fd05a; background: rgba(0, 80, 30, .35); }
     #kartenBox h2 { margin: .3rem; color: #9ff0b4; }
+    #werkstatt { margin-top: .6rem; padding: .2rem 1rem .8rem; border: 2px solid #e04fd0; border-radius: 14px; background: rgba(90, 0, 80, .35); max-width: 46rem; }
+    #werkstatt h2 { margin: .3rem; color: #ffb0f0; }
+    #werkstatt h3 { margin: .5rem 0 .2rem; color: #ffd0f6; font-size: 1.05rem; }
+    #werkWaffen, #skinKnoepfe, #stickerKnoepfe { display: flex; flex-wrap: wrap; justify-content: center; }
+    .werkKnopf { font-size: .95rem; padding: .35rem .7rem; margin: .2rem; background: rgba(255,255,255,.15); color: #fff; border: 3px solid transparent; }
+    .werkKnopf:hover { background: rgba(255,255,255,.28); }
+    .werkKnopf.gewaehlt { background: #e04fd0; border-color: #fff; }
+    #stickerKnoepfe .werkKnopf { font-size: 1.5rem; padding: .15rem .45rem; }
+    .probe { display: inline-block; width: 1.1em; height: 1.1em; border-radius: 4px; vertical-align: -0.2em; margin-right: .35em;
+      border: 1px solid rgba(255,255,255,.6); background-size: 300% !important; }
+    #vorschau { display: block; width: 100%; max-width: 440px; aspect-ratio: 1.8; margin: .3rem auto; border-radius: 12px;
+      background: radial-gradient(circle, rgba(255,255,255,.25), rgba(255,255,255,.04)); }
+    #alleKnopf { background: #e04fd0; color: #fff; font-size: 1rem; margin-top: .6rem; }
     #modusText, #karteText { min-height: 3em; margin: .4rem auto; font-size: 1.05rem; color: #ffe2c9; }
   </style>
   <script type="importmap">
@@ -105,6 +118,16 @@
       <h2>Karte wählen</h2>
       <div id="karteKnoepfe"></div>
       <p id="karteText"></p>
+    </div>
+    <div id="werkstatt">
+      <h2>🎨 Blaster-Werkstatt</h2>
+      <div id="werkWaffen"></div>
+      <canvas id="vorschau"></canvas>
+      <h3>Skin</h3>
+      <div id="skinKnoepfe"></div>
+      <h3>Sticker</h3>
+      <div id="stickerKnoepfe"></div>
+      <button id="alleKnopf">🔁 Auf alle Blaster kleben</button>
     </div>
     <p>WASD: laufen · Shift: rennen · Leertaste: springen<br>
       🐰 Bunny-Hop: Leertaste gedrückt halten · in der Luft A/D + Maus in dieselbe Richtung drehen = schneller!<br>

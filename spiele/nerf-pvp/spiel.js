@@ -21,7 +21,7 @@ const WAFFEN = {
 };
 const WAFFEN_LISTE = ['blitz', 'schrot', 'sniper', 'minigun', 'doppel'];   // Taste 1, 2, 3, 4, 5
 const DOPPEL_GROESSE = 1.8;      // so viel größer als in echt ist der Doppel-Blaster im Spiel (sonst sieht man ihn kaum)
-const waffeVon = w => WAFFEN[w] ? w : 'blitz';
+const waffeVon = w => Object.hasOwn(WAFFEN, w) ? w : 'blitz';
 const LAUF_TEMPO = 6, RENN_TEMPO = 9, SPRUNG_KRAFT = 6.5, SCHWERKRAFT = 18;
 // ---------- Quake-Bewegung (nur für dich, nicht für Bots) ----------
 // Leertaste gedrückt halten = Bunny-Hop (springt sofort weiter, ohne Schwung zu verlieren)
@@ -504,8 +504,161 @@ gltfLader.load('assets/blaster.glb', g => { modelle.blaster = g.scene; blasterMo
 gltfLader.load('assets/dart.glb', g => { modelle.dart = g.scene; blasterModellGeladen(); }, undefined, () => console.warn('dart.glb fehlt'));
 function blasterModellGeladen() {   // Blaster neu bauen, damit das echte Modell statt der Klötzchen erscheint
   if (waffe === 'doppel') meinenBlasterBauen();
+  if (werkWaffe === 'doppel') vorschauBauen();
   for (const k of andere.values()) if (k.modell) k.modell.userData.waffe = null;
 }
+
+// ========== Skins und Sticker für die Blaster ==========
+// Ein Skin gibt dem Blaster neue Farben und Muster. teile = [Hauptteil, Akzent 1, Akzent 2].
+// Jedes Teil kann haben: farbe, textur (ein gemaltes Muster), glanz (glänzt wie Metall),
+// leuchten (leuchtet im Dunkeln) und durchsichtig (0 = unsichtbar, 1 = gar nicht durchsichtig).
+// Dunkle Teile (Läufe, Griffe, Löcher) bleiben immer dunkel.
+// Neuer Skin? Einfach unten einen Eintrag dazuschreiben – das Menü baut den Knopf von allein!
+const zufall = (a, b) => a + Math.random() * (b - a);
+function muster(grundfarbe, malen) {   // ein 128x128-Bild mit Grundfarbe und Muster drauf
+  return malTextur(128, (g, s) => { g.fillStyle = grundfarbe; g.fillRect(0, 0, s, s); if (malen) malen(g, s); });
+}
+function rundum(s, malen) {   // auch über den Rand malen, damit das Muster ohne Naht weitergeht
+  for (const dx of [-s, 0, s]) for (const dy of [-s, 0, s]) malen(dx, dy);
+}
+function flecken(g, s, farben, anzahl, groesse) {
+  for (let i = 0; i < anzahl; i++) {
+    g.fillStyle = farben[i % farben.length];
+    const x = zufall(0, s), y = zufall(0, s), r = zufall(groesse * 0.5, groesse), f = zufall(0.5, 1), w = zufall(0, 3);
+    rundum(s, (dx, dy) => { g.beginPath(); g.ellipse(x + dx, y + dy, r, r * f, w, 0, Math.PI * 2); g.fill(); });
+  }
+}
+function risse(g, s, farbe, anzahl, dicke) {   // Zickzack-Linien (für Lava und Eis)
+  g.strokeStyle = farbe; g.lineWidth = dicke; g.lineCap = g.lineJoin = 'round';
+  for (let i = 0; i < anzahl; i++) {
+    const punkte = [[zufall(0, s), zufall(0, s)]];
+    for (let j = 0; j < 5; j++) { const [x, y] = punkte[j]; punkte.push([x + zufall(-28, 28), y + zufall(-28, 28)]); }
+    rundum(s, (dx, dy) => { g.beginPath(); punkte.forEach(([x, y], j) => j ? g.lineTo(x + dx, y + dy) : g.moveTo(x + dx, y + dy)); g.stroke(); });
+  }
+}
+function sterne(g, s, anzahl) {
+  for (let i = 0; i < anzahl; i++) { g.fillStyle = `rgba(255,255,255,${zufall(0.5, 1)})`; g.fillRect(zufall(0, s), zufall(0, s), zufall(1, 3), zufall(1, 3)); }
+}
+const SKINS = {
+  standard:   { name: '🎨 Standard' },
+  gold:       { name: '🏆 Gold', teile: () => [
+    { textur: muster('#e8b010', (g, s) => { for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(255,248,190,.3)'; g.fillRect(0, i * s / 8, s, s / 32); } }), glanz: '#fff2a8' },
+    { farbe: '#b8860b', glanz: '#fff2a8' }, { farbe: '#fff3b0', glanz: '#ffffff' }] },
+  tarnung:    { name: '🪖 Tarnung', teile: () => [
+    { textur: muster('#5b6b3a', (g, s) => flecken(g, s, ['#3e4a28', '#8a7a4a', '#2b3320'], 16, 24)) },
+    { farbe: '#4a3b2a' }, { farbe: '#7d8a55' }] },
+  regenbogen: { name: '🌈 Regenbogen', teile: () => [
+    { textur: muster('#fff', (g, s) => ['#ff4040', '#ff9a1a', '#ffe11f', '#2fd05a', '#2f8cff', '#8f6bff', '#ff4fd8', '#ff4040']
+      .forEach((f, i, liste) => { g.fillStyle = f; g.fillRect(i * s / (liste.length), 0, s / liste.length + 1, s); })) },
+    { farbe: '#ffffff' }, { farbe: '#ff4fd8' }] },
+  lava:       { name: '🌋 Lava', teile: () => [
+    { textur: muster('#2a0c04', (g, s) => { risse(g, s, '#ff5a00', 9, 5); risse(g, s, '#ffd21f', 5, 2); }), leuchten: '#ffffff' },
+    { farbe: '#ff4400', leuchten: '#ff3300' }, { farbe: '#2a1208' }] },
+  galaxie:    { name: '🌌 Galaxie', teile: () => [
+    { textur: muster('#12052e', (g, s) => { flecken(g, s, ['rgba(160,60,255,.35)', 'rgba(255,60,200,.25)', 'rgba(40,160,255,.25)'], 10, 34); sterne(g, s, 70); }), leuchten: '#bbbbbb' },
+    { farbe: '#8f4bff', leuchten: '#5a20c0' }, { farbe: '#22e5ff', leuchten: '#1090b0' }] },
+  eis:        { name: '🧊 Eis', teile: () => [
+    { textur: muster('#bfeeff', (g, s) => risse(g, s, '#ffffff', 10, 2)), glanz: '#ffffff', durchsichtig: 0.8 },
+    { farbe: '#7fd8ff', glanz: '#ffffff', durchsichtig: 0.85 }, { farbe: '#ffffff', glanz: '#ffffff' }] },
+  zebra:      { name: '🦓 Zebra', teile: () => [
+    { textur: muster('#f4f4f4', (g, s) => {
+      g.strokeStyle = '#111'; g.lineWidth = 9;
+      for (let i = 0; i < 5; i++) { g.beginPath(); for (let x = 0; x <= s; x += 4) g.lineTo(x, i * s / 5 + 12 + Math.sin(x / s * Math.PI * 2) * 8); g.stroke(); }
+    }) },
+    { farbe: '#ffffff' }, { farbe: '#ff4fa0' }] },
+  bonbon:     { name: '🍬 Bonbon', teile: () => [
+    { textur: muster('#ff8fd0', (g, s) => { g.fillStyle = '#fff'; for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) { g.beginPath(); g.arc(x * 32 + 16 + (y % 2) * 16, y * 32 + 16, 7, 0, Math.PI * 2); g.fill(); } }) },
+    { farbe: '#8fe8ff' }, { farbe: '#fff27a' }] },
+  neon:       { name: '💚 Neon', teile: () => [
+    { textur: muster('#0d0d14', (g, s) => { g.strokeStyle = '#39ff14'; g.lineWidth = 3; for (let i = 0; i <= 4; i++) { g.strokeRect(i * s / 4, -5, 0, s + 10); g.strokeRect(-5, i * s / 4, s + 10, 0); } }), leuchten: '#ffffff' },
+    { farbe: '#ff2bd6', leuchten: '#ff2bd6' }, { farbe: '#22e5ff', leuchten: '#22e5ff' }] },
+};
+const SKIN_LISTE = Object.keys(SKINS);
+// Sticker: einfach ein Emoji dazuschreiben. '' = kein Sticker
+const STICKER = ['', '⭐', '🔥', '💀', '😎', '🐉', '❤️', '⚡', '🦈', '👑', '🍕', '👾', '🐱', '🎯', '🚀', '🤖'];
+const skinVon = s => Object.hasOwn(SKINS, s) ? s : 'standard';
+const stickerVon = s => STICKER.includes(s) ? s : '';
+
+function skinMaterialien(name) {   // die 3 Materialien eines Skins (werden nur einmal gebaut)
+  const S = SKINS[skinVon(name)];
+  if (!S.teile) return null;
+  if (!S.mats) S.mats = S.teile().map(t => {
+    const o = { color: t.textur ? '#ffffff' : t.farbe, map: t.textur || null };
+    if (t.leuchten) { o.emissive = new THREE.Color(t.leuchten); o.emissiveMap = t.textur || null; }
+    if (t.durchsichtig) { o.transparent = true; o.opacity = t.durchsichtig; }
+    return t.glanz ? new THREE.MeshPhongMaterial({ ...o, specular: t.glanz, shininess: 90 }) : new THREE.MeshLambertMaterial(o);
+  });
+  return S.mats;
+}
+// Damit das Muster überall gleich groß ist, bekommt jedes Teil neue Bild-Koordinaten (UV):
+// je nachdem, in welche Richtung eine Fläche zeigt, wird das Muster von vorne, oben oder der Seite draufgelegt.
+function musterKoordinaten(geo, massstab) {
+  if (geo.userData.skinUV) return;
+  geo.userData.skinUV = true;
+  const p = geo.attributes.position, n = geo.attributes.normal, uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
+    const [u, v] = ax >= ay && ax >= az ? [p.getZ(i), p.getY(i)] : ay >= az ? [p.getX(i), p.getZ(i)] : [p.getX(i), p.getY(i)];
+    uv[i * 2] = u * massstab; uv[i * 2 + 1] = v * massstab;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+const skinTmp = new THREE.Vector3(), skinBox = new THREE.Box3();
+function skinAnziehen(g, skin) {
+  const mats = skinMaterialien(skin);
+  if (!mats) return;
+  // Alle hellen Teile sammeln (dunkle Teile und Darts bleiben, wie sie sind)
+  const netze = [], groesse = new Map(), hsl = {};
+  g.updateMatrixWorld(true);
+  (function sammeln(o) {
+    if (o.userData.keinSkin) return;
+    if (o.isMesh && o.material.color && o.material.color.getHSL(hsl).l > 0.36) {
+      o.getWorldScale(skinTmp);
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      o.geometry.boundingBox.getSize(skinBox.min);
+      const v = skinBox.min.x * skinBox.min.y * skinBox.min.z * skinTmp.x ** 3;
+      groesse.set(o.material, (groesse.get(o.material) || 0) + v);
+      netze.push([o, skinTmp.x]);
+    }
+    for (const k of o.children) sammeln(k);
+  })(g);
+  // Die Farbe mit den größten Teilen wird zum Hauptteil, die anderen zu Akzenten
+  const reihe = [...groesse.keys()].sort((a, b) => groesse.get(b) - groesse.get(a));
+  for (const [o, s] of netze) {
+    musterKoordinaten(o.geometry, 4 * s);   // Muster wiederholt sich alle 25 cm
+    o.material = mats[Math.min(reihe.indexOf(o.material), 2)];
+  }
+}
+const stickerGeo = new THREE.PlaneGeometry(1, 1), stickerMats = {};
+function stickerMaterial(emoji) {   // Emoji mit weißem Rand, wie ein echter Aufkleber
+  if (stickerMats[emoji]) return stickerMats[emoji];
+  const s = 128, bild = document.createElement('canvas'), c = document.createElement('canvas');
+  bild.width = bild.height = c.width = c.height = s;
+  const b = bild.getContext('2d'), g = c.getContext('2d');
+  b.font = '80px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+  b.textAlign = 'center'; b.textBaseline = 'middle'; b.fillText(emoji, s / 2, s / 2 + 6);
+  for (let i = 0; i < 16; i++) g.drawImage(bild, Math.cos(i / 8 * Math.PI) * 9, Math.sin(i / 8 * Math.PI) * 9);
+  g.globalCompositeOperation = 'source-in'; g.fillStyle = '#fff'; g.fillRect(0, 0, s, s);
+  g.globalCompositeOperation = 'source-over'; g.drawImage(bild, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return stickerMats[emoji] = new THREE.MeshLambertMaterial({ map: t, transparent: true, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -4 });
+}
+function stickerAufkleben(g, emoji) {
+  const platz = g.userData.stickerPlatz;
+  if (!emoji || !platz) return;
+  for (const [x, y, z, gr, seite] of platz.stellen) {   // seite: 1 = rechts, -1 = links
+    const st = new THREE.Mesh(stickerGeo, stickerMaterial(emoji));
+    st.position.set(x, y, z); st.scale.setScalar(gr); st.rotation.y = seite * Math.PI / 2;
+    (platz.an || g).add(st);
+  }
+}
+// Welcher Skin und Sticker auf welchem Blaster ist (wird im Browser gemerkt)
+const aussehen = {};
+for (const w of WAFFEN_LISTE) aussehen[w] = { s: 'standard', st: '' };
+try {
+  const gemerktesAussehen = JSON.parse(localStorage.getItem('nerf-pvp-aussehen') || '{}');
+  for (const w of WAFFEN_LISTE) if (gemerktesAussehen[w]) aussehen[w] = { s: skinVon(gemerktesAussehen[w].s), st: stickerVon(gemerktesAussehen[w].st) };
+} catch (e) { /* egal */ }
 
 function baueDoppelBlaster(g) {
   const limette = mat('#b5f04f');
@@ -514,6 +667,7 @@ function baueDoppelBlaster(g) {
     g.add(rohr(0.035, 0.1, blasterOrange, 0, 0.03, -0.45), rohr(0.035, 0.1, blasterOrange, 0, -0.04, -0.45));
     g.add(klotz(0.07, 0.2, 0.1, blasterBlau, 0, -0.15, 0.13));
     g.userData.muendung = -0.5;
+    g.userData.stickerPlatz = { stellen: [[0.051, 0, -0.05, 0.12, 1], [-0.051, 0, -0.05, 0.12, -1]] };
     return;
   }
   const m = modelle.blaster.clone();
@@ -531,11 +685,13 @@ function baueDoppelBlaster(g) {
     d.userData.sitzZ = mund.z + 0.023;   // Spitze schaut ca. 2 cm heraus
     d.userData.startZ = mund.z - 0.07;   // von vorne hineinschieben
     d.position.set(mund.x, mund.y, d.userData.sitzZ);
+    d.userData.keinSkin = true;   // die Darts bekommen keinen Skin
     wurzel.add(d);
     return d;
   });
   const abzug = teil('Trigger'), lauf = teil('Barrels'), pumpe = teil('Slide');
   g.userData.muendung = -0.65;
+  g.userData.stickerPlatz = { an: wurzel, stellen: [[0.0297, 0.005, 0.09, 0.042, 1], [-0.0297, 0.005, 0.09, 0.042, -1]] };   // auf dem blauen Schild
   g.userData.doppel = {
     abzug, lauf, pumpe, kammer,
     muendungen: [teil('MuzzleTop'), teil('MuzzleBottom')],   // erst oben, dann unten
@@ -543,7 +699,7 @@ function baueDoppelBlaster(g) {
   };
 }
 
-function baueBlaster(w = 'blitz') {
+function baueBlaster(w = 'blitz', skin = 'standard', sticker = '') {
   const g = new THREE.Group();
   g.userData = { muendung: -0.6, drehen: null };
   if (w === 'doppel') {
@@ -554,6 +710,7 @@ function baueBlaster(w = 'blitz') {
     g.add(klotz(0.14, 0.08, 0.16, blasterOrange, 0, -0.06, -0.3));   // Pump-Griff
     g.add(klotz(0.08, 0.2, 0.1, dunkelMat, 0, -0.15, 0.13));
     g.userData.muendung = -0.58;
+    g.userData.stickerPlatz = { stellen: [[0.081, 0, 0.08, 0.12, 1], [-0.081, 0, 0.08, 0.12, -1]] };
   } else if (w === 'sniper') {   // lang mit Zielfernrohr
     g.add(klotz(0.1, 0.13, 0.6, lilaMat, 0, 0, 0.05));
     g.add(rohr(0.03, 0.6, dunkelMat, 0, 0.02, -0.55));
@@ -562,6 +719,7 @@ function baueBlaster(w = 'blitz') {
     g.add(klotz(0.08, 0.2, 0.1, dunkelMat, 0, -0.15, 0.15));
     g.add(klotz(0.09, 0.16, 0.22, lilaMat, 0, -0.04, 0.42));           // Schulterstütze
     g.userData.muendung = -0.85;
+    g.userData.stickerPlatz = { stellen: [[0.051, 0, 0.12, 0.11, 1], [-0.051, 0, 0.12, 0.11, -1]] };
   } else if (w === 'minigun') {  // viele Läufe, die sich drehen
     g.add(klotz(0.2, 0.2, 0.4, blasterGelb, 0, 0, 0.05));
     const trommel = new THREE.Group(); trommel.position.set(0, 0, -0.3);
@@ -571,6 +729,7 @@ function baueBlaster(w = 'blitz') {
     g.add(klotz(0.08, 0.2, 0.1, dunkelMat, 0, -0.18, 0.13));
     g.add(klotz(0.16, 0.18, 0.16, rotMat, 0.15, -0.05, 0.08));         // Munitionskiste
     g.userData.muendung = -0.62; g.userData.drehen = trommel;
+    g.userData.stickerPlatz = { stellen: [[0.231, -0.05, 0.08, 0.13, 1], [-0.101, 0, 0.05, 0.16, -1]] };
   } else {                       // Blitz-Blaster
     g.add(klotz(0.12, 0.14, 0.5, blasterOrange, 0, 0, 0));       // Körper
     g.add(klotz(0.07, 0.07, 0.35, blasterBlau, 0, 0.02, -0.4));  // Lauf
@@ -578,7 +737,10 @@ function baueBlaster(w = 'blitz') {
     g.add(klotz(0.08, 0.2, 0.1, blasterBlau, 0, -0.15, 0.13));   // Griff
     g.add(klotz(0.1, 0.16, 0.12, blasterGelb, 0, -0.13, -0.12)); // Magazin
     g.add(klotz(0.05, 0.06, 0.16, blasterBlau, 0, 0.1, 0.05));   // Visier
+    g.userData.stickerPlatz = { stellen: [[0.061, 0, 0.06, 0.12, 1], [-0.061, 0, 0.06, 0.12, -1]] };
   }
+  skinAnziehen(g, skin);
+  stickerAufkleben(g, sticker);
   return g;
 }
 function namensSchild(text, farbe) {
@@ -616,7 +778,8 @@ let meinBlaster = baueBlaster();
 kamera.add(meinBlaster);
 function meinenBlasterBauen() {
   kamera.remove(meinBlaster);
-  meinBlaster = baueBlaster(waffe);
+  ich.skin = aussehen[waffe].s; ich.sticker = aussehen[waffe].st;
+  meinBlaster = baueBlaster(waffe, ich.skin, ich.sticker);
   meinBlaster.traverse(m => { m.castShadow = false; });
   kamera.add(meinBlaster);
   doppelAnimieren(0);
@@ -745,6 +908,8 @@ function wiederbeleben(k) {
   k.b = Math.atan2(k.x, k.z); k.n = 0;   // schaut zur Mitte
   if (k.bot) {
     k.waffe = WAFFEN_LISTE[Math.floor(Math.random() * WAFFEN_LISTE.length)];   // Bots bekommen einen zufälligen Blaster
+    k.skin = SKIN_LISTE[Math.floor(Math.random() * SKIN_LISTE.length)];   // ... und einen zufälligen Skin
+    k.sticker = Math.random() < 0.6 ? STICKER[1 + Math.floor(Math.random() * (STICKER.length - 1))] : '';
     k.munition = magazinVon(k.waffe); k.nachladeUhr = 0; k.pfad = null; k.sehUhr = 0;
   }
   if (k === ich) { ich.vx = ich.vz = 0; for (const w of WAFFEN_LISTE) vorrat[w] = magazinVon(w); munition = vorrat[waffe]; nachladeUhr = 0; doppelLaden = null; }
@@ -1210,6 +1375,7 @@ function freieNummer() {
 function positionUebernehmen(k, d) {
   if (k.tot && !d.tot) { k.x = d.x; k.y = d.y; k.z = d.z; k.b = d.b; }   // gerade wiederbelebt: hinspringen
   k.zx = d.x; k.zy = d.y; k.zz = d.z; k.zb = d.b; k.n = d.n; k.tot = d.tot; k.waffe = waffeVon(d.w);
+  k.skin = skinVon(d.s); k.sticker = stickerVon(d.st);
 }
 function hostEmpfaengt(v, d) {
   if (d.t === 'pos') { const k = andere.get(v.id); if (k) positionUebernehmen(k, d); }
@@ -1277,10 +1443,10 @@ function netzTick(dt) {
   netzUhr = 1 / 15;   // 15-mal pro Sekunde
   if (rolle === 'host') {
     const liste = alleKaempfer().map(k => ({ id: k.id, name: k.name, farbe: k.farbe, bot: !!k.bot,
-      x: r2(k.x), y: r2(k.y), z: r2(k.z), b: r2(k.b), n: r2(k.n), tot: k.tot, w: k.waffe }));
+      x: r2(k.x), y: r2(k.y), z: r2(k.z), b: r2(k.b), n: r2(k.n), tot: k.tot, w: k.waffe, s: k.skin, st: k.sticker }));
     anAlle({ t: 'welt', k: liste, p: punkte });
   } else {
-    anHost({ t: 'pos', x: r2(ich.x), y: r2(ich.y), z: r2(ich.z), b: r2(ich.b), n: r2(ich.n), tot: ich.tot, w: waffe });
+    anHost({ t: 'pos', x: r2(ich.x), y: r2(ich.y), z: r2(ich.z), b: r2(ich.b), n: r2(ich.n), tot: ich.tot, w: waffe, s: ich.skin, st: ich.sticker });
   }
 }
 
@@ -1297,9 +1463,10 @@ function modelleUpdate(dt) {
     m.position.set(k.x, k.y, k.z);
     m.rotation.y = k.b;
     m.visible = !k.tot;
-    if (u.waffe !== (k.waffe || 'blitz')) {   // anderer Blaster? Dann neu bauen
-      u.waffe = k.waffe || 'blitz';
-      u.halter.clear(); u.halter.add(baueBlaster(u.waffe));
+    const art = (k.waffe || 'blitz') + '|' + (k.skin || 'standard') + '|' + (k.sticker || '');
+    if (u.waffe !== art) {   // anderer Blaster, Skin oder Sticker? Dann neu bauen
+      u.waffe = art;
+      u.halter.clear(); u.halter.add(baueBlaster(k.waffe || 'blitz', k.skin, k.sticker));
     }
     u.schritt += bewegt * 3;
     u.b1.rotation.x = Math.sin(u.schritt) * 0.7;
@@ -1517,6 +1684,62 @@ el('hostKnopf').onclick = raumErstellen;
 el('beitretenKnopf').onclick = () => raumBeitreten(el('codeFeld').value);
 el('codeFeld').addEventListener('keydown', e => { if (e.key === 'Enter') raumBeitreten(e.target.value); });
 
+// ========== Blaster-Werkstatt (Skins und Sticker aussuchen) ==========
+const vorschauRenderer = new THREE.WebGLRenderer({ canvas: el('vorschau'), antialias: true, alpha: true });
+vorschauRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const vorschauSzene = new THREE.Scene();
+vorschauSzene.add(new THREE.HemisphereLight('#ffffff', '#6a7a8a', 1.8));
+const vorschauLicht = new THREE.DirectionalLight('#ffffff', 2.2);
+vorschauLicht.position.set(-2, 3, 1.5);
+vorschauSzene.add(vorschauLicht);
+const vorschauKamera = new THREE.PerspectiveCamera(32, 1.8, 0.01, 10);
+vorschauKamera.position.set(-1.65, 0.45, -0.25);
+vorschauKamera.lookAt(0, 0, 0);
+const vorschauDreher = new THREE.Group();   // dreht sich langsam hin und her
+vorschauSzene.add(vorschauDreher);
+let werkWaffe = 'blitz', vorschauZeit = 0;
+function vorschauBauen() {
+  const a = aussehen[werkWaffe];
+  vorschauDreher.clear();
+  const b = baueBlaster(werkWaffe, a.s, a.st);
+  b.position.sub(new THREE.Box3().setFromObject(b).getCenter(new THREE.Vector3()));   // in die Mitte rücken
+  vorschauDreher.add(b);
+  for (const k of document.querySelectorAll('[data-werk]')) k.classList.toggle('gewaehlt', k.dataset.werk === werkWaffe);
+  for (const k of document.querySelectorAll('[data-skin]')) k.classList.toggle('gewaehlt', k.dataset.skin === a.s);
+  for (const k of document.querySelectorAll('[data-sticker]')) k.classList.toggle('gewaehlt', k.dataset.sticker === a.st);
+}
+function aussehenMerken() {
+  try { localStorage.setItem('nerf-pvp-aussehen', JSON.stringify(aussehen)); } catch (e) { /* egal */ }
+  vorschauBauen();
+}
+function knopf(box, html, daten, wert, klick) {
+  const k = document.createElement('button');
+  k.className = 'werkKnopf'; k.dataset[daten] = wert; k.innerHTML = html; k.onclick = klick;
+  el(box).append(k);
+  return k;
+}
+for (const w of WAFFEN_LISTE) knopf('werkWaffen', WAFFEN[w].emoji + ' ' + WAFFEN[w].name, 'werk', w, () => { werkWaffe = w; vorschauBauen(); });
+for (const s of SKIN_LISTE) {
+  const mats = skinMaterialien(s), m = mats && mats[0];
+  const bild = !m ? 'linear-gradient(135deg, #ff7a1a 50%, #2f8cff 50%)' : m.map ? `url(${m.map.image.toDataURL()})` : '#' + m.color.getHexString();
+  knopf('skinKnoepfe', `<span class="probe" style="background:${bild}"></span>${SKINS[s].name}`, 'skin', s, () => { aussehen[werkWaffe].s = s; aussehenMerken(); });
+}
+for (const st of STICKER) knopf('stickerKnoepfe', st || '🚫', 'sticker', st, () => { aussehen[werkWaffe].st = st; aussehenMerken(); });
+el('alleKnopf').onclick = () => {
+  for (const w of WAFFEN_LISTE) aussehen[w] = { ...aussehen[werkWaffe] };
+  aussehenMerken();
+  el('alleKnopf').textContent = '✅ Fertig!';
+  setTimeout(() => { el('alleKnopf').textContent = '🔁 Auf alle Blaster kleben'; }, 1500);
+};
+vorschauBauen();
+function vorschauZeichnen(dt) {
+  const c = vorschauRenderer.domElement;
+  if (c.width !== Math.round(c.clientWidth * vorschauRenderer.getPixelRatio())) vorschauRenderer.setSize(c.clientWidth, c.clientWidth / 1.8, false);
+  vorschauZeit += dt;
+  vorschauDreher.rotation.y = Math.sin(vorschauZeit * 0.7) * 0.7;
+  vorschauRenderer.render(vorschauSzene, vorschauKamera);
+}
+
 // ========== Hauptschleife ==========
 let letzteZeit = performance.now(), menuWinkel = 0;
 function schleife(jetzt) {
@@ -1539,6 +1762,7 @@ function schleife(jetzt) {
     meinBlaster.visible = false;
     kamera.position.set(Math.sin(menuWinkel) * G * 1.3, G * 0.65, Math.cos(menuWinkel) * G * 1.3);
     kamera.lookAt(0, 0, 0);
+    vorschauZeichnen(dt);
   }
   if (kartenUpdate) kartenUpdate(dt);
   renderer.render(scene, kamera);
