@@ -540,42 +540,43 @@ function sterne(g, s, anzahl) {
   for (let i = 0; i < anzahl; i++) { g.fillStyle = `rgba(255,255,255,${zufall(0.5, 1)})`; g.fillRect(zufall(0, s), zufall(0, s), zufall(1, 3), zufall(1, 3)); }
 }
 const SKINS = {
-  standard:   { name: '🎨 Standard' },
-  gold:       { name: '🏆 Gold', teile: () => [
+  standard:   { name: '🎨 Standard', selten: 'normal' },
+  gold:       { name: '🏆 Gold', selten: 'legendaer', teile: () => [
     { textur: muster('#e8b010', (g, s) => { for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(255,248,190,.3)'; g.fillRect(0, i * s / 8, s, s / 32); } }), glanz: '#fff2a8' },
     { farbe: '#b8860b', glanz: '#fff2a8' }, { farbe: '#fff3b0', glanz: '#ffffff' }] },
-  tarnung:    { name: '🪖 Tarnung', teile: () => [
+  tarnung:    { name: '🪖 Tarnung', selten: 'normal', teile: () => [
     { textur: muster('#5b6b3a', (g, s) => flecken(g, s, ['#3e4a28', '#8a7a4a', '#2b3320'], 16, 24)) },
     { farbe: '#4a3b2a' }, { farbe: '#7d8a55' }] },
-  regenbogen: { name: '🌈 Regenbogen', teile: () => [
+  regenbogen: { name: '🌈 Regenbogen', selten: 'selten', teile: () => [
     { textur: muster('#fff', (g, s) => ['#ff4040', '#ff9a1a', '#ffe11f', '#2fd05a', '#2f8cff', '#8f6bff', '#ff4fd8', '#ff4040']
       .forEach((f, i, liste) => { g.fillStyle = f; g.fillRect(i * s / (liste.length), 0, s / liste.length + 1, s); })) },
     { farbe: '#ffffff' }, { farbe: '#ff4fd8' }] },
-  lava:       { name: '🌋 Lava', teile: () => [
+  lava:       { name: '🌋 Lava', selten: 'episch', teile: () => [
     { textur: muster('#2a0c04', (g, s) => { risse(g, s, '#ff5a00', 9, 5); risse(g, s, '#ffd21f', 5, 2); }), leuchten: '#ffffff' },
     { farbe: '#ff4400', leuchten: '#ff3300' }, { farbe: '#2a1208' }] },
-  galaxie:    { name: '🌌 Galaxie', teile: () => [
+  galaxie:    { name: '🌌 Galaxie', selten: 'episch', teile: () => [
     { textur: muster('#12052e', (g, s) => { flecken(g, s, ['rgba(160,60,255,.35)', 'rgba(255,60,200,.25)', 'rgba(40,160,255,.25)'], 10, 34); sterne(g, s, 70); }), leuchten: '#bbbbbb' },
     { farbe: '#8f4bff', leuchten: '#5a20c0' }, { farbe: '#22e5ff', leuchten: '#1090b0' }] },
-  eis:        { name: '🧊 Eis', teile: () => [
+  eis:        { name: '🧊 Eis', selten: 'selten', teile: () => [
     { textur: muster('#bfeeff', (g, s) => risse(g, s, '#ffffff', 10, 2)), glanz: '#ffffff', durchsichtig: 0.8 },
     { farbe: '#7fd8ff', glanz: '#ffffff', durchsichtig: 0.85 }, { farbe: '#ffffff', glanz: '#ffffff' }] },
-  zebra:      { name: '🦓 Zebra', teile: () => [
+  zebra:      { name: '🦓 Zebra', selten: 'normal', teile: () => [
     { textur: muster('#f4f4f4', (g, s) => {
       g.strokeStyle = '#111'; g.lineWidth = 9;
       for (let i = 0; i < 5; i++) { g.beginPath(); for (let x = 0; x <= s; x += 4) g.lineTo(x, i * s / 5 + 12 + Math.sin(x / s * Math.PI * 2) * 8); g.stroke(); }
     }) },
     { farbe: '#ffffff' }, { farbe: '#ff4fa0' }] },
-  bonbon:     { name: '🍬 Bonbon', teile: () => [
+  bonbon:     { name: '🍬 Bonbon', selten: 'normal', teile: () => [
     { textur: muster('#ff8fd0', (g, s) => { g.fillStyle = '#fff'; for (let x = 0; x < 4; x++) for (let y = 0; y < 4; y++) { g.beginPath(); g.arc(x * 32 + 16 + (y % 2) * 16, y * 32 + 16, 7, 0, Math.PI * 2); g.fill(); } }) },
     { farbe: '#8fe8ff' }, { farbe: '#fff27a' }] },
-  neon:       { name: '💚 Neon', teile: () => [
+  neon:       { name: '💚 Neon', selten: 'selten', teile: () => [
     { textur: muster('#0d0d14', (g, s) => { g.strokeStyle = '#39ff14'; g.lineWidth = 3; for (let i = 0; i <= 4; i++) { g.strokeRect(i * s / 4, -5, 0, s + 10); g.strokeRect(-5, i * s / 4, s + 10, 0); } }), leuchten: '#ffffff' },
     { farbe: '#ff2bd6', leuchten: '#ff2bd6' }, { farbe: '#22e5ff', leuchten: '#22e5ff' }] },
 };
 const SKIN_LISTE = Object.keys(SKINS);
 // Sticker: einfach ein Emoji dazuschreiben. '' = kein Sticker
 const STICKER = ['', '⭐', '🔥', '💀', '😎', '🐉', '❤️', '⚡', '🦈', '👑', '🍕', '👾', '🐱', '🎯', '🚀', '🤖'];
+const STICKER_SELTEN = { '🐉': 'selten', '👑': 'selten', '🚀': 'selten', '🤖': 'selten', '💀': 'episch' };   // alle anderen: normal
 const skinVon = s => Object.hasOwn(SKINS, s) ? s : 'standard';
 const stickerVon = s => STICKER.includes(s) ? s : '';
 
@@ -652,12 +653,95 @@ function stickerAufkleben(g, emoji) {
     (platz.an || g).add(st);
   }
 }
+// ========== Sammlung, Truhen und tägliche Aufträge ==========
+// Skins und Sticker muss man freischalten: Aufträge schaffen -> Truhen bekommen -> Truhen öffnen.
+// gewicht = wie oft das aus einer Truhe kommt (größer = öfter)
+const SELTENHEIT = {
+  normal:    { name: 'Normal',    farbe: '#cfd8e3', gewicht: 50 },
+  selten:    { name: 'Selten',    farbe: '#4fb3ff', gewicht: 25 },
+  episch:    { name: 'Episch',    farbe: '#c56bff', gewicht: 10 },
+  legendaer: { name: 'Legendär',  farbe: '#ffb020', gewicht: 4 },
+};
+const AUFTRAEGE_PRO_TAG = 3;
+// Alle Aufträge, die es geben kann. Jeden Tag werden 3 davon ausgelost.
+const AUFTRAG_ARTEN = [
+  { art: 'kills',   ziel: 5,  text: a => `Erwische ${a.ziel} Gegner` },
+  { art: 'kills',   ziel: 12, text: a => `Erwische ${a.ziel} Gegner` },
+  { art: 'kopf',    ziel: 3,  text: a => `Triff ${a.ziel}-mal einen Kopf 🎯` },
+  { art: 'treffer', ziel: 40, text: a => `Triff ${a.ziel}-mal mit deinen Darts` },
+  { art: 'waffe',   ziel: 3,  text: a => `Erwische ${a.ziel} Gegner mit dem ${WAFFEN[a.w].emoji} ${WAFFEN[a.w].name}` },
+  { art: 'runde',   ziel: 1,  text: () => 'Spiele eine Runde bis zum Ende' },
+  { art: 'sieg',    ziel: 1,  text: () => 'Gewinne eine Runde 🏆' },
+  { art: 'tempo',   ziel: 1,  text: () => 'Werde beim Bunny-Hop 45 km/h schnell 🐰' },
+];
+const heute = () => new Date().toLocaleDateString('sv');   // z. B. "2026-11-24"
+const sammlung = { skins: ['standard'], sticker: ['', '⭐', '😎'], truhen: 1, tag: '', auftraege: [], bonus: false };   // 1 Willkommens-Truhe
+try {
+  const g = JSON.parse(localStorage.getItem('nerf-pvp-sammlung') || 'null');
+  if (g) {
+    sammlung.skins = ['standard', ...(g.skins || []).filter(x => Object.hasOwn(SKINS, x))];
+    sammlung.sticker = ['', ...(g.sticker || []).filter(x => STICKER.includes(x))];
+    sammlung.truhen = Math.max(0, Math.floor(Number(g.truhen) || 0));
+    sammlung.tag = String(g.tag || ''); sammlung.bonus = !!g.bonus;
+    sammlung.auftraege = (g.auftraege || []).filter(a => AUFTRAG_ARTEN[a.nr]);
+  }
+} catch (e) { /* egal */ }
+const hatSkin = x => sammlung.skins.includes(x), hatSticker = x => sammlung.sticker.includes(x);
+function sammlungMerken() { try { localStorage.setItem('nerf-pvp-sammlung', JSON.stringify(sammlung)); } catch (e) { /* egal */ } }
+function neueAuftraege() {   // neuer Tag = neue Aufträge
+  if (sammlung.tag === heute() && sammlung.auftraege.length) return;
+  const nummern = [...AUFTRAG_ARTEN.keys()].sort(() => Math.random() - 0.5);
+  sammlung.auftraege = [];
+  for (const nr of nummern) {
+    const A = AUFTRAG_ARTEN[nr];
+    if (sammlung.auftraege.some(a => AUFTRAG_ARTEN[a.nr].art === A.art)) continue;   // nicht 2-mal dasselbe
+    sammlung.auftraege.push({ nr, stand: 0, ziel: A.ziel, w: A.art === 'waffe' ? WAFFEN_LISTE[Math.floor(Math.random() * WAFFEN_LISTE.length)] : undefined });
+    if (sammlung.auftraege.length === AUFTRAEGE_PRO_TAG) break;
+  }
+  sammlung.tag = heute(); sammlung.bonus = false;
+  sammlungMerken();
+}
+neueAuftraege();
+const auftragText = a => AUFTRAG_ARTEN[a.nr].text(a);
+// Wird im Spiel aufgerufen, z. B. auftragFortschritt('kopf') bei einem Kopftreffer
+function auftragFortschritt(art, w) {
+  if (sammlung.tag !== heute()) { neueAuftraege(); return; }   // um Mitternacht gibt's neue
+  for (const a of sammlung.auftraege) {
+    if (AUFTRAG_ARTEN[a.nr].art !== art || (a.w && a.w !== w) || a.stand >= a.ziel) continue;
+    a.stand++;
+    if (a.stand >= a.ziel) {
+      sammlung.truhen++;
+      feed('📜 Auftrag geschafft: ' + sicher(auftragText(a)) + ' → <b style="color:#ffd21f">+1 🎁 Truhe!</b>');
+      [784, 988, 1175].forEach((f, i) => setTimeout(() => ton(f, 0.2, 'triangle', 0.12), i * 110));
+      if (!sammlung.bonus && sammlung.auftraege.every(x => x.stand >= x.ziel)) {
+        sammlung.bonus = true; sammlung.truhen++;
+        setTimeout(() => { feed('🌟 Alle Aufträge für heute geschafft! <b style="color:#ffd21f">+1 Bonus-Truhe 🎁</b>'); mitte('🌟 Alle Aufträge geschafft! 🌟', 2.5, '#ffd21f'); }, 600);
+      }
+    }
+    sammlungMerken();
+  }
+}
+// Was ist noch nicht freigeschaltet?
+function gesperrteSachen() {
+  return [...SKIN_LISTE.filter(x => !hatSkin(x)).map(x => ({ typ: 'skin', wert: x, selten: SKINS[x].selten })),
+    ...STICKER.filter(x => !hatSticker(x)).map(x => ({ typ: 'sticker', wert: x, selten: STICKER_SELTEN[x] || 'normal' }))];
+}
+function truheZiehen() {   // zufällig, aber Seltenes kommt seltener
+  const liste = gesperrteSachen();
+  let los = Math.random() * liste.reduce((summe, x) => summe + SELTENHEIT[x.selten].gewicht, 0);
+  for (const x of liste) { los -= SELTENHEIT[x.selten].gewicht; if (los <= 0) return x; }
+  return liste[liste.length - 1];
+}
+
 // Welcher Skin und Sticker auf welchem Blaster ist (wird im Browser gemerkt)
 const aussehen = {};
 for (const w of WAFFEN_LISTE) aussehen[w] = { s: 'standard', st: '' };
 try {
   const gemerktesAussehen = JSON.parse(localStorage.getItem('nerf-pvp-aussehen') || '{}');
-  for (const w of WAFFEN_LISTE) if (gemerktesAussehen[w]) aussehen[w] = { s: skinVon(gemerktesAussehen[w].s), st: stickerVon(gemerktesAussehen[w].st) };
+  for (const w of WAFFEN_LISTE) if (gemerktesAussehen[w]) {
+    const s = skinVon(gemerktesAussehen[w].s), st = stickerVon(gemerktesAussehen[w].st);
+    aussehen[w] = { s: hatSkin(s) ? s : 'standard', st: hatSticker(st) ? st : '' };   // nur Freigeschaltetes
+  }
 } catch (e) { /* egal */ }
 
 function baueDoppelBlaster(g) {
@@ -864,6 +948,8 @@ function treffer(d, k, art) {
   else if (k.bot && istChef()) botGetroffen(k, schaden, d.von);
   if (d.von === ich.id) {   // DU hast getroffen!
     trefferAnzeige(art === 'kopf');
+    auftragFortschritt('treffer');
+    if (art === 'kopf') auftragFortschritt('kopf');
     ton(art === 'kopf' ? 1400 : 900, 0.08, 'square', 0.07);
   }
 }
@@ -1301,6 +1387,7 @@ function zeigeRaus(opfer, von) {
   feed(`<span style="color:${sicher(farbeVon(von))}">${sicher(nameVon(von))}</span> 🔫 <span style="color:${sicher(farbeVon(opfer))}">${sicher(nameVon(opfer))}</span>`);
   if (von === ich.id && opfer !== ich.id) {
     mitte('💥 Du hast ' + nameVon(opfer) + ' erwischt!', 1.5, '#ffd21f');
+    auftragFortschritt('kills'); auftragFortschritt('waffe', waffe);
     ton(660, 0.1, 'triangle', 0.15); setTimeout(() => ton(990, 0.18, 'triangle', 0.15), 100);
   }
 }
@@ -1309,6 +1396,8 @@ function zeigeSieg(id) {
     const t = id.slice(5);
     mitte('🏆 ' + TEAM_NAME[t] + ' gewinnt! 🏆' + (teamVon(ich.id) === t ? ' Das ist DEIN Team! 🎉' : ''), 5, TEAM_FARBE[t]);
   } else mitte(id === ich.id ? '🏆 DU HAST GEWONNEN! 🏆' : '🏆 ' + nameVon(id) + ' gewinnt! 🏆', 5, farbeVon(id));
+  auftragFortschritt('runde');
+  if (id === ich.id || id === 'team-' + teamVon(ich.id)) auftragFortschritt('sieg');
   [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => ton(f, 0.25, 'triangle', 0.15), i * 150));
 }
 
@@ -1560,6 +1649,7 @@ function hudUpdate(dt) {
   if (QUAKE_BEWEGUNG) {   // Tacho: wie schnell bist du gerade?
     const kmh = Math.round(Math.hypot(ich.vx, ich.vz) * 3.6);
     el('tacho').textContent = '💨 ' + kmh + ' km/h';
+    if (kmh >= 45) auftragFortschritt('tempo');
     el('tacho').style.color = kmh > 45 ? '#ff7a1a' : kmh > 33 ? '#ffd21f' : '#fff';
   }
   rotUhr = Math.max(0, rotUhr - dt); el('rot').style.opacity = rotUhr * 2;
@@ -1705,8 +1795,14 @@ function vorschauBauen() {
   b.position.sub(new THREE.Box3().setFromObject(b).getCenter(new THREE.Vector3()));   // in die Mitte rücken
   vorschauDreher.add(b);
   for (const k of document.querySelectorAll('[data-werk]')) k.classList.toggle('gewaehlt', k.dataset.werk === werkWaffe);
-  for (const k of document.querySelectorAll('[data-skin]')) k.classList.toggle('gewaehlt', k.dataset.skin === a.s);
-  for (const k of document.querySelectorAll('[data-sticker]')) k.classList.toggle('gewaehlt', k.dataset.sticker === a.st);
+  for (const k of document.querySelectorAll('[data-skin]')) {
+    k.classList.toggle('gewaehlt', k.dataset.skin === a.s);
+    k.classList.toggle('gesperrt', !hatSkin(k.dataset.skin));
+  }
+  for (const k of document.querySelectorAll('[data-sticker]')) {
+    k.classList.toggle('gewaehlt', k.dataset.sticker === a.st);
+    k.classList.toggle('gesperrt', !hatSticker(k.dataset.sticker));
+  }
 }
 function aussehenMerken() {
   try { localStorage.setItem('nerf-pvp-aussehen', JSON.stringify(aussehen)); } catch (e) { /* egal */ }
@@ -1722,9 +1818,20 @@ for (const w of WAFFEN_LISTE) knopf('werkWaffen', WAFFEN[w].emoji + ' ' + WAFFEN
 for (const s of SKIN_LISTE) {
   const mats = skinMaterialien(s), m = mats && mats[0];
   const bild = !m ? 'linear-gradient(135deg, #ff7a1a 50%, #2f8cff 50%)' : m.map ? `url(${m.map.image.toDataURL()})` : '#' + m.color.getHexString();
-  knopf('skinKnoepfe', `<span class="probe" style="background:${bild}"></span>${SKINS[s].name}`, 'skin', s, () => { aussehen[werkWaffe].s = s; aussehenMerken(); });
+  knopf('skinKnoepfe', `<span class="probe" style="background:${bild}"></span>${SKINS[s].name}`, 'skin', s, () => {
+    if (!hatSkin(s)) { gesperrtHinweis(SKINS[s].name, SKINS[s].selten); return; }
+    aussehen[werkWaffe].s = s; aussehenMerken();
+  });
 }
-for (const st of STICKER) knopf('stickerKnoepfe', st || '🚫', 'sticker', st, () => { aussehen[werkWaffe].st = st; aussehenMerken(); });
+for (const st of STICKER) knopf('stickerKnoepfe', st || '🚫', 'sticker', st, () => {
+  if (!hatSticker(st)) { gesperrtHinweis('Sticker ' + st, STICKER_SELTEN[st] || 'normal'); return; }
+  aussehen[werkWaffe].st = st; aussehenMerken();
+});
+function gesperrtHinweis(name, selten) {
+  const S = SELTENHEIT[selten];
+  el('werkHinweis').innerHTML = `🔒 ${sicher(name)} <span style="color:${S.farbe}">(${S.name})</span> ist noch gesperrt. Schaffe Aufträge und öffne Truhen! 🎁`;
+  ton(200, 0.12, 'square', 0.05);
+}
 el('alleKnopf').onclick = () => {
   for (const w of WAFFEN_LISTE) aussehen[w] = { ...aussehen[werkWaffe] };
   aussehenMerken();
@@ -1732,6 +1839,57 @@ el('alleKnopf').onclick = () => {
   setTimeout(() => { el('alleKnopf').textContent = '🔁 Auf alle Blaster kleben'; }, 1500);
 };
 vorschauBauen();
+
+// ---------- Aufträge und Truhen im Menü ----------
+function auftraegeZeigen() {
+  el('auftragListe').innerHTML = sammlung.auftraege.map(a => {
+    const fertig = a.stand >= a.ziel;
+    return `<div class="auftrag ${fertig ? 'fertig' : ''}">${fertig ? '✅' : '📜'} ${sicher(auftragText(a))}
+      <div class="auftragBalken"><div style="width:${Math.min(100, a.stand / a.ziel * 100)}%"></div></div>
+      <small>${Math.min(a.stand, a.ziel)} / ${a.ziel} · Belohnung: 🎁</small></div>`;
+  }).join('') + `<p class="bonusText">${sammlung.bonus ? '🌟 Bonus-Truhe schon abgeholt!' : '🌟 Schaffst du alle 3, gibt es eine Bonus-Truhe!'} Morgen gibt es neue Aufträge.</p>`;
+  el('truhenZahl').textContent = sammlung.truhen;
+  el('truheKnopf').disabled = sammlung.truhen <= 0;
+  const fehlt = gesperrteSachen().length;
+  el('sammelText').textContent = fehlt ? `Gesammelt: ${SKIN_LISTE.length + STICKER.length - fehlt} von ${SKIN_LISTE.length + STICKER.length}` : '🏆 Du hast ALLES gesammelt!';
+}
+let truheOffen = false;
+el('truheKnopf').onclick = () => {
+  if (truheOffen || sammlung.truhen <= 0) return;
+  if (!gesperrteSachen().length) { el('sammelText').textContent = '🏆 Du hast schon alles! Heb deine Truhen für neue Skins auf.'; return; }
+  truheOffen = true;
+  const preis = truheZiehen();
+  sammlung.truhen--;
+  if (preis.typ === 'skin') sammlung.skins.push(preis.wert); else sammlung.sticker.push(preis.wert);
+  sammlungMerken();
+  // Truhe wackelt ...
+  el('truhePopup').classList.remove('versteckt');
+  el('truheBild').className = 'wackeln'; el('truheBild').textContent = '🎁';
+  el('truheText').textContent = 'Die Truhe wackelt …'; el('truheOk').classList.add('versteckt');
+  for (let i = 0; i < 6; i++) setTimeout(() => ton(300 + i * 60, 0.06, 'square', 0.06), i * 220);
+  // ... und geht auf!
+  setTimeout(() => {
+    const S = SELTENHEIT[preis.selten];
+    el('truheBild').className = 'auf';
+    el('truheBild').style.setProperty('--leuchten', S.farbe);
+    if (preis.typ === 'skin') {
+      const knopfBild = document.querySelector(`[data-skin="${preis.wert}"] .probe`).style.background;
+      el('truheBild').innerHTML = `<span class="grosseProbe" style="background:${knopfBild}"></span>`;
+    } else el('truheBild').textContent = preis.wert;
+    el('truheText').innerHTML = `<span style="color:${S.farbe}">✨ ${S.name} ✨</span><br>` +
+      (preis.typ === 'skin' ? 'Neuer Skin: ' + sicher(SKINS[preis.wert].name) : 'Neuer Sticker: ' + preis.wert) + '<br><small>Probier ihn in der Blaster-Werkstatt aus!</small>';
+    el('truheOk').classList.remove('versteckt');
+    const toene = preis.selten === 'legendaer' ? [523, 659, 784, 1047, 1319, 1568] : preis.selten === 'episch' ? [523, 659, 784, 1047, 1319] : [523, 659, 784, 1047];
+    toene.forEach((f, i) => setTimeout(() => ton(f, 0.22, 'triangle', 0.14), i * 110));
+  }, 1400);
+};
+el('truheOk').onclick = () => {
+  truheOffen = false;
+  el('truhePopup').classList.add('versteckt');
+  auftraegeZeigen(); vorschauBauen();
+};
+auftraegeZeigen();
+
 function vorschauZeichnen(dt) {
   const c = vorschauRenderer.domElement;
   if (c.width !== Math.round(c.clientWidth * vorschauRenderer.getPixelRatio())) vorschauRenderer.setSize(c.clientWidth, c.clientWidth / 1.8, false);
