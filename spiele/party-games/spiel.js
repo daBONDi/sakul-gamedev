@@ -3,15 +3,32 @@
 import * as THREE from 'three';
 
 // ========== Einstellungen (hier kannst du herumprobieren!) ==========
-const FELDER = 32;                    // so viele Felder hat das Brett
+// Das Brett: jeder Buchstabe ist ein Feld (im Kreis herum).
+// S = Start, b = blau (+3), r = rot (−3), ? = Ereignis, L = Laden 🛒, g = Klau-Geist 👻, t = Teleporter 🌀
+const BRETT = 'SbbrbL?bbgbrbb?btbrbbL?bgbrbb?bt';
+// Abkürzungen quer über die Insel: von welchem Feld, zu welchem Feld, und welche Felder dazwischen liegen
+const ABKUERZUNGEN = [
+  { von: 28, nach: 4, felder: 'r?gr' },
+  { von: 12, nach: 20, felder: '?rtr' },
+];
+// Gegenstände aus dem Laden 🛒
+const GEGENSTAENDE = {
+  turbo: { name: 'Turbo-Würfel', emoji: '🎲', preis: 5, text: 'Würfle einmal mit 3 Würfeln statt mit 2!' },
+  falle: { name: 'Falle', emoji: '🪤', preis: 4, text: 'Versteck sie auf deinem Feld. Wer drüberhüpft, gibt dir Münzen!' },
+  ruf: { name: 'Pokal-Ruf', emoji: '📯', preis: 8, text: 'Der Pokal fliegt ganz nah zu dir!' },
+};
+const TASCHE_PLATZ = 3;               // so viele Gegenstände passen in die Tasche 🎒
+const FALLE_MUENZEN = 4;              // so viele Münzen kostet es, in eine Falle zu tappen
+const KLAU_MUENZEN = 5;               // so viele Münzen klaut der Geist 👻
+const FELDER = BRETT.length;          // so viele Felder hat der große Kreis
 const START_MUENZEN = 10;
 const POKAL_PREIS = 10;               // so viel kostet ein Pokal 🏆
 const BLAU_MUENZEN = 3;               // blaues Feld: so viele Münzen bekommst du
 const ROT_MUENZEN = 3;                // rotes Feld: so viele Münzen verlierst du
 const MINISPIEL_PREIS = [10, 5, 3, 0];   // Münzen für Platz 1, 2, 3 und 4 im Minispiel
 const HUEPF_ZEIT = 0.3;               // so lange dauert ein Hüpfer von Feld zu Feld (Sekunden)
-const FARBEN = ['#ff4d4d', '#3d8bff', '#2ecc71', '#ffcc00'];
-const FARB_NAMEN = ['🟥', '🟦', '🟩', '🟨'];
+const FARBEN = ['#ff4d4d', '#3d8bff', '#2ecc71', '#ffcc00', '#ff7ac8', '#a259ff', '#ff9a1f', '#22d3c5'];   // Farben zum Aussuchen
+const NAME_LAENGE = 12;               // so lang darf ein Name sein
 const BOT_NAMEN = ['Bot Hüpfi', 'Bot Wuschel', 'Bot Zappel', 'Bot Knuddel'];
 const RUNDEN_WAHL = [5, 10, 15];
 
@@ -107,13 +124,17 @@ const wolken = [];
 const brett = new THREE.Group();
 scene.add(brett);
 const FELD_Y = 0.22;   // so hoch ist die Oberseite der Felder
-const feldPos = [], feldArt = [];
+const feldPos = [], feldArt = [], feldNext = [];   // feldNext: zu welchen Feldern man von hier aus hüpfen kann
 const FELD_INFO = {
   start: { farbe: '#2ecc71', text: 'START' },
   blau: { farbe: '#3d8bff', text: '+' + BLAU_MUENZEN },
   rot: { farbe: '#ff4d4d', text: '−' + ROT_MUENZEN },
   ereignis: { farbe: '#a259ff', text: '?' },
+  laden: { farbe: '#ff9a1f', text: '🛒' },
+  klau: { farbe: '#4a4a6a', text: '👻' },
+  teleport: { farbe: '#22d3c5', text: '🌀' },
 };
+const BUCHSTABE = { S: 'start', b: 'blau', r: 'rot', '?': 'ereignis', L: 'laden', g: 'klau', t: 'teleport' };
 {
   // Der Weg: ein Rechteck mit runden Ecken. Die Felder werden gleichmäßig verteilt.
   const N = 2000, punkte = [], laenge = [0];
@@ -126,14 +147,36 @@ const FELD_INFO = {
   for (let f = 0; f < FELDER; f++) {
     while (laenge[j] < f / FELDER * laenge[N]) j++;
     feldPos.push({ x: punkte[j][0], z: punkte[j][1] });
-    feldArt.push(f === 0 ? 'start' : f % 8 === 3 || f % 16 === 13 ? 'rot' : f % 8 === 6 ? 'ereignis' : 'blau');
+    feldArt.push(BUCHSTABE[BRETT[f]] || 'blau');
+    feldNext.push([(f + 1) % FELDER]);
+  }
+  // Abkürzungen: neue Felder auf einem Bogen quer über die Insel
+  for (const a of ABKUERZUNGEN) {
+    const A = feldPos[a.von], B = feldPos[a.nach], C = { x: (A.x + B.x) * 0.3, z: (A.z + B.z) * 0.3 }, k = a.felder.length;
+    let vorher = a.von;
+    a.weg = [A];
+    for (let i = 1; i <= k; i++) {
+      const t = i / (k + 1), u = 1 - t, nr = feldPos.length;
+      feldPos.push({ x: u * u * A.x + 2 * u * t * C.x + t * t * B.x, z: u * u * A.z + 2 * u * t * C.z + t * t * B.z });
+      feldArt.push(BUCHSTABE[a.felder[i - 1]] || 'blau');
+      feldNext.push([]);
+      feldNext[vorher].push(nr);
+      vorher = nr;
+      a.weg.push(feldPos[nr]);
+    }
+    feldNext[vorher].push(a.nach);
+    a.weg.push(B);
   }
   // Insel mit Sandstrand
   teil(new THREE.CylinderGeometry(1, 1.03, 1, 64), '#f1dca0', 0, -0.55, 0, brett).scale.set(22.5, 1, 16.5);
   teil(new THREE.CylinderGeometry(1, 1, 1, 64), '#6cc24a', 0, -0.5, 0, brett).scale.set(21, 1, 15);
   // Weg zwischen den Feldern
-  const kurve = new THREE.CatmullRomCurve3(feldPos.map(p => new THREE.Vector3(p.x, 0.02, p.z)), true);
+  const kurve = new THREE.CatmullRomCurve3(feldPos.slice(0, FELDER).map(p => new THREE.Vector3(p.x, 0.02, p.z)), true);
   teil(new THREE.TubeGeometry(kurve, 256, 0.45, 6, true), '#f3d9a4', 0, 0, 0, brett).scale.y = 0.12;
+  for (const a of ABKUERZUNGEN) {
+    const k = new THREE.CatmullRomCurve3(a.weg.map(p => new THREE.Vector3(p.x, 0.02, p.z)));
+    teil(new THREE.TubeGeometry(k, 64, 0.4, 6, false), '#e8c98a', 0, 0, 0, brett).scale.y = 0.12;
+  }
   // Felder
   const feldBilder = {};
   for (const [art, info] of Object.entries(FELD_INFO)) feldBilder[art] = malen(128, 128, (g, s) => {
@@ -203,10 +246,31 @@ for (const zahl of [1, 6, 2, 5, 3, 4]) wuerfelBilder.push(new THREE.MeshLambertM
   for (const [x, y] of AUGEN[zahl]) { g.beginPath(); g.arc(x * s, y * s, s * 0.1, 0, Math.PI * 2); g.fill(); }
 }) }));
 const wuerfel = new THREE.Group();
-for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), wuerfelBilder); w.position.x = s * 0.6; w.castShadow = true; wuerfel.add(w); }
+for (let i = 0; i < 3; i++) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), wuerfelBilder); w.castShadow = true; wuerfel.add(w); }   // der 3. ist für den Turbo-Würfel
 scene.add(wuerfel);
 const zahlBilder = [];
-for (let i = 0; i <= 15; i++) zahlBilder.push(textBild(String(i), '#ffcc00', 110));
+for (let i = 0; i <= 20; i++) zahlBilder.push(textBild(String(i), '#ffcc00', 110));
+
+// Wegweiser-Pfeile an einer Abzweigung
+const pfeile = [0, 1].map(() => {
+  const g = new THREE.Group();
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true });
+  teil(new THREE.ConeGeometry(0.35, 0.7, 12).rotateX(Math.PI / 2), m, 0, 0, 0.35, g);
+  teil(new THREE.CylinderGeometry(0.13, 0.13, 0.6, 8).rotateX(Math.PI / 2), m, 0, 0, -0.25, g);
+  g.visible = false;
+  scene.add(g);
+  return g;
+});
+// Fallen 🪤 auf dem Brett
+const fallenBilder = [];
+function baueFalle() {
+  const g = new THREE.Group();
+  teil(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 16), '#555555', 0, 0.04, 0, g);
+  const ring = teil(new THREE.TorusGeometry(0.5, 0.06, 6, 20).rotateX(Math.PI / 2), '#ffffff', 0, 0.08, 0, g);
+  for (let i = 0; i < 8; i++) { const w = i / 8 * Math.PI * 2; teil(new THREE.ConeGeometry(0.07, 0.22, 4), '#cccccc', Math.cos(w) * 0.42, 0.16, Math.sin(w) * 0.42, g); }
+  g.userData.ring = ring;
+  brett.add(g); fallenBilder.push(g);
+}
 const zahlSchild = new THREE.Sprite(new THREE.SpriteMaterial({ map: zahlBilder[0], depthWrite: false }));
 zahlSchild.scale.set(4, 1, 1);
 scene.add(zahlSchild);
@@ -247,7 +311,8 @@ function neuerZustand(liste, runden) {
   return {
     phase: 'brett', runde: 1, maxRunden: runden, dran: 0, schritt: 'start', uhr: 2, wurf: 0, wuerfe: [1, 1], rest: 0, hopT: 0, weiter: null,
     pokalFeld: 10 + zufallsZahl(14), meldung: '', meldungUhr: 0, effekte: [], effektNr: 0, spiel: null, ergebnis: null, beutel: [], sieger: null,
-    spieler: liste.map((s, i) => ({ ...s, farbe: FARBEN[i], feld: 0, muenzen: START_MUENZEN, pokale: 0, x: feldPos[0].x, y: FELD_Y, z: feldPos[0].z, r: 0, weg: false })),
+    ziel: 1, turbo: false, auswahl: null, fallen: [], teleZiel: -1, pokalNoch: false,
+    spieler: liste.map(s => ({ ...s, feld: 0, muenzen: START_MUENZEN, pokale: 0, tasche: [], x: feldPos[0].x, y: FELD_Y, z: feldPos[0].z, r: 0, weg: false })),
   };
 }
 function meldung(text, sekunden = 2) { Z.meldung = text; Z.meldungUhr = sekunden; }
@@ -275,10 +340,13 @@ function brettPositionen() {
   Z.spieler.forEach((sp, i) => {
     sp.weg = false;
     if (i === Z.dran && Z.schritt === 'laufen') {
-      const a = feldPos[sp.feld], b = feldPos[(sp.feld + 1) % FELDER], t = Math.min(1, Z.hopT);
+      const a = feldPos[sp.feld], b = feldPos[Z.ziel], t = Math.min(1, Z.hopT);
       sp.x = a.x + (b.x - a.x) * t; sp.z = a.z + (b.z - a.z) * t;
       sp.y = FELD_Y + Math.sin(Math.PI * t) * 0.9;
       sp.r = Math.atan2(b.x - a.x, b.z - a.z);
+    } else if (i === Z.dran && Z.schritt === 'teleport') {   // hoch in die Luft, rüber, wieder runter
+      const f = feldPos[sp.feld];
+      sp.x = f.x; sp.z = f.z; sp.y = FELD_Y + (0.6 - Math.abs(Z.uhr - 0.6)) * 9; sp.r = Z.uhr * 25;
     } else {
       const f = feldPos[sp.feld], o = VERSATZ[i];
       sp.x = f.x + o[0]; sp.z = f.z + o[1]; sp.y = FELD_Y; sp.r = 0;
