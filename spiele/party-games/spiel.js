@@ -1260,6 +1260,7 @@ function lokaleEingabe(schema, pad) {
     const knopf = n => p.buttons[n] && p.buttons[n].pressed;
     if (knopf(14)) x = -1; if (knopf(15)) x = 1; if (knopf(12)) z = -1; if (knopf(13)) z = 1;
   }
+  if (schema === 'solo' && (touch.x || touch.z)) { x = touch.x; z = touch.z; }   // Handy-Steuerung
   return { x, z, n: (zaehler[schema] || 0) + (padZaehler[pad] || 0) };
 }
 // Klicken = würfeln (für den, der gerade dran ist)
@@ -1750,6 +1751,12 @@ let menschen = 1, runden = 10;
 try { menschen = Number(localStorage.getItem('party-menschen')) || 1; runden = Number(localStorage.getItem('party-runden')) || 10; } catch (e) { /* egal */ }
 if (!(menschen >= 1 && menschen <= 4)) menschen = 1;
 if (!RUNDEN_WAHL.includes(runden)) runden = 10;
+let profile = [];   // Name + Farbe für jeden Menschen (wird im Browser gespeichert)
+try { profile = JSON.parse(localStorage.getItem('party-profile')) || []; } catch (e) { /* egal */ }
+for (let i = 0; i < 4; i++) {
+  const p = profile[i] && typeof profile[i] === 'object' ? profile[i] : {};
+  profile[i] = { name: nameSaeubern(p.name) || 'Spieler ' + (i + 1), farbe: FARBEN.includes(p.farbe) ? p.farbe : FARBEN[i] };
+}
 function knoepfe(id, werte, aktuell, text, waehlen) {
   const box = el(id);
   box.innerHTML = '';
@@ -1769,20 +1776,125 @@ function menuAufbauen() {
   const rundenWaehlen = n => { runden = n; try { localStorage.setItem('party-runden', n); } catch (e) { /* egal */ } menuAufbauen(); };
   knoepfe('rundenKnoepfe', RUNDEN_WAHL, runden, n => n + ' Runden', rundenWaehlen);
   knoepfe('rundenKnoepfe2', RUNDEN_WAHL, runden, n => n + ' Runden', rundenWaehlen);
-  const zeilen = [];
+  // Für jeden Menschen: Name + Farbe aussuchen
+  const box = el('tastenListe');
+  box.innerHTML = '';
   for (let i = 0; i < 4; i++) {
-    const schema = menschen === 1 ? 'solo' : i;
-    zeilen.push(`<span style="color:${FARBEN[i]}">${FARB_NAMEN[i]} Spieler ${i + 1}</span>: ` + (i < menschen ? sicher(STEUERUNG[schema].name) : '🤖 Bot'));
+    const zeile = document.createElement('div');
+    zeile.className = 'profil';
+    if (i >= menschen) { zeile.innerHTML = `<span class="botZeile">🤖 Bot</span>`; box.append(zeile); continue; }
+    const feld = document.createElement('input');
+    feld.className = 'nameFeld'; feld.maxLength = NAME_LAENGE; feld.value = profile[i].name; feld.placeholder = 'Spitzname';
+    feld.style.borderColor = profile[i].farbe;
+    feld.oninput = () => { profile[i].name = feld.value; profileSpeichern(); };
+    feld.onchange = () => { profile[i].name = nameSaeubern(feld.value) || 'Spieler ' + (i + 1); feld.value = profile[i].name; profileSpeichern(); };
+    zeile.append(feld);
+    const farben = document.createElement('span');
+    for (const f of FARBEN) {
+      const k = document.createElement('button');
+      k.className = 'farbKnopf' + (f === profile[i].farbe ? ' gewaehlt' : '');
+      k.style.background = f;
+      k.title = 'Farbe aussuchen';
+      k.onclick = () => {
+        const anderer = profile.findIndex((p, j) => j !== i && j < menschen && p.farbe === f);
+        if (anderer >= 0) profile[anderer].farbe = profile[i].farbe;   // Farben tauschen
+        profile[i].farbe = f; profileSpeichern(); menuAufbauen();
+      };
+      farben.append(k);
+    }
+    zeile.append(farben);
+    const tasten = document.createElement('div');
+    tasten.className = 'tastenInfo';
+    tasten.textContent = '⌨️ ' + STEUERUNG[menschen === 1 ? 'solo' : i].name;
+    zeile.append(tasten);
+    box.append(zeile);
   }
-  setze('tastenListe', zeilen.join('<br>') + '<br>🎮 Gamepads gehen auch (Knopf A = Aktion)!');
+  const hinweis = document.createElement('div');
+  hinweis.className = 'tastenInfo';
+  hinweis.textContent = '🎮 Gamepads gehen auch (Knopf A = Aktion)! · 😉 Nimm einen Spitznamen, nicht deinen echten Namen.';
+  box.append(hinweis);
 }
 function lokalStarten() {
   const liste = [];
   for (let i = 0; i < 4; i++) liste.push(i < menschen
-    ? { name: 'Spieler ' + (i + 1), art: 'lokal', schema: menschen === 1 ? 'solo' : String(i), pad: i }
+    ? { name: profile[i].name, farbe: profile[i].farbe, art: 'lokal', schema: menschen === 1 ? 'solo' : String(i), pad: i }
     : { name: BOT_NAMEN[i], art: 'bot' });
+  namenUndFarben(liste);
   spielStarten(liste);
 }
+
+// ----- Namen und Farben -----
+function nameSaeubern(t) { return String(t ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, NAME_LAENGE); }
+function namenUndFarben(liste) {   // jeder bekommt einen Namen und eine eigene Farbe (keine doppelt)
+  const farben = new Set(), namen = new Set();
+  liste.forEach((s, i) => {
+    s.name = nameSaeubern(s.name) || 'Spieler ' + (i + 1);
+    let n = s.name, z = 2;
+    while (namen.has(n.toLowerCase())) n = s.name.slice(0, NAME_LAENGE - 2) + ' ' + z++;
+    s.name = n; namen.add(n.toLowerCase());
+    if (!FARBEN.includes(s.farbe) || farben.has(s.farbe)) s.farbe = null; else farben.add(s.farbe);
+  });
+  for (const s of liste) if (!s.farbe) { s.farbe = FARBEN.find(f => !farben.has(f)); farben.add(s.farbe); }
+  return liste;
+}
+function profileSpeichern() { try { localStorage.setItem('party-profile', JSON.stringify(profile)); } catch (e) { /* egal */ } }
+
+// ----- Handy-Steuerung 📱 -----
+const touch = { x: 0, z: 0 };
+const istHandy = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+{
+  const stick = el('stick'), knubbel = el('knubbel'), R = 50;
+  const bewegen = e => {
+    const b = stick.getBoundingClientRect();
+    let dx = e.clientX - (b.left + b.width / 2), dz = e.clientY - (b.top + b.height / 2);
+    const d = Math.hypot(dx, dz);
+    if (d > R) { dx *= R / d; dz *= R / d; }
+    knubbel.style.transform = `translate(${dx}px, ${dz}px)`;
+    touch.x = Math.abs(dx) > R * 0.25 ? dx / R : 0;
+    touch.z = Math.abs(dz) > R * 0.25 ? dz / R : 0;
+  };
+  const los = () => { touch.x = touch.z = 0; knubbel.style.transform = ''; };
+  stick.addEventListener('pointerdown', e => { e.preventDefault(); stick.setPointerCapture(e.pointerId); bewegen(e); });
+  stick.addEventListener('pointermove', e => { if (stick.hasPointerCapture(e.pointerId)) bewegen(e); });
+  stick.addEventListener('pointerup', los);
+  stick.addEventListener('pointercancel', los);
+  el('aKnopf').addEventListener('pointerdown', e => {
+    e.preventDefault(); audioStart();
+    zaehler.solo = (zaehler.solo || 0) + 1;
+    el('aKnopf').classList.add('drueck'); setTimeout(() => el('aKnopf').classList.remove('drueck'), 120);
+  });
+}
+function touchZeigen() {
+  const imSpiel = (Z || rolle === 'gast') && !(Z && Z.phase === 'ende') && el('lobby').classList.contains('versteckt');
+  const solo = rolle !== 'lokal' || menschen === 1;
+  const an = istHandy && imSpiel && solo;
+  zeige('touch', an);
+  document.body.classList.toggle('handy', an);
+}
+
+// ----- Auswahl antippen / anklicken -----
+el('auswahl').addEventListener('pointerdown', e => {
+  const knopf = e.target.closest('.opt');
+  if (!knopf || !Z || !Z.auswahl) return;
+  e.preventDefault();
+  const k = Number(knopf.dataset.k);
+  if (rolle === 'gast') { if (Z.dran === meinIndex && hostVerbindung && hostVerbindung.open) hostVerbindung.send({ t: 'w', k }); }
+  else if (Z.spieler[Z.dran].art === 'lokal') klickWahl = { i: Z.dran, k };
+});
+
+// ----- Musik- und Ton-Knöpfe -----
+el('musikKnopf').onclick = e => {
+  musikAn = !musikAn; audioStart();
+  if (musikBus) musikBus.gain.value = musikAn ? 0.55 : 0;
+  try { localStorage.setItem('party-musik', musikAn ? 'an' : 'aus'); } catch (x) { /* egal */ }
+  tonKnoepfeZeigen(); e.currentTarget.blur();
+};
+el('toeneKnopf').onclick = e => {
+  toeneAn = !toeneAn; audioStart();
+  try { localStorage.setItem('party-toene', toeneAn ? 'an' : 'aus'); } catch (x) { /* egal */ }
+  tonKnoepfeZeigen(); e.currentTarget.blur();
+};
+tonKnoepfeZeigen();
 function spielStarten(liste) {
   Z = neuerZustand(liste, runden);
   meldung(`🎉 Los geht's! ${Z.spieler[0].name} fängt an.`, 2);

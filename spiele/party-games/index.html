@@ -45,6 +45,56 @@
     #infoBox .emoji { font-size: 5rem; }
     #infoZahl { font-size: 3rem; font-weight: bold; color: #ffcc00; }
     #ergebnisListe, #endeListe { font-size: 1.5rem; line-height: 1.8; text-align: left; display: inline-block; }
+    .karte .tasche { font-size: 18px; }
+    .legende { font-size: 1rem; opacity: .9; }
+
+    /* ---------- Namen + Farben im Menü ---------- */
+    .profil { margin: .35rem 0; }
+    .nameFeld { font-size: 1.1rem; width: 9rem; padding: .3rem .5rem; border-radius: 10px; border: 4px solid #fff; text-align: center; font-weight: bold; }
+    .farbKnopf { width: 1.7rem; height: 1.7rem; padding: 0; margin: .1rem; border-radius: 50%; vertical-align: middle; border: 3px solid rgba(255,255,255,.3); }
+    .farbKnopf.gewaehlt, .farbKnopf:hover { border-color: #fff; transform: scale(1.2); }
+    .tastenInfo { font-size: .9rem; opacity: .85; }
+    .botZeile { opacity: .7; }
+
+    /* ---------- Auswahl (Weg, Laden, Gegenstand) ---------- */
+    #auswahl { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); width: min(26rem, 92vw); pointer-events: auto;
+      background: rgba(20, 10, 60, .85); border: 3px solid #ffcc00; border-radius: 18px; padding: .6rem .8rem; text-align: center; }
+    #auswahl .titel { font-size: 1.3rem; font-weight: bold; margin-bottom: .3rem; }
+    #auswahl .opt { display: block; width: 100%; margin: .3rem 0; font-size: 1.2rem; text-align: left; }
+    #auswahl .opt small { display: block; font-size: .85rem; font-weight: normal; opacity: .85; }
+    #auswahl .opt.an { background: #e0398b; border-color: #fff; }
+    #auswahl .klein { font-size: .9rem; opacity: .85; margin-top: .2rem; }
+
+    /* ---------- Musik- und Ton-Knöpfe ---------- */
+    #tonKnoepfe { position: fixed; top: 6px; right: 6px; z-index: 20; }
+    #tonKnoepfe button { font-size: 1.1rem; padding: .2rem .5rem; margin: 0 0 0 .2rem; background: rgba(0,0,0,.35); }
+
+    /* ---------- Handy-Steuerung ---------- */
+    #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+    #stick { position: absolute; left: 22px; bottom: 22px; width: 140px; height: 140px; border-radius: 50%; pointer-events: auto; touch-action: none;
+      background: rgba(255,255,255,.18); border: 3px solid rgba(255,255,255,.55); }
+    #knubbel { position: absolute; left: 42px; top: 42px; width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,.85); pointer-events: none; }
+    #aKnopf { position: absolute; right: 26px; bottom: 34px; width: 104px; height: 104px; border-radius: 50%; pointer-events: auto; touch-action: none;
+      background: #ff4d4d; border: 4px solid #fff; font-size: 46px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+      user-select: none; -webkit-user-select: none; box-shadow: 0 6px 0 #a02020; }
+    #aKnopf.drueck { transform: translateY(4px); box-shadow: 0 2px 0 #a02020; }
+    body.handy #hinweis { bottom: 175px; font-size: 18px; }
+    body.handy #auswahl { bottom: 175px; }
+
+    /* ---------- Kleine Bildschirme (Handy) ---------- */
+    @media (max-width: 760px) {
+      h1 { font-size: 2.6rem; }
+      #oben { font-size: 15px; top: 6px; }
+      .karte { width: calc(25vw - 8px); font-size: 11px; padding: 3px 4px; border-width: 2px; border-radius: 10px; box-sizing: border-box; }
+      .karte .name { font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .karte .werte, .karte .tasche { font-size: 13px; }
+      .karte .tasten { display: none; }
+      #k0, #k1, #k2, #k3 { top: 40px; bottom: auto; right: auto; }
+      #k0 { left: 4px; } #k1 { left: calc(25vw + 2px); } #k2 { left: calc(50vw + 2px); } #k3 { left: calc(75vw + 2px); }
+      .karte.dran { transform: none; }
+      #meldung { font-size: 22px; top: 22%; }
+      #hinweis { font-size: 17px; }
+    }
   </style>
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
@@ -56,6 +106,17 @@
     <div class="karte" id="k0"></div><div class="karte" id="k1"></div><div class="karte" id="k2"></div><div class="karte" id="k3"></div>
     <div id="meldung"></div>
     <div id="hinweis"></div>
+    <div id="auswahl" class="versteckt"></div>
+  </div>
+
+  <!-- Handy-Steuerung -->
+  <div id="touch" class="versteckt">
+    <div id="stick"><div id="knubbel"></div></div>
+    <div id="aKnopf">A</div>
+  </div>
+
+  <div id="tonKnoepfe">
+    <button id="musikKnopf" title="Musik an/aus">🎵</button><button id="toeneKnopf" title="Geräusche an/aus">🔊</button>
   </div>
 
   <!-- Startmenü -->
@@ -64,6 +125,7 @@
       <h1>🎲 Party Games</h1>
       <p>Würfle über das Spielbrett, sammle 🪙 Münzen und kauf dir 🏆 Pokale!<br>
         Nach jeder Runde gibt es ein Minispiel. Wer am Ende die meisten Pokale hat, gewinnt!</p>
+      <p class="legende">🔵 +3 Münzen · 🔴 −3 Münzen · 🟣 ? Überraschung · 🛒 Laden · 👻 Klau-Geist · 🌀 Teleporter · ✂️ Abkürzungen</p>
 
       <div class="bereich">
         <h2>🎮 Am selben Computer</h2>
@@ -84,7 +146,8 @@
         <button id="hostKnopf">Raum erstellen</button>
         <input id="codeFeld" maxlength="4" placeholder="CODE" autocomplete="off">
         <button id="beitretenKnopf">Beitreten</button>
-        <p id="netzInfo">Jeder spielt an seinem eigenen Computer. Fehlende Spieler sind Bots.</p>
+        <p id="netzInfo">Jeder spielt an seinem eigenen Computer oder Handy. Fehlende Spieler sind Bots.<br>
+          Online heißt du so wie Spieler 1 oben und hast seine Farbe.</p>
       </div>
     </div>
   </div>
