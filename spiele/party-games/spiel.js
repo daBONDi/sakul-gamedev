@@ -1271,25 +1271,106 @@ leinwand.addEventListener('pointerdown', () => {
 });
 
 // ========== Geräusche (selbst gemacht mit Web Audio) ==========
-let audio = null;
+let audio = null, toeneBus = null, musikBus = null, musikAn = true, toeneAn = true;
+try { musikAn = localStorage.getItem('party-musik') !== 'aus'; toeneAn = localStorage.getItem('party-toene') !== 'aus'; } catch (e) { /* egal */ }
 function audioStart() {
-  try { if (!audio) audio = new AudioContext(); if (audio.state === 'suspended') audio.resume(); } catch (e) { /* kein Ton */ }
+  try {
+    if (!audio) {
+      audio = new AudioContext();
+      const haupt = audio.createDynamicsCompressor();   // macht alles gleichmäßig laut
+      haupt.connect(audio.destination);
+      toeneBus = audio.createGain(); toeneBus.connect(haupt);
+      // ein kleines Echo – klingt voller
+      const echo = audio.createDelay(), zurueck = audio.createGain();
+      echo.delayTime.value = 0.13; zurueck.gain.value = 0.22;
+      toeneBus.connect(echo); echo.connect(zurueck); zurueck.connect(echo); zurueck.connect(haupt);
+      musikBus = audio.createGain(); musikBus.gain.value = musikAn ? 0.55 : 0; musikBus.connect(haupt);
+      setInterval(musikWeiter, 50);
+    }
+    if (audio.state === 'suspended') audio.resume();
+  } catch (e) { /* kein Ton */ }
 }
 addEventListener('pointerdown', audioStart);
 addEventListener('keydown', audioStart);
-function ton(frequenz, dauer, typ = 'sine', laut = 0.15, ende = frequenz, spaeter = 0) {
-  if (!audio || audio.state !== 'running') return;
+function ton(frequenz, dauer, typ = 'sine', laut = 0.15, ende = frequenz, spaeter = 0, ziel = toeneBus) {
+  if (!audio || audio.state !== 'running' || (ziel === toeneBus && !toeneAn)) return;
   const t = audio.currentTime + spaeter, o = audio.createOscillator(), g = audio.createGain();
   o.type = typ; o.frequency.setValueAtTime(frequenz, t); o.frequency.exponentialRampToValueAtTime(ende, t + dauer);
-  g.gain.setValueAtTime(laut, t); g.gain.exponentialRampToValueAtTime(0.001, t + dauer);
-  o.connect(g).connect(audio.destination); o.start(t); o.stop(t + dauer);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(laut, t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + dauer);
+  o.connect(g).connect(ziel); o.start(t); o.stop(t + dauer + 0.02);
 }
-function rauschen(dauer, laut = 0.3) {
-  if (!audio || audio.state !== 'running') return;
-  const puffer = audio.createBuffer(1, audio.sampleRate * dauer, audio.sampleRate), d = puffer.getChannelData(0);
+function rauschen(dauer, laut = 0.3, spaeter = 0, ziel = toeneBus) {
+  if (!audio || audio.state !== 'running' || (ziel === toeneBus && !toeneAn)) return;
+  const puffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * dauer), audio.sampleRate), d = puffer.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
   const q = audio.createBufferSource(), g = audio.createGain();
-  q.buffer = puffer; g.gain.value = laut; q.connect(g).connect(audio.destination); q.start();
+  q.buffer = puffer; g.gain.value = laut; q.connect(g).connect(ziel); q.start(audio.currentTime + spaeter);
+}
+
+// ----- Musik 🎵 (selbst komponiert!) -----
+// Jedes Wort ist ein Schritt: eine Note (C5 = das C in der 5. Oktave), "-" = Pause, "=" = Note länger halten.
+const LIEDER = {
+  brett: {
+    tempo: 0.15, welle: 'triangle',
+    melodie: 'C5 - E5 G5 = E5 C5 - D5 - F5 A5 = F5 D5 - E5 - G5 C6 = G5 E5 - F5 E5 D5 C5 = = - - ' +
+             'A4 - C5 E5 = C5 A4 - B4 - D5 G5 = D5 B4 - C5 - E5 G5 = A5 G5 - F5 D5 E5 B4 C5 = - -',
+    bass: 'C3 - G3 - C3 - G3 - D3 - A3 - D3 - A3 - C3 - G3 - E3 - G3 - G2 - D3 - G2 - B2 - ' +
+          'A2 - E3 - A2 - E3 - G2 - D3 - G2 - D3 - C3 - G3 - C3 - G3 - G2 - B2 - C3 - - -',
+  },
+  spiel: {
+    tempo: 0.11, welle: 'square', trommel: true,
+    melodie: 'A4 C5 E5 C5 A4 C5 E5 A5 G5 E5 C5 E5 G5 = - - F5 A5 C6 A5 F5 A5 C6 = B5 G5 D5 G5 B5 = - -',
+    bass: 'A2 A2 - A2 A3 - A2 - C3 C3 - C3 C4 - C3 - F2 F2 - F2 F3 - F2 - G2 G2 - G2 G3 - G2 -',
+  },
+  ende: {
+    tempo: 0.14, welle: 'triangle',
+    melodie: 'C5 E5 G5 C6 = = G5 C6 E6 = = = D6 C6 B5 C6 = = = - G5 A5 B5 C6 D6 E6 = = C6 = = -',
+    bass: 'C3 - G3 - C3 - G3 - F3 - C4 - F3 - C4 - G2 - D3 - G2 - D3 - C3 - G3 - C3 - - -',
+  },
+};
+function noteZuFrequenz(n) {
+  const m = /^([A-G])(#?)(\d)$/.exec(n);
+  if (!m) return 0;
+  const halbton = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0);
+  return 440 * 2 ** ((12 * (+m[3] + 1) + halbton - 69) / 12);
+}
+function liedLesen(text) {   // "C5 = - E5" -> [{f, lang}, null, null, {f, lang}]
+  const schritte = [];
+  let letzte = null;
+  for (const wort of text.trim().split(/\s+/)) {
+    if (wort === '=' && letzte) { letzte.lang++; schritte.push(null); }
+    else if (wort === '-' || wort === '=') { letzte = null; schritte.push(null); }
+    else { letzte = { f: noteZuFrequenz(wort), lang: 1 }; schritte.push(letzte); }
+  }
+  return schritte;
+}
+for (const l of Object.values(LIEDER)) { l.m = liedLesen(l.melodie); l.b = liedLesen(l.bass); }
+let liedName = 'brett', liedSchritt = 0, liedZeit = 0;
+function musikWaehlen(name) {
+  if (name === liedName) return;
+  liedName = name; liedSchritt = 0;
+  if (audio) liedZeit = audio.currentTime + 0.15;
+}
+function musikWeiter() {   // plant die nächsten Noten ein (läuft immer ein kleines Stück voraus)
+  if (!audio || audio.state !== 'running' || !musikAn) return;
+  const l = LIEDER[liedName];
+  if (liedZeit < audio.currentTime) liedZeit = audio.currentTime + 0.05;
+  while (liedZeit < audio.currentTime + 0.25) {
+    const spaeter = liedZeit - audio.currentTime;
+    const m = l.m[liedSchritt % l.m.length], b = l.b[liedSchritt % l.b.length];
+    if (m && m.f) ton(m.f, m.lang * l.tempo * 0.95, l.welle, l.welle === 'square' ? 0.05 : 0.11, m.f, spaeter, musikBus);
+    if (b && b.f) ton(b.f, b.lang * l.tempo * 0.9, 'triangle', 0.16, b.f, spaeter, musikBus);
+    if (l.trommel) {
+      if (liedSchritt % 4 === 0) ton(150, 0.12, 'sine', 0.25, 50, spaeter, musikBus);   // Bumm
+      if (liedSchritt % 2 === 1) rauschen(0.04, 0.06, spaeter, musikBus);              // Tss
+    }
+    liedSchritt++;
+    liedZeit += l.tempo;
+  }
+}
+function tonKnoepfeZeigen() {
+  el('musikKnopf').textContent = musikAn ? '🎵' : '🎵🚫';
+  el('toeneKnopf').textContent = toeneAn ? '🔊' : '🔇';
 }
 const melodie = (noten, abstand = 0.12, typ = 'triangle') => noten.forEach((f, i) => ton(f, 0.22, typ, 0.13, f, i * abstand));
 const KLAENGE = {
@@ -1312,6 +1393,19 @@ const KLAENGE = {
   ziel: () => melodie([784, 1047], 0.08),
   sprung: () => ton(300, 0.15, 'sine', 0.1, 700),
   autsch: () => { ton(600, 0.4, 'sawtooth', 0.1, 100); rauschen(0.2, 0.15); },
+  klick: () => ton(900, 0.05, 'square', 0.04),
+  turbo: () => melodie([523, 659, 784, 1047, 1319], 0.06, 'square'),
+  kasse: () => { ton(1568, 0.1, 'square', 0.06); ton(2093, 0.35, 'triangle', 0.1, 2093, 0.08); },
+  falleHin: () => { ton(250, 0.1, 'square', 0.08, 180); ton(180, 0.1, 'square', 0.08, 120, 0.12); },
+  schnapp: () => { rauschen(0.08, 0.3); ton(1400, 0.1, 'square', 0.1, 200); ton(300, 0.4, 'sawtooth', 0.08, 120, 0.12); },
+  ruf: () => { ton(392, 0.25, 'sawtooth', 0.07); ton(523, 0.25, 'sawtooth', 0.07, 523, 0.22); ton(784, 0.5, 'sawtooth', 0.07, 784, 0.44); },
+  geist: () => { for (let i = 0; i < 4; i++) ton(520 - i * 40, 0.3, 'sine', 0.12, 380 - i * 40, i * 0.18); },
+  teleport: () => { ton(200, 0.6, 'sine', 0.12, 1800); ton(1800, 0.6, 'sine', 0.09, 200, 0.6); },
+  knirsch: () => { rauschen(0.12, 0.1); ton(120, 0.15, 'sawtooth', 0.04, 70); },
+  fall: () => ton(700, 0.7, 'sine', 0.12, 80),
+  zisch: () => rauschen(0.35, 0.12),
+  tick: () => ton(1500, 0.03, 'square', 0.05),
+  pass: () => ton(500, 0.12, 'triangle', 0.14, 1100),
 };
 let gespielt = -1;
 function effekteAbspielen() {
@@ -1350,8 +1444,11 @@ function kameraHin(x, y, z, zx, zy, zz, dt, tempo = 3) {
 function darstellen(dt) {
   uhrzeit += dt;
   for (const w of wolken) { w.position.x += dt * 0.6; if (w.position.x > 80) w.position.x = -80; }
+  musikWaehlen(!Z ? 'brett' : Z.phase === 'spiel' ? 'spiel' : Z.phase === 'ende' ? 'ende' : 'brett');
+  touchZeigen();
   if (!Z) {   // im Menü: Kamera kreist über dem Brett
     menuWinkel += dt * 0.12;
+    for (const p of pfeile) p.visible = false;
     if (szene !== 'brett') szeneWechseln('brett');
     kamera.position.set(Math.sin(menuWinkel) * 30, 18, Math.cos(menuWinkel) * 24);
     kamera.lookAt(0, 0, 0);
@@ -1392,13 +1489,41 @@ function darstellen(dt) {
     wuerfel.visible = Z.schritt === 'wuerfeln';
     wuerfel.position.set(sp.x, sp.y + 2.7 + Math.sin(uhrzeit * 5) * 0.1, sp.z);
     wuerfel.lookAt(kamera.position.x, wuerfel.position.y, kamera.position.z);
-    wuerfel.children.forEach((w, i) => { w.rotation.x += dt * (7 + i); w.rotation.y += dt * (9 - i); });
-    zahlSchild.visible = Z.schritt === 'zeigen' || (Z.schritt === 'laufen' && Z.rest > 0) || (Z.schritt === 'pokal' && Z.rest > 0);
-    zahlSchild.material.map = zahlBilder[Math.max(0, Math.min(15, Z.rest))];
+    const anzahl = Z.turbo ? 3 : 2;
+    wuerfel.children.forEach((w, i) => {
+      w.visible = i < anzahl;
+      w.position.x = (i - (anzahl - 1) / 2) * 1.2;
+      w.rotation.x += dt * (7 + i); w.rotation.y += dt * (9 - i);
+    });
+    const weg = Z.schritt === 'auswahl' && Z.auswahl && Z.auswahl.art === 'weg';
+    zahlSchild.visible = Z.rest > 0 && (['zeigen', 'laufen', 'zwischen'].includes(Z.schritt) || weg);
+    zahlSchild.material.map = zahlBilder[Math.max(0, Math.min(20, Z.rest))];
     zahlSchild.position.set(sp.x, sp.y + 2.6, sp.z);
+    // Wegweiser an der Abzweigung
+    pfeile.forEach((p, k) => {
+      const ziel = weg ? feldNext[sp.feld][k] : undefined;
+      p.visible = ziel !== undefined;
+      if (!p.visible) return;
+      const a = feldPos[sp.feld], b = feldPos[ziel], d = Math.hypot(b.x - a.x, b.z - a.z), an = Z.auswahl.wahl === k;
+      p.position.set(a.x + (b.x - a.x) / d * 1.5, 0.7 + (an ? Math.abs(Math.sin(uhrzeit * 6)) * 0.3 : 0), a.z + (b.z - a.z) / d * 1.5);
+      p.lookAt(b.x, p.position.y, b.z);
+      p.scale.setScalar(an ? 1.3 : 0.9);
+      p.children[0].material.color.set(an ? '#ffcc00' : '#ffffff');
+      p.children[0].material.opacity = an ? 1 : 0.6;
+    });
+    // Fallen
+    while (fallenBilder.length < Z.fallen.length) baueFalle();
+    fallenBilder.forEach((g, k) => {
+      const f = Z.fallen[k];
+      g.visible = !!f;
+      if (!f) return;
+      g.position.set(feldPos[f.feld].x, FELD_Y, feldPos[f.feld].z);
+      g.userData.ring.material.color.set(Z.spieler[f.von].farbe);
+    });
     ballonsBewegen();
   } else {
     wuerfel.visible = zahlSchild.visible = false;
+    for (const p of pfeile) p.visible = false;
     if (typ === 'ende') {
       kameraHin(0, 3.8, 9.5, 0, 1.6, 0, dt);
       for (let i = 0; i < bild.konfetti.length; i += 3) {
@@ -1441,8 +1566,9 @@ function hudZeichnen() {
     let tasten = sp.art === 'bot' ? '🤖 Bot' : sp.art === 'online' ? '🌐 online' : '⌨️ ' + STEUERUNG[sp.schema].name;
     if (rolle === 'gast') tasten = i === meinIndex ? '⭐ Das bist du!' : sp.art === 'bot' ? '🤖 Bot' : '🌐 online';
     if (rolle === 'host' && i === 0) tasten = '⭐ Das bist du! (' + STEUERUNG.solo.name + ')';
-    const extra = M && (Z.phase === 'spiel' || Z.phase === 'ergebnis') ? `<div>${M.anzeige(Z.spiel, i)}</div>` : '';
-    setze('k' + i, `<div class="name" style="color:${sp.farbe}">${FARB_NAMEN[i]} ${sicher(sp.name)}</div>
+    let extra = M && (Z.phase === 'spiel' || Z.phase === 'ergebnis') ? `<div>${M.anzeige(Z.spiel, i)}</div>` : '';
+    if (!extra && sp.tasche && sp.tasche.length) extra = `<div class="tasche">🎒 ${sp.tasche.map(k => GEGENSTAENDE[k].emoji).join(' ')}</div>`;
+    setze('k' + i, `<div class="name" style="color:${sp.farbe}">● ${sicher(sp.name)}</div>
       <div class="werte">🏆 ${sp.pokale} &nbsp; 🪙 ${sp.muenzen}</div>${extra}<div class="tasten">${sicher(tasten)}</div>`);
     el('k' + i).style.borderColor = Z.phase === 'brett' && i === Z.dran ? sp.farbe : 'transparent';
     el('k' + i).classList.toggle('dran', Z.phase === 'brett' && i === Z.dran);
@@ -1457,6 +1583,18 @@ function hudZeichnen() {
     else if (sp.art === 'online') hinweis = `🎲 ${sp.name} würfelt …`;
     else hinweis = `🎲 ${sp.name}: drücke ${STEUERUNG[sp.schema].aktionName} oder klicke zum Würfeln!`;
   } else if (Z.phase === 'brett' && Z.schritt === 'laufen') hinweis = `${Z.spieler[Z.dran].name} hüpft noch ${Z.rest} ${Z.rest === 1 ? 'Feld' : 'Felder'} …`;
+  // Auswahl-Menü (Weg, Laden, Gegenstand)
+  const A = Z.phase === 'brett' && Z.schritt === 'auswahl' ? Z.auswahl : null;
+  zeige('auswahl', !!A);
+  if (A) {
+    const sp = Z.spieler[Z.dran];
+    const ichDarf = rolle === 'gast' ? Z.dran === meinIndex : sp.art === 'lokal';
+    const taste = rolle === 'gast' || rolle === 'host' ? 'Leertaste' : sp.schema !== undefined ? STEUERUNG[sp.schema].aktionName : 'Leertaste';
+    setze('auswahl', `<div class="titel">${sicher(A.titel)}</div>` + A.optionen.map((o, k) =>
+      `<button class="opt${k === A.wahl ? ' an' : ''}" data-k="${k}">${sicher(o.text)}${o.info ? `<small>${sicher(o.info)}</small>` : ''}</button>`).join('')
+      + `<div class="klein">${ichDarf ? `⬆️⬇️ aussuchen · ${sicher(taste)} oder antippen = OK` : `🤔 ${sicher(sp.name)} überlegt …`}</div>`);
+    hinweis = '';
+  }
   setze('hinweis', sicher(hinweis));
   // Fenster
   zeige('infoBox', Z.phase === 'info');
@@ -1495,16 +1633,20 @@ function codeMachen() {
   return c;
 }
 function anAlle(d) { for (const v of gaeste.values()) if (v.open) v.send(d); }
-function lobbyNamen() {
-  const namen = ['Spieler 1'];
-  for (const v of gaeste.values()) namen.push('Spieler ' + (namen.length + 1));
-  return namen;
+function lobbyNamen() {   // alle Menschen im Raum, mit Namen und Farbe
+  const liste = [{ name: profile[0].name, farbe: profile[0].farbe }];
+  for (const v of gaeste.values()) liste.push({ name: (v.ich && v.ich.name) || '', farbe: v.ich && v.ich.farbe, peer: v.peer });
+  namenUndFarben(liste);
+  return liste;
 }
 function lobbyZeigen(namen, binHost) {
   zeige('menu', false); zeige('lobby', true);
   setze('lobbyCode', `Raum-Code: <b style="font-size:2rem;color:#ffcc00;letter-spacing:.3rem">${sicher(raumCode)}</b>` + (binHost ? '<br>Sag den Code deinen Freunden!' : ''));
   const zeilen = [];
-  for (let i = 0; i < 4; i++) zeilen.push(`${FARB_NAMEN[i]} ` + (namen[i] ? sicher(namen[i]) + (binHost && i === 0 ? ' (du)' : '') : '🤖 Bot (wenn keiner mehr kommt)'));
+  for (let i = 0; i < 4; i++) {
+    const n = namen[i];
+    zeilen.push(n && n.name ? `<span style="color:${FARBEN.includes(n.farbe) ? n.farbe : '#fff'}">● ${sicher(n.name)}</span>` + (binHost && i === 0 ? ' (du)' : '') : '🤖 Bot (wenn keiner mehr kommt)');
+  }
   setze('lobbyListe', zeilen.join('<br>'));
   zeige('lobbyStart', binHost); zeige('lobbyRunden', binHost);
   setze('lobbyText', binHost ? '' : '⏳ Warte, bis der Raum-Ersteller das Spiel startet …');
@@ -1520,21 +1662,27 @@ function raumErstellen() {
       if (Z) { v.send({ t: 'nein', grund: 'Das Spiel hat schon angefangen.' }); setTimeout(() => v.close(), 500); return; }
       if (gaeste.size >= 3) { v.send({ t: 'nein', grund: 'Der Raum ist schon voll (4 Spieler).' }); setTimeout(() => v.close(), 500); return; }
       gaeste.set(v.peer, v);
-      lobbyZeigen(lobbyNamen(), true);
-      anAlle({ t: 'lobby', namen: lobbyNamen() });
+      lobbyAktualisieren();
       ton(660, 0.1, 'triangle', 0.1);
     });
     v.on('data', d => {
-      if (!Z || !d || d.t !== 'e') return;
+      if (!d) return;
+      const zahl = (w, a, b) => Math.max(a, Math.min(b, Number(w) || 0));
+      if (d.t === 'ich' && !Z) {   // der Gast sagt, wie er heißt und welche Farbe er will
+        v.ich = { name: nameSaeubern(d.name), farbe: FARBEN.includes(d.farbe) ? d.farbe : null };
+        lobbyAktualisieren();
+        return;
+      }
+      if (!Z) return;
       const i = Z.spieler.findIndex(s => s.peer === v.peer);
       if (i < 0) return;
-      const zahl = (w, a, b) => Math.max(a, Math.min(b, Number(w) || 0));
-      eingaben[i] = { x: zahl(d.x, -1, 1), z: zahl(d.z, -1, 1), n: zahl(d.n, 0, 1e9) };
+      if (d.t === 'e') eingaben[i] = { x: zahl(d.x, -1, 1), z: zahl(d.z, -1, 1), n: zahl(d.n, 0, 1e9) };
+      else if (d.t === 'w' && Z.dran === i) klickWahl = { i, k: Math.floor(zahl(d.k, 0, 9)) };
     });
     v.on('close', () => {
       if (!gaeste.has(v.peer)) return;
       gaeste.delete(v.peer);
-      if (!Z) { lobbyZeigen(lobbyNamen(), true); anAlle({ t: 'lobby', namen: lobbyNamen() }); return; }
+      if (!Z) { lobbyAktualisieren(); return; }
       const sp = Z.spieler.find(s => s.peer === v.peer);
       if (sp) { sp.art = 'bot'; meldung(`👋 ${sp.name} ist weg – ein Bot spielt für ${sp.name} weiter.`, 3); }
     });
@@ -1545,10 +1693,15 @@ function raumErstellen() {
     if (rolle === 'lokal') netzInfo('😕 Das hat nicht geklappt (' + e.type + '). Versuch es nochmal!');
   });
 }
+function lobbyAktualisieren() {
+  const liste = lobbyNamen();
+  lobbyZeigen(liste, true);
+  anAlle({ t: 'lobby', namen: liste.map(({ name, farbe }) => ({ name, farbe })) });
+}
 function onlineStarten() {
-  const liste = [{ name: 'Spieler 1', art: 'lokal', schema: 'solo', pad: 0 }];
-  for (const v of gaeste.values()) liste.push({ name: 'Spieler ' + (liste.length + 1), art: 'online', peer: v.peer });
+  const liste = lobbyNamen().map((s, i) => i === 0 ? { ...s, art: 'lokal', schema: 'solo', pad: 0 } : { ...s, art: 'online' });
   while (liste.length < 4) liste.push({ name: BOT_NAMEN[liste.length], art: 'bot' });
+  namenUndFarben(liste);
   spielStarten(liste);
   liste.forEach((s, i) => { if (s.peer) gaeste.get(s.peer).send({ t: 'start', index: i }); });
 }
@@ -1561,6 +1714,7 @@ function raumBeitreten(code) {
   peer.on('open', () => {
     raumCode = code;
     hostVerbindung = peer.connect(peerName(code), { reliable: true });
+    hostVerbindung.on('open', () => hostVerbindung.send({ t: 'ich', name: profile[0].name, farbe: profile[0].farbe }));
     hostVerbindung.on('data', gastEmpfaengt);
     hostVerbindung.on('close', () => {
       if (rolle !== 'gast') return;
