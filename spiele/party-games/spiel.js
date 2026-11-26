@@ -26,6 +26,15 @@ const POKAL_PREIS = 10;               // so viel kostet ein Pokal 🏆
 const BLAU_MUENZEN = 3;               // blaues Feld: so viele Münzen bekommst du
 const ROT_MUENZEN = 3;                // rotes Feld: so viele Münzen verlierst du
 const MINISPIEL_PREIS = [10, 5, 3, 0];   // Münzen für Platz 1, 2, 3 und 4 im Minispiel
+// Bonus-Pokale am Ende 🏆 – wer bei "wert" die höchste Zahl hat, bekommt den Pokal.
+// st = Statistik: gehuepft (Felder), siege (Minispiele), gesammelt (Münzen), pech (rote Felder + Fallen), laden (Einkäufe)
+const BONUS_POKALE = [
+  { name: 'Lahmschnecke', emoji: '🐌', text: 'ist am wenigsten Felder gehüpft', wert: st => -st.gehuepft },
+  { name: 'Minispiel-Star', emoji: '⭐', text: 'hat die meisten Minispiele gewonnen', wert: st => st.siege },
+  { name: 'Münz-Sammler', emoji: '💰', text: 'hat die meisten Münzen eingesammelt', wert: st => st.gesammelt },
+  { name: 'Pechvogel', emoji: '☔', text: 'ist am öftesten auf rote Felder oder in Fallen getappt', wert: st => st.pech },
+  { name: 'Shopping-König', emoji: '🛍️', text: 'hat am meisten im Laden eingekauft', wert: st => st.laden },
+];
 const HUEPF_ZEIT = 0.3;               // so lange dauert ein Hüpfer von Feld zu Feld (Sekunden)
 const FARBEN = ['#ff4d4d', '#3d8bff', '#2ecc71', '#ffcc00', '#ff7ac8', '#a259ff', '#ff9a1f', '#22d3c5'];   // Farben zum Aussuchen
 const NAME_LAENGE = 12;               // so lang darf ein Name sein
@@ -312,7 +321,8 @@ function neuerZustand(liste, runden) {
     phase: 'brett', runde: 1, maxRunden: runden, dran: 0, schritt: 'start', uhr: 2, wurf: 0, wuerfe: [1, 1], rest: 0, hopT: 0, weiter: null,
     pokalFeld: 10 + zufallsZahl(14), meldung: '', meldungUhr: 0, effekte: [], effektNr: 0, spiel: null, ergebnis: null, beutel: [], sieger: null,
     ziel: 1, turbo: false, auswahl: null, fallen: [], teleZiel: -1, pokalNoch: false,
-    spieler: liste.map(s => ({ ...s, feld: 0, muenzen: START_MUENZEN, pokale: 0, tasche: [], x: feldPos[0].x, y: FELD_Y, z: feldPos[0].z, r: 0, weg: false })),
+    spieler: liste.map(s => ({ ...s, feld: 0, muenzen: START_MUENZEN, pokale: 0, tasche: [], mVorher: START_MUENZEN,
+      st: { gehuepft: 0, siege: 0, gesammelt: 0, pech: 0, laden: 0 }, x: feldPos[0].x, y: FELD_Y, z: feldPos[0].z, r: 0, weg: false })),
   };
 }
 function meldung(text, sekunden = 2) { Z.meldung = text; Z.meldungUhr = sekunden; }
@@ -439,7 +449,7 @@ function auswahlLogik(s) {
     if (wert === 'nix') meldung(`👋 ${s.name} kauft nichts. Tschüss!`, 1.5);
     else {
       const g = GEGENSTAENDE[wert];
-      s.muenzen -= g.preis; s.tasche.push(wert);
+      s.muenzen -= g.preis; s.tasche.push(wert); s.st.laden++;
       meldung(`🛒 ${s.name} kauft: ${g.emoji} ${g.name}!`, 2);
       effekt('kasse');
     }
@@ -465,7 +475,7 @@ function ankommen(s) {   // nach jedem Hüpfer: Falle? Pokal? Fertig?
   const nr = Z.fallen.findIndex(f => f.feld === s.feld && f.von !== Z.dran);
   if (nr >= 0) {
     const besitzer = Z.spieler[Z.fallen[nr].von], n = Math.min(FALLE_MUENZEN, s.muenzen);
-    s.muenzen -= n; besitzer.muenzen += n;
+    s.muenzen -= n; besitzer.muenzen += n; s.st.pech++;
     Z.fallen.splice(nr, 1);
     meldung(`🪤 Schnapp! ${s.name} tappt in die Falle von ${besitzer.name} und verliert ${n} Münzen!`, 2.4);
     effekt('schnapp');
@@ -526,7 +536,7 @@ function feldAktion(s) {
   const art = feldArt[s.feld];
   Z.schritt = 'feld'; Z.uhr = 1.8;
   if (art === 'blau' || art === 'start') { s.muenzen += BLAU_MUENZEN; meldung(`🔵 ${s.name} bekommt ${BLAU_MUENZEN} Münzen!`, 1.8); effekt('muenze'); }
-  else if (art === 'rot') { const n = Math.min(ROT_MUENZEN, s.muenzen); s.muenzen -= n; meldung(`🔴 Oh nein! ${s.name} verliert ${n} Münzen.`, 1.8); effekt('minus'); }
+  else if (art === 'rot') { const n = Math.min(ROT_MUENZEN, s.muenzen); s.muenzen -= n; s.st.pech++; meldung(`🔴 Oh nein! ${s.name} verliert ${n} Münzen.`, 1.8); effekt('minus'); }
   else if (art === 'ereignis') { meldung(EREIGNISSE[zufallsZahl(EREIGNISSE.length)](s), 2.8); effekt('ereignis'); Z.uhr = 2.8; }
   else if (art === 'klau') {
     const andere = Z.spieler.filter(x => x !== s && x.muenzen > 0).sort((a, b) => b.muenzen - a.muenzen);
@@ -582,7 +592,7 @@ function brettLogik(dt) {
   } else if (Z.schritt === 'laufen') {
     Z.hopT += dt / HUEPF_ZEIT;
     if (Z.hopT >= 1) {
-      s.feld = Z.ziel; Z.rest--; Z.hopT = 0;
+      s.feld = Z.ziel; Z.rest--; Z.hopT = 0; s.st.gehuepft++;
       effekt('hopp');
       ankommen(s);
     }
@@ -629,17 +639,46 @@ function spielEnde() {
   Z.ergebnis = werte.map((w, i) => {
     const platz = 1 + werte.filter(v => v > w).length, plus = MINISPIEL_PREIS[platz - 1];
     Z.spieler[i].muenzen += plus;
+    if (platz === 1) Z.spieler[i].st.siege++;
     return { platz, plus };
   });
   Z.phase = 'ergebnis'; Z.uhr = 5;
   effekt('sieg');
 }
 function nachErgebnis() {
-  if (Z.runde >= Z.maxRunden) { endeStarten(); return; }
+  if (Z.runde >= Z.maxRunden) { bonusStarten(); return; }
   Z.runde++;
   Z.phase = 'brett'; Z.dran = 0; Z.schritt = 'start'; Z.uhr = 2.2; Z.spiel = null;
   meldung(Z.runde === Z.maxRunden ? '🔥 Letzte Runde! 🔥' : `Runde ${Z.runde}! ${Z.spieler[0].name} fängt an.`, 2.2);
   brettPositionen();
+}
+// ----- Bonus-Pokale: einer nach dem anderen wird verliehen -----
+function bonusStarten() {
+  const liste = [];
+  for (const b of BONUS_POKALE) {
+    const werte = Z.spieler.map(s => b.wert(s.st)), best = Math.max(...werte);
+    const gewinner = werte.map((w, i) => i).filter(i => werte[i] === best);
+    if (gewinner.length === werte.length || best === 0) continue;   // alle gleich gut, oder keiner hat was geschafft
+    liste.push({ name: b.name, emoji: b.emoji, text: b.text, gewinner });
+  }
+  if (!liste.length) { endeStarten(); return; }
+  Z.bonus = { liste, nr: -1 };
+  Z.phase = 'bonus'; Z.uhr = 3; Z.schritt = 'bonus'; Z.spiel = null; Z.dran = 0;
+  meldung('🏆 Bevor es zu Ende ist: BONUS-POKALE! 🏆', 3);
+  effekt('minispiel');
+  brettPositionen();
+}
+function bonusLogik(dt) {
+  Z.uhr -= dt;
+  if (Z.uhr > 0) return;
+  Z.bonus.nr++;
+  const b = Z.bonus.liste[Z.bonus.nr];
+  if (!b) { endeStarten(); return; }
+  for (const i of b.gewinner) Z.spieler[i].pokale++;
+  Z.dran = b.gewinner[0];   // die Kamera fliegt zum Gewinner
+  Z.meldung = '';
+  Z.uhr = 4.5;
+  effekt('pokal');
 }
 function endeStarten() {
   const reihe = Z.spieler.map((s, i) => i).sort((a, b) => Z.spieler[b].pokale - Z.spieler[a].pokale || Z.spieler[b].muenzen - Z.spieler[a].muenzen);
@@ -1225,7 +1264,9 @@ function logik(dt) {
   } else if (Z.phase === 'ergebnis') {
     Z.uhr -= dt;
     if (Z.uhr <= 0) nachErgebnis();
-  }
+  } else if (Z.phase === 'bonus') bonusLogik(dt);
+  // Statistik: wie viele Münzen hat jeder insgesamt eingesammelt?
+  for (const s of Z.spieler) { if (s.muenzen > s.mVorher) s.st.gesammelt += s.muenzen - s.mVorher; s.mVorher = s.muenzen; }
 }
 
 // ========== Tasten und Gamepads ==========
@@ -1562,7 +1603,14 @@ function hudZeichnen() {
   if (Z.phase === 'brett') setze('oben', `🎲 Runde ${Z.runde} / ${Z.maxRunden}`);
   else if (M && Z.phase === 'spiel') setze('oben', `${M.emoji} ${M.name} · ⏱️ ${Math.max(0, Math.ceil(M.dauer - Z.spiel.zeit))}`);
   else if (M) setze('oben', `${M.emoji} ${M.name}`);
+  else if (Z.phase === 'bonus') setze('oben', '🏆 Bonus-Pokale');
   else setze('oben', '🎉 Ende!');
+  // Bonus-Pokal-Kasten
+  const B = Z.phase === 'bonus' && Z.bonus ? Z.bonus.liste[Z.bonus.nr] : null;
+  zeige('bonus', !!B);
+  if (B) setze('bonus', `<div class="emoji">${B.emoji}</div><div class="titel">${sicher(B.name)}</div>`
+    + `<div class="wer">${B.gewinner.map(i => farbName(Z.spieler[i])).join(' & ')}</div>`
+    + `<div>${sicher(B.text)}!</div><div class="plus">+1 🏆</div>`);
   Z.spieler.forEach((sp, i) => {
     let tasten = sp.art === 'bot' ? '🤖 Bot' : sp.art === 'online' ? '🌐 online' : '⌨️ ' + STEUERUNG[sp.schema].name;
     if (rolle === 'gast') tasten = i === meinIndex ? '⭐ Das bist du!' : sp.art === 'bot' ? '🤖 Bot' : '🌐 online';
@@ -1571,8 +1619,9 @@ function hudZeichnen() {
     if (!extra && sp.tasche && sp.tasche.length) extra = `<div class="tasche">🎒 ${sp.tasche.map(k => GEGENSTAENDE[k].emoji).join(' ')}</div>`;
     setze('k' + i, `<div class="name" style="color:${sp.farbe}">● ${sicher(sp.name)}</div>
       <div class="werte">🏆 ${sp.pokale} &nbsp; 🪙 ${sp.muenzen}</div>${extra}<div class="tasten">${sicher(tasten)}</div>`);
-    el('k' + i).style.borderColor = Z.phase === 'brett' && i === Z.dran ? sp.farbe : 'transparent';
-    el('k' + i).classList.toggle('dran', Z.phase === 'brett' && i === Z.dran);
+    const hervor = (Z.phase === 'brett' && i === Z.dran) || (Z.phase === 'bonus' && Z.bonus && Z.bonus.liste[Z.bonus.nr] && Z.bonus.liste[Z.bonus.nr].gewinner.includes(i));
+    el('k' + i).style.borderColor = hervor ? sp.farbe : 'transparent';
+    el('k' + i).classList.toggle('dran', hervor);
   });
   setze('meldung', sicher(Z.meldung));
   // Hinweis unten: wer muss was drücken?
