@@ -374,9 +374,9 @@ const EREIGNISSE = [
   () => { pokalUmziehen(); return '🏆 Huch! Der Pokal ist auf ein anderes Feld gesprungen!'; },
 ];
 function pokalUmziehen() {
-  let f;
-  do f = 1 + zufallsZahl(FELDER - 1); while (f === Z.pokalFeld || Z.spieler.some(sp => sp.feld === f));
-  Z.pokalFeld = f;
+  const frei = feldPos.map((p, f) => f).filter(f => feldArt[f] !== 'start' && f !== Z.pokalFeld
+    && !Z.spieler.some(sp => sp.feld === f) && !Z.fallen.some(x => x.feld === f));
+  Z.pokalFeld = frei[zufallsZahl(frei.length)];
 }
 function pokalPruefen(s) {
   if (s.muenzen >= POKAL_PREIS) {
@@ -388,43 +388,216 @@ function pokalPruefen(s) {
     meldung(`🏆 Der Pokal kostet ${POKAL_PREIS} Münzen – ${s.name} hat nur ${s.muenzen}. 😕`, 2.2);
     effekt('minus');
   }
-  Z.schritt = 'pokal'; Z.uhr = 2.4;
+  Z.schritt = 'zwischen'; Z.uhr = 2.4;
 }
+// Wie viele Hüpfer sind es von einem Feld zu einem anderen? (für die Bots)
+function abstand(von, ziel) {
+  const weit = new Map([[von, 0]]), liste = [von];
+  while (liste.length) {
+    const f = liste.shift();
+    if (f === ziel) return weit.get(f);
+    for (const n of feldNext[f]) if (!weit.has(n)) { weit.set(n, weit.get(f) + 1); liste.push(n); }
+  }
+  return 99;
+}
+
+// ----- Auswahl-Menü (Weg aussuchen, Laden, Gegenstand benutzen) -----
+const richtungVorher = [0, 0, 0, 0];
+let klickWahl = null;   // wenn jemand eine Auswahl angeklickt / angetippt hat: { i, k }
+function richtungVon(e) {
+  const x = +(e && e.x) || 0, z = +(e && e.z) || 0;
+  return z > 0.5 || x > 0.5 ? 1 : z < -0.5 || x < -0.5 ? -1 : 0;
+}
+function auswahlStarten(art, titel, optionen, botWahl) {
+  Z.auswahl = { art, titel, optionen, wahl: 0, botWahl: Math.max(0, botWahl) };
+  Z.schritt = 'auswahl'; Z.uhr = zufall(1.2, 2);
+  druckReset();
+  richtungVorher[Z.dran] = richtungVon(eingaben[Z.dran]);   // erst loslassen, dann geht's
+  klickWahl = null;
+}
+function auswahlLogik(s) {
+  const A = Z.auswahl, n = A.optionen.length;
+  let fertig = false;
+  if (s.art === 'bot') {
+    if (Z.uhr < 0.6) A.wahl = A.botWahl;
+    if (Z.uhr <= 0) fertig = true;
+  } else {
+    const r = richtungVon(eingaben[Z.dran]);
+    if (r && r !== richtungVorher[Z.dran]) { A.wahl = (A.wahl + r + n) % n; effekt('klick'); }
+    richtungVorher[Z.dran] = r;
+    if (klickWahl && klickWahl.i === Z.dran && klickWahl.k >= 0 && klickWahl.k < n) { A.wahl = klickWahl.k; fertig = true; }
+    if (gedrueckt(Z.dran)) fertig = true;
+  }
+  klickWahl = null;
+  if (!fertig) return;
+  Z.auswahl = null;
+  effekt('klick');
+  const wert = A.optionen[A.wahl].wert;
+  if (A.art === 'weg') { Z.ziel = feldNext[s.feld][wert]; Z.schritt = 'laufen'; Z.hopT = 0; }
+  else if (A.art === 'gegenstand') { if (wert === 'nix') wuerfelnStarten(); else gegenstandBenutzen(s, wert); }
+  else if (A.art === 'laden') {
+    if (wert === 'nix') meldung(`👋 ${s.name} kauft nichts. Tschüss!`, 1.5);
+    else {
+      const g = GEGENSTAENDE[wert];
+      s.muenzen -= g.preis; s.tasche.push(wert);
+      meldung(`🛒 ${s.name} kauft: ${g.emoji} ${g.name}!`, 2);
+      effekt('kasse');
+    }
+    Z.schritt = 'feld'; Z.uhr = 1.8;
+  }
+}
+
+// ----- Hüpfen -----
+function hopStarten(s) {   // ein Feld weiterhüpfen – an einer Abzweigung erst fragen, wohin
+  const wege = feldNext[s.feld];
+  if (wege.length > 1) {
+    let bot = zufallsZahl(2);
+    if (s.muenzen >= POKAL_PREIS - 3) bot = abstand(wege[1], Z.pokalFeld) < abstand(wege[0], Z.pokalFeld) ? 1 : 0;   // Bot will zum Pokal
+    auswahlStarten('weg', '🛤️ Welchen Weg nimmst du?', [
+      { text: '🛤️ Normaler Weg', info: 'Länger, aber sicherer' },
+      { text: '✂️ Abkürzung', info: 'Kürzer, aber gefährlich!' },
+    ].map((o, wert) => ({ ...o, wert })), bot);
+    return;
+  }
+  Z.ziel = wege[0]; Z.schritt = 'laufen'; Z.hopT = 0;
+}
+function ankommen(s) {   // nach jedem Hüpfer: Falle? Pokal? Fertig?
+  const nr = Z.fallen.findIndex(f => f.feld === s.feld && f.von !== Z.dran);
+  if (nr >= 0) {
+    const besitzer = Z.spieler[Z.fallen[nr].von], n = Math.min(FALLE_MUENZEN, s.muenzen);
+    s.muenzen -= n; besitzer.muenzen += n;
+    Z.fallen.splice(nr, 1);
+    meldung(`🪤 Schnapp! ${s.name} tappt in die Falle von ${besitzer.name} und verliert ${n} Münzen!`, 2.4);
+    effekt('schnapp');
+    Z.pokalNoch = s.feld === Z.pokalFeld;
+    Z.schritt = 'zwischen'; Z.uhr = 2.4;
+    return;
+  }
+  if (s.feld === Z.pokalFeld) pokalPruefen(s);
+  else if (Z.rest <= 0) feldAktion(s);
+  else hopStarten(s);
+}
+
+// ----- Würfeln und Gegenstände -----
+function wuerfelnStarten() { Z.schritt = 'wuerfeln'; Z.uhr = zufall(0.8, 1.6); druckReset(); }
+function zugStarten(s) {
+  Z.turbo = false;
+  effekt('dran');
+  if (!s.tasche.length) { wuerfelnStarten(); return; }
+  const optionen = [{ text: '🎲 Einfach würfeln', wert: 'nix' }];
+  for (const k of new Set(s.tasche)) {
+    const g = GEGENSTAENDE[k], anzahl = s.tasche.filter(x => x === k).length;
+    optionen.push({ text: `${g.emoji} ${g.name} benutzen` + (anzahl > 1 ? ` (${anzahl}×)` : ''), info: g.text, wert: k });
+  }
+  // Was macht ein Bot?
+  const hat = k => s.tasche.includes(k);
+  let bot = 'nix';
+  if (hat('ruf') && s.muenzen >= POKAL_PREIS) bot = 'ruf';
+  else if (hat('turbo') && s.muenzen >= POKAL_PREIS && abstand(s.feld, Z.pokalFeld) > 7) bot = 'turbo';
+  else if (hat('falle') && Math.random() < 0.5) bot = 'falle';
+  else if (hat('turbo') && Math.random() < 0.25) bot = 'turbo';
+  auswahlStarten('gegenstand', `🎒 ${s.name}: Gegenstand benutzen?`, optionen, optionen.findIndex(o => o.wert === bot));
+}
+function gegenstandBenutzen(s, k) {
+  if (k === 'falle' && (Z.fallen.some(f => f.feld === s.feld) || s.feld === Z.pokalFeld || feldArt[s.feld] === 'start')) {
+    meldung(`🪤 Hier geht keine Falle hin. ${s.name} behält sie.`, 1.8);
+    Z.schritt = 'benutzt'; Z.uhr = 1.8;
+    return;
+  }
+  s.tasche.splice(s.tasche.indexOf(k), 1);
+  if (k === 'turbo') { Z.turbo = true; meldung(`🎲 Turbo! ${s.name} würfelt mit 3 Würfeln!`, 1.6); effekt('turbo'); }
+  else if (k === 'falle') { Z.fallen.push({ feld: s.feld, von: Z.dran }); meldung(`🪤 ${s.name} versteckt eine Falle! Psst …`, 1.8); effekt('falleHin'); }
+  else if (k === 'ruf') {
+    // Der Pokal fliegt 3 bis 8 Felder vor den Spieler
+    let f = s.feld, n = 3 + zufallsZahl(6);
+    for (let i = 0; i < 30 && (n > 0 || f === s.feld || Z.spieler.some(x => x.feld === f) || Z.fallen.some(x => x.feld === f)); i++) {
+      const wege = feldNext[f];
+      f = wege[zufallsZahl(wege.length)]; n--;
+    }
+    Z.pokalFeld = f;
+    meldung(`📯 ${s.name} ruft den Pokal – und er kommt angeflogen!`, 2);
+    effekt('ruf');
+  }
+  Z.schritt = 'benutzt'; Z.uhr = 1.8;
+}
+
+// ----- Was passiert auf einem Feld? -----
 function feldAktion(s) {
   const art = feldArt[s.feld];
+  Z.schritt = 'feld'; Z.uhr = 1.8;
   if (art === 'blau' || art === 'start') { s.muenzen += BLAU_MUENZEN; meldung(`🔵 ${s.name} bekommt ${BLAU_MUENZEN} Münzen!`, 1.8); effekt('muenze'); }
   else if (art === 'rot') { const n = Math.min(ROT_MUENZEN, s.muenzen); s.muenzen -= n; meldung(`🔴 Oh nein! ${s.name} verliert ${n} Münzen.`, 1.8); effekt('minus'); }
-  else { meldung(EREIGNISSE[zufallsZahl(EREIGNISSE.length)](s), 2.8); effekt('ereignis'); }
-  Z.schritt = 'feld'; Z.uhr = art === 'ereignis' ? 2.8 : 1.8;
+  else if (art === 'ereignis') { meldung(EREIGNISSE[zufallsZahl(EREIGNISSE.length)](s), 2.8); effekt('ereignis'); Z.uhr = 2.8; }
+  else if (art === 'klau') {
+    const andere = Z.spieler.filter(x => x !== s && x.muenzen > 0).sort((a, b) => b.muenzen - a.muenzen);
+    if (!andere.length) meldung('👻 Buuuh! Der Geist findet keine Münzen …', 2.4);
+    else {
+      const opfer = andere[0], n = Math.min(KLAU_MUENZEN, opfer.muenzen);
+      opfer.muenzen -= n; s.muenzen += n;
+      meldung(`👻 Buuuh! Der Geist klaut ${n} Münzen von ${opfer.name} für ${s.name}!`, 2.6);
+    }
+    effekt('geist'); Z.uhr = 2.6;
+  } else if (art === 'teleport') {
+    let f;
+    do f = zufallsZahl(feldPos.length); while (f === s.feld);
+    Z.teleZiel = f; Z.schritt = 'teleport'; Z.uhr = 1.2;
+    meldung(`🌀 Teleporter! ${s.name} wird weggebeamt!`, 2);
+    effekt('teleport');
+  } else if (art === 'laden') {
+    const leisten = Object.entries(GEGENSTAENDE).filter(([, g]) => g.preis <= s.muenzen);
+    if (s.tasche.length >= TASCHE_PLATZ) meldung(`🛒 Laden! Aber die Tasche von ${s.name} ist schon voll. 🎒`, 2.2);
+    else if (!leisten.length) meldung(`🛒 Laden! Aber ${s.name} hat zu wenig Münzen. 😕`, 2.2);
+    else {
+      const optionen = leisten.map(([k, g]) => ({ text: `${g.emoji} ${g.name} – ${g.preis} 🪙`, info: g.text, wert: k }));
+      optionen.push({ text: '👋 Nichts kaufen', wert: 'nix' });
+      let bot = 'nix';
+      if (s.muenzen >= GEGENSTAENDE.ruf.preis + POKAL_PREIS && leisten.some(([k]) => k === 'ruf')) bot = 'ruf';
+      else if (Math.random() < 0.7) { const g = leisten.filter(([, g]) => s.muenzen - g.preis >= 3); if (g.length) bot = g[zufallsZahl(g.length)][0]; }
+      auswahlStarten('laden', `🛒 Willkommen im Laden, ${s.name}!`, optionen, optionen.findIndex(o => o.wert === bot));
+      effekt('kasse');
+    }
+    Z.uhr = Z.schritt === 'auswahl' ? Z.uhr : 2.2;
+  }
 }
 function brettLogik(dt) {
   const s = Z.spieler[Z.dran];
   Z.uhr -= dt;
   if (Z.schritt === 'start') {
-    if (Z.uhr <= 0) { Z.schritt = 'wuerfeln'; Z.uhr = zufall(0.8, 1.6); druckReset(); effekt('dran'); }
+    if (Z.uhr <= 0) zugStarten(s);
+  } else if (Z.schritt === 'auswahl') {
+    auswahlLogik(s);
+  } else if (Z.schritt === 'benutzt') {
+    if (Z.uhr <= 0) wuerfelnStarten();
   } else if (Z.schritt === 'wuerfeln') {
     if (s.art === 'bot' ? Z.uhr <= 0 : gedrueckt(Z.dran)) {
-      Z.wuerfe = [1 + zufallsZahl(6), 1 + zufallsZahl(6)];   // zwei Würfel!
-      Z.wurf = Z.wuerfe[0] + Z.wuerfe[1]; Z.rest = Z.wurf;
+      Z.wuerfe = [];
+      for (let i = 0; i < (Z.turbo ? 3 : 2); i++) Z.wuerfe.push(1 + zufallsZahl(6));
+      Z.wurf = Z.wuerfe.reduce((a, b) => a + b, 0); Z.rest = Z.wurf;
       Z.schritt = 'zeigen'; Z.uhr = 1;
-      meldung(`🎲 ${Z.wuerfe[0]} + ${Z.wuerfe[1]} = ${Z.wurf}!`, 1.2);
+      meldung(`🎲 ${Z.wuerfe.join(' + ')} = ${Z.wurf}!`, 1.2);
       effekt('wuerfel');
     }
   } else if (Z.schritt === 'zeigen') {
-    if (Z.uhr <= 0) { Z.schritt = 'laufen'; Z.hopT = 0; }
+    if (Z.uhr <= 0) hopStarten(s);
   } else if (Z.schritt === 'laufen') {
     Z.hopT += dt / HUEPF_ZEIT;
     if (Z.hopT >= 1) {
-      s.feld = (s.feld + 1) % FELDER; Z.rest--; Z.hopT = 0;
+      s.feld = Z.ziel; Z.rest--; Z.hopT = 0;
       effekt('hopp');
-      if (s.feld === Z.pokalFeld) pokalPruefen(s);
-      else if (Z.rest <= 0) feldAktion(s);
+      ankommen(s);
     }
-  } else if (Z.schritt === 'pokal') {
-    if (Z.uhr <= 0) { if (Z.rest > 0) { Z.schritt = 'laufen'; Z.hopT = 0; } else feldAktion(s); }
+  } else if (Z.schritt === 'zwischen') {   // kurze Pause (Pokal, Falle), dann geht's weiter
+    if (Z.uhr <= 0) {
+      if (Z.pokalNoch) { Z.pokalNoch = false; pokalPruefen(s); }
+      else if (Z.rest > 0) hopStarten(s);
+      else feldAktion(s);
+    }
+  } else if (Z.schritt === 'teleport') {
+    if (Z.uhr <= 0.6 && Z.teleZiel >= 0) { s.feld = Z.teleZiel; Z.teleZiel = -1; }
+    if (Z.uhr <= 0) naechsterSpieler();
   } else if (Z.schritt === 'feld') {
     if (Z.uhr <= 0) {
-      if (Z.weiter === 'laufen') { Z.weiter = null; Z.schritt = 'laufen'; Z.hopT = 0; }
+      if (Z.weiter === 'laufen') { Z.weiter = null; hopStarten(s); }
       else naechsterSpieler();
     }
   }
@@ -708,7 +881,7 @@ const MINISPIELE = {
     },
     bauen(g) {
       teil(new THREE.BoxGeometry(12, 1, 28), '#6cc24a', 0, -0.5, -1, g);
-      FARBEN.forEach((f, i) => teil(new THREE.BoxGeometry(1.6, 0.04, 22), mat(f), -3 + 2 * i, 0.02, -0.5, g).material.color.multiplyScalar(0.85));
+      Z.spieler.forEach((sp, i) => teil(new THREE.BoxGeometry(1.6, 0.04, 22), mat(sp.farbe), -3 + 2 * i, 0.02, -0.5, g).material.color.multiplyScalar(0.85));
       const ziel = malen(128, 32, (c, b, h) => { for (let i = 0; i < 16; i++) for (let j = 0; j < 4; j++) { c.fillStyle = (i + j) % 2 ? '#fff' : '#111'; c.fillRect(i * b / 16, j * h / 4, b / 16, h / 4); } });
       teil(new THREE.BoxGeometry(8, 0.06, 1), new THREE.MeshLambertMaterial({ map: ziel }), 0, 0.05, -10.3, g);
       teil(new THREE.BoxGeometry(8, 0.06, 0.3), '#ffffff', 0, 0.05, 10.6, g);
@@ -782,7 +955,225 @@ const MINISPIELE = {
     },
     zeichnen(s, bild) { bild.balken.rotation.y = s.w; },
   },
+
+  // ---------- 🔥 Heißer Boden ----------
+  boden: {
+    name: 'Heißer Boden', emoji: '🔥', dauer: 45,
+    text: 'Die Platten fangen an zu wackeln und fallen dann in die Lava! Lauf schnell auf eine feste Platte. Wer runterfällt, ist raus. Wer am längsten oben bleibt, gewinnt!',
+    steuerung: 'Laufen 🏃',
+    kamera: [[0, 14, 10.5], [0, 0, 0.6]],
+    start(s) {
+      s.k = new Array(BODEN_N * BODEN_N).fill(0);   // jede Platte: 0 = fest, mehr als 0 = wackelt (noch so lange), −1 = weg
+      s.takt = 1.5; s.uhr = 2; s.raus = 0;
+      s.p = Z.spieler.map((sp, i) => {
+        const [x, z] = [[-3.4, -3.4], [3.4, -3.4], [-3.4, 3.4], [3.4, 3.4]][i];
+        Object.assign(sp, { x, y: 0, z, r: 0, weg: false });
+        return { raus: false, platz: 0, vy: 0 };
+      });
+    },
+    update(s, dt) {
+      s.uhr -= dt;
+      if (s.uhr <= 0) {   // neue Platten fangen an zu wackeln – immer schneller
+        s.takt = Math.max(0.35, s.takt * 0.93); s.uhr = s.takt;
+        const feste = [];
+        s.k.forEach((k, i) => { if (k === 0) feste.push(i); });
+        const unterSpielern = feste.filter(i => Z.spieler.some((sp, j) => !s.p[j].raus && bodenPlatte(sp) === i));
+        const liste = unterSpielern.length && Math.random() < 0.35 ? unterSpielern : feste;
+        for (let n = 0; n < (s.zeit > 15 ? 2 : 1) && liste.length; n++) s.k[liste.splice(zufallsZahl(liste.length), 1)[0]] = 1.3;
+        effekt('knirsch');
+      }
+      s.k.forEach((k, i) => { if (k > 0) s.k[i] = k - dt > 0 ? k - dt : -1; });
+      Z.spieler.forEach((sp, i) => {
+        const p = s.p[i];
+        if (p.raus) { p.vy -= 20 * dt; sp.y += p.vy * dt; if (sp.y < -8) sp.weg = true; return; }
+        laufen(sp, eingaben[i], 5.5, dt, BODEN_N * BODEN_P / 2 - 0.2);
+      });
+      auseinander(s.p, 0.9);
+      Z.spieler.forEach((sp, i) => {
+        const p = s.p[i];
+        if (!p.raus && s.k[bodenPlatte(sp)] === -1) { p.raus = true; p.platz = ++s.raus; effekt('fall'); }
+      });
+      return s.raus >= 3;
+    },
+    rangliste: s => s.p.map(p => p.raus ? p.platz : 99),
+    anzeige: (s, i) => s.p[i].raus ? '🔥 runtergefallen' : '🦶 noch oben',
+    bot(s, i, e, dt) {
+      const sp = Z.spieler[i];
+      if (s.p[i].raus) return;
+      if (s.k[e.ziel] !== 0 && e.warte === undefined) e.warte = zufall(0.05, 0.7);   // Bots merken es nicht sofort
+      if (e.warte !== undefined) { e.warte -= dt; if (e.warte <= 0) { e.warte = undefined; e.uhr = 0; } }
+      e.uhr = (e.uhr ?? 0) - dt;
+      if (e.uhr <= 0 && e.warte === undefined) {
+        e.uhr = zufall(0.5, 1);
+        let wert = -99;
+        s.k.forEach((k, j) => {
+          if (k !== 0) return;
+          const m = plattenMitte(j), d = Math.hypot(m.x - sp.x, m.z - sp.z);
+          const x = j % BODEN_N, z = Math.floor(j / BODEN_N);
+          let nachbarn = 0;
+          for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (x + a >= 0 && x + a < BODEN_N && z + b >= 0 && z + b < BODEN_N && s.k[(z + b) * BODEN_N + x + a] === 0) nachbarn++;
+          const w = nachbarn * 0.8 - d * 0.6 + Math.random() * 1.2;
+          if (w > wert) { wert = w; e.ziel = j; }
+        });
+      }
+      if (e.ziel === undefined) { e.x = e.z = 0; return; }
+      const m = plattenMitte(e.ziel), dx = m.x - sp.x, dz = m.z - sp.z, d = Math.hypot(dx, dz);
+      e.x = d > 0.15 ? dx / d : 0; e.z = d > 0.15 ? dz / d : 0;
+    },
+    bauen(g) {
+      const lava = teil(new THREE.CircleGeometry(16, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ff5a1f' }), 0, -0.4, 0, g);
+      lava.castShadow = false;
+      const bild = { platten: [], fall: [], lava };
+      for (let i = 0; i < BODEN_N * BODEN_N; i++) {
+        const m = plattenMitte(i), farbe = (i + Math.floor(i / BODEN_N)) % 2 ? '#ffd24d' : '#ffe38a';
+        const p = teil(new THREE.BoxGeometry(BODEN_P - 0.12, 0.5, BODEN_P - 0.12), farbe, m.x, -0.25, m.z, g);
+        p.userData.farbe = new THREE.Color(farbe);
+        bild.platten.push(p); bild.fall.push(0);
+      }
+      return bild;
+    },
+    zeichnen(s, bild, dt) {
+      bild.lava.material.color.setHSL(0.04 + Math.sin(uhrzeit * 3) * 0.015, 1, 0.55);
+      bild.platten.forEach((p, i) => {
+        const k = s.k[i], m = plattenMitte(i);
+        if (k === -1) { bild.fall[i] += dt; p.position.y = -0.25 - bild.fall[i] ** 2 * 6; p.visible = p.position.y > -6; return; }
+        bild.fall[i] = 0; p.visible = true; p.position.y = -0.25;
+        const wackel = k > 0 ? Math.sin(uhrzeit * 45) * 0.07 * (1.5 - k) : 0;
+        p.position.x = m.x + wackel; p.position.z = m.z;
+        p.material.color.copy(p.userData.farbe);
+        if (k > 0) p.material.color.lerp(tmpFarbe.set('#ff2a00'), Math.min(1, 1.3 - k + 0.3));
+      });
+    },
+  },
+
+  // ---------- 💣 Bomben-Pass ----------
+  bombe: {
+    name: 'Bomben-Pass', emoji: '💣', dauer: 75,
+    text: 'Eine Bombe tickt! Wer sie hat, muss schnell jemand anderen berühren, um sie loszuwerden. Wer die Bombe beim Knall hat, fliegt raus!',
+    steuerung: 'Laufen 🏃 (mit der Bombe bist du ein bisschen schneller!)',
+    kamera: [[0, 14, 10.5], [0, 0, 0.6]],
+    start(s) {
+      s.raus = 0; s.halter = -1; s.pause = 1.5; s.zuender = 0; s.sperre = 0; s.knall = null; s.tick = 0;
+      s.p = Z.spieler.map((sp, i) => {
+        const w = i * Math.PI / 2 + Math.PI / 4;
+        Object.assign(sp, { x: Math.cos(w) * 4, y: 0, z: Math.sin(w) * 4, weg: false });
+        sp.r = Math.atan2(-sp.x, -sp.z);
+        return { raus: false, platz: 0, vx: 0, vy: 0, vz: 0 };
+      });
+    },
+    update(s, dt) {
+      if (s.halter < 0) {   // kurze Pause, dann bekommt jemand die Bombe
+        s.pause -= dt;
+        if (s.pause <= 0) {
+          const drin = s.p.map((p, i) => i).filter(i => !s.p[i].raus);
+          s.halter = drin[zufallsZahl(drin.length)]; s.zuender = zufall(7, 12); s.sperre = 1;
+          effekt('zisch');
+        }
+      } else {
+        s.zuender -= dt; s.sperre -= dt; s.tick -= dt;
+        if (s.tick <= 0) { s.tick = Math.max(0.12, Math.min(0.6, s.zuender / 8)); effekt('tick'); }
+        if (s.zuender <= 0) {   // BUMM!
+          const sp = Z.spieler[s.halter], p = s.p[s.halter], d = Math.hypot(sp.x, sp.z) || 1;
+          p.raus = true; p.platz = ++s.raus; p.vy = 10; p.vx = sp.x / d * 5; p.vz = sp.z / d * 5;
+          s.knall = [sp.x, sp.z, s.zeit];
+          s.halter = -1; s.pause = 2;
+          effekt('boom');
+        }
+      }
+      Z.spieler.forEach((sp, i) => {
+        const p = s.p[i];
+        if (p.raus) { p.vy -= 20 * dt; sp.x += p.vx * dt; sp.z += p.vz * dt; sp.y += p.vy * dt; sp.r += dt * 12; if (sp.y < -6) sp.weg = true; return; }
+        laufen(sp, eingaben[i], i === s.halter ? 6.3 : 5.6, dt, 99);
+        const d = Math.hypot(sp.x, sp.z);
+        if (d > BOMBE_RAND) { sp.x *= BOMBE_RAND / d; sp.z *= BOMBE_RAND / d; }
+      });
+      auseinander(s.p, 0.9);
+      // Bombe weitergeben, wenn man jemanden berührt
+      if (s.halter >= 0 && s.sperre <= 0) {
+        const h = Z.spieler[s.halter];
+        for (let j = 0; j < 4; j++) {
+          if (j === s.halter || s.p[j].raus) continue;
+          if (Math.hypot(Z.spieler[j].x - h.x, Z.spieler[j].z - h.z) < 1.05) { s.halter = j; s.sperre = 0.7; effekt('pass'); break; }
+        }
+      }
+      return s.raus >= 3;
+    },
+    rangliste: s => s.p.map(p => p.raus ? p.platz : 99),
+    anzeige: (s, i) => s.p[i].raus ? '💥 raus' : s.halter === i ? '💣 HAT DIE BOMBE!' : '🏃 noch dabei',
+    bot(s, i, e, dt) {
+      const sp = Z.spieler[i];
+      if (s.p[i].raus) return;
+      e.wackel = (e.wackel ?? zufall(0, 6)) + dt * 1.5;
+      let dx = 0, dz = 0;
+      if (s.halter === i) {   // ich hab die Bombe: den Nächsten jagen!
+        let weite = 99;
+        Z.spieler.forEach((o, j) => {
+          if (j === i || s.p[j].raus) return;
+          const d = Math.hypot(o.x - sp.x, o.z - sp.z);
+          if (d < weite) { weite = d; dx = (o.x - sp.x) / d; dz = (o.z - sp.z) / d; }
+        });
+      } else if (s.halter >= 0) {   // weglaufen vom Bomben-Halter
+        const h = Z.spieler[s.halter], d = Math.hypot(sp.x - h.x, sp.z - h.z) || 1;
+        if (d < 5) { dx = (sp.x - h.x) / d; dz = (sp.z - h.z) / d; }
+        const mitte = Math.hypot(sp.x, sp.z) / BOMBE_RAND;   // nicht in die Ecke drängen lassen
+        dx -= sp.x / BOMBE_RAND * mitte * 1.6; dz -= sp.z / BOMBE_RAND * mitte * 1.6;
+      }
+      dx += Math.sin(e.wackel) * 0.45; dz += Math.cos(e.wackel * 1.3) * 0.45;
+      const l = Math.hypot(dx, dz);
+      e.x = l > 0.2 ? dx / l : 0; e.z = l > 0.2 ? dz / l : 0;
+    },
+    bauen(g) {
+      teil(new THREE.CylinderGeometry(BOMBE_RAND + 0.5, BOMBE_RAND + 0.2, 1, 48), '#ff9a1f', 0, -0.5, 0, g);
+      const boden = malen(256, 256, (c, s) => {
+        for (let i = 0; i < 12; i++) { c.fillStyle = i % 2 ? '#ffe38a' : '#ffd27a'; c.beginPath(); c.moveTo(s / 2, s / 2); c.arc(s / 2, s / 2, s / 2, i / 12 * Math.PI * 2, (i + 1) / 12 * Math.PI * 2); c.fill(); }
+      });
+      teil(new THREE.CircleGeometry(BOMBE_RAND + 0.4, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: boden }), 0, 0.01, 0, g).castShadow = false;
+      teil(new THREE.TorusGeometry(BOMBE_RAND + 0.5, 0.2, 8, 48).rotateX(Math.PI / 2), '#e0398b', 0, 0.1, 0, g);
+      const bombe = new THREE.Group();
+      teil(new THREE.SphereGeometry(0.38, 16, 12), glanz('#222222'), 0, 0, 0, bombe);
+      teil(new THREE.CylinderGeometry(0.04, 0.04, 0.3), '#c9a26b', 0, 0.45, 0, bombe);
+      const funke = teil(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffcc00' }), 0, 0.62, 0, bombe);
+      g.add(bombe);
+      const knall = teil(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshBasicMaterial({ color: '#ff9a1f', transparent: true, opacity: 0.7 }), 0, 0, 0, g);
+      knall.visible = false;
+      return { bombe, funke, knall };
+    },
+    zeichnen(s, bild) {
+      const h = s.halter >= 0 ? figuren[s.halter] : null;
+      bild.bombe.visible = !!h;
+      if (h) {
+        bild.bombe.position.set(h.position.x, h.position.y + 1.75, h.position.z);
+        bild.bombe.scale.setScalar(1 + Math.max(0, Math.sin(uhrzeit * (6 + 30 / Math.max(1, s.zuender)))) * 0.15);
+        bild.funke.scale.setScalar(0.6 + Math.random() * 0.8);
+      }
+      const k = s.knall, alter = k ? s.zeit - k[2] : 9;
+      bild.knall.visible = alter < 0.5;
+      if (k && alter < 0.5) { bild.knall.position.set(k[0], 0.8, k[1]); bild.knall.scale.setScalar(0.5 + alter * 6); }
+    },
+  },
 };
+
+// Helfer für die Minispiele
+const BODEN_N = 7, BODEN_P = 1.7;   // Heißer Boden: 7 × 7 Platten, jede 1,7 groß
+const BOMBE_RAND = 6.3;             // Bomben-Pass: so groß ist die Arena
+const tmpFarbe = new THREE.Color();
+function bodenPlatte(sp) {   // auf welcher Platte steht jemand?
+  const h = BODEN_N * BODEN_P / 2, eng = v => Math.max(0, Math.min(BODEN_N - 1, Math.floor((v + h) / BODEN_P)));
+  return eng(sp.z) * BODEN_N + eng(sp.x);
+}
+function plattenMitte(i) {
+  const h = BODEN_N * BODEN_P / 2;
+  return { x: (i % BODEN_N + 0.5) * BODEN_P - h, z: (Math.floor(i / BODEN_N) + 0.5) * BODEN_P - h };
+}
+function auseinander(p, abstand) {   // Figuren schieben sich gegenseitig weg, damit sie nicht ineinander stehen
+  for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) {
+    if (p[a].raus || p[b].raus) continue;
+    const A = Z.spieler[a], B = Z.spieler[b], dx = B.x - A.x, dz = B.z - A.z, d = Math.hypot(dx, dz);
+    if (d >= abstand || d < 0.001) continue;
+    const u = (abstand - d) / 2 / d;
+    A.x -= dx * u; A.z -= dz * u; B.x += dx * u; B.z += dz * u;
+  }
+}
 
 // Das Ende: Siegertreppchen
 function endeBauen(g) {
