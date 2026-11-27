@@ -9,8 +9,9 @@ const LAUF_TEMPO = 6, RENN_TEMPO = 10, SPRUNG_KRAFT = 8.5;
 const BAND_TEMPO = 1.5;      // Felder pro Sekunde auf dem Förderband
 const BOHR_ZEIT = 2.2;       // Sekunden pro Erz
 const SCHMELZ_ZEIT = 2;      // Sekunden pro Barren
-const ERSTE_WELLE = 75;      // Sekunden bis die ersten Roboter kommen
-const WELLEN_PAUSE = 50;     // Sekunden zwischen den Wellen
+const ERSTE_WELLE = 180;     // Sekunden bis die ersten Roboter kommen (3 Minuten)
+const WELLEN_PAUSE = 150;    // Sekunden zwischen den Überfällen (2,5 Minuten)
+const HUB_NAEHE = 30;        // so nah (Meter) musst du am HUB sein, damit ein Überfall losgeht
 const BALL_TEMPO = 30;
 const SPIELER_LEBEN = 100;
 const START_LAGER = { eisen: 30, kupfer: 10 };
@@ -1728,10 +1729,14 @@ function bowling() {
   }
 }
 
+const amHub = () => Math.hypot(spieler.pos.x, spieler.pos.z) < HUB_NAEHE;
+
 function wellenUpdate(dt) {
   if (!stand.gegnerAn) return;
   stand.welleT -= dt;
   if (stand.welleT > 0) return;
+  stand.welleT = 0;
+  if (!amHub()) return;   // Roboter greifen erst an, wenn du beim HUB bist
   stand.welle++;
   stand.welleT = WELLEN_PAUSE;
   stand.welleWinkel = Math.random() * Math.PI * 2;
@@ -2094,7 +2099,11 @@ function hudUpdate() {
   setHTML(el.bossLeiste, gegner.filter(g => g.boss && !g.tot).slice(0, 4).map(g =>
     `<div class="boss"><span>${g.info.name}</span> <small>${g.info.info}</small><div class="bossBalken"><div style="width:${Math.max(0, g.hp / g.maxHp * 100)}%"></div></div></div>`).join(''));
   setHTML(el.welle, stand.gegnerAn
-    ? `🤖 Welle ${stand.welle + 1} in <b>${Math.ceil(stand.welleT)} s</b>${lebend ? `<br>Roboter unterwegs: <b>${lebend}</b>` : ''}`
+    ? (stand.welleT > 0
+        ? `🤖 Überfall ${stand.welle + 1} in <b>${Math.floor(Math.ceil(stand.welleT) / 60)}:${String(Math.ceil(stand.welleT) % 60).padStart(2, '0')}</b>`
+        : `⚠️ <b>Überfall ${stand.welle + 1} wartet!</b><br>Er kommt, sobald du am HUB bist.`)
+      + (amHub() ? '' : '<br><small>🌲 Du bist unterwegs – hier draußen kommt kein Überfall</small>')
+      + (lebend ? `<br>Roboter unterwegs: <b>${lebend}</b>` : '')
     : '🕊️ Friedlich (keine Roboter)');
   WERKZEUGE.forEach((w, k) => {
     const s = slots[k];
