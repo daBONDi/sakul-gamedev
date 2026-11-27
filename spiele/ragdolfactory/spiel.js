@@ -46,6 +46,7 @@ const MEILENSTEINE = [
   { id: 'robo100',   text: 'Haue 100 Roboter kaputt',          zahl: () => stand.kills, ziel: 100, belohnung: '👊 MEGA-FAUST: F haut jetzt alles weg!' },
   { id: 'riese',     text: 'Besiege den 👑 RIESEN-ROBO',       zahl: () => stand.rieseKills || 0, ziel: 1, belohnung: '🚀🚀 Raketenwerfer schießt 2 Raketen!' },
   { id: 'eisen500',  text: 'Liefere 500 Eisenbarren zum HUB',  zahl: () => stand.geliefert.eisen, ziel: 500, belohnung: '🌟 Du bist eine RAGDOL-LEGENDE! +200 Eisen +200 Kupfer', bonus: { eisen: 200, kupfer: 200 } },
+  { id: 'kaiser',    text: 'Besiege den 💀 ROBO-KAISER (Überfall 25)', zahl: () => stand.kaiserKills || 0, ziel: 1, belohnung: '🛡️ Goldene Rüstung: Du bekommst nur noch HALBEN Schaden!' },
 ];
 const ALTE_MEILENSTEINE = ['eisen10', 'kupfer10', 'robo10', 'eisen100', 'boss3'];  // Reihenfolge von früher (für alte Spielstände)
 const hat = id => stand.erledigt.includes(id);
@@ -937,6 +938,7 @@ const AUSSEHEN = {
   huepfer: { anzug: 0x2fa84f, hose: 0x1d6b33, haut: 0x3c8f50, helm: 0xffee33, kopf: 'roboter', extra: ['duesen'] },
   blitz:   { anzug: 0x1e7fd8, hose: 0x174f8a, haut: 0x2a6bb0, helm: 0x66ffff, kopf: 'roboter', extra: ['blitz'] },
   riese:   { anzug: 0x8a1c1c, hose: 0x4a0e0e, haut: 0x6a1515, helm: 0xffaa00, kopf: 'roboter', extra: ['stacheln', 'krone'] },
+  kaiser:  { anzug: 0x1c1c24, hose: 0x0e0e14, haut: 0x2c2c38, helm: 0xff1a1a, kopf: 'roboter', extra: ['stacheln', 'krone', 'kanone', 'duesen', 'hoerner'] },
 };
 const alsText = c => '#' + new THREE.Color(c).getHexString();
 function figurMaterialien(a) { // Materialien nur einmal pro Aussehen bauen
@@ -1373,6 +1375,7 @@ function spielerUpdate(dt) {
 function spielerGetroffen(von, schaden, staerke) {
   const f = spieler;
   if (f.modus !== 'steht' || f.unverwundbar > 0 || f.hp <= 0) return;
+  if (hat('kaiser')) schaden *= 0.5;   // Goldene Rüstung
   let dx = f.pos.x - von.x, dz = f.pos.z - von.z; const d = Math.hypot(dx, dz) || 1;
   f.hp = Math.max(0, f.hp - schaden);
   f.umfallen(dx / d * staerke, 6 + staerke * 0.3, dz / d * staerke);
@@ -1684,12 +1687,31 @@ function schlagen() {
 // beute = [Eisen, Kupfer], die du bekommst, wenn du ihn kaputt machst
 const GEGNER_ARTEN = {
   roboter: { name: 'Roboter',          aus: 'roboter', s: 1,   hp: 5,  tempo: 4.4, schaden: 18, staerke: 13, beute: [1, 1] },
-  brecher: { name: '💪 Brecher',        aus: 'boss',    s: 1.7, hp: 30, tempo: 3.4, schaden: 35, staerke: 24, beute: [8, 5],  boss: true, gebSchaden: 3, info: 'haut extrem fest zu' },
-  kanone:  { name: '💣 Kanonen-König',  aus: 'kanone',  s: 1.5, hp: 22, tempo: 2.8, schaden: 22, staerke: 16, beute: [8, 6],  boss: true, fern: true, info: 'schießt Feuerbälle' },
-  huepfer: { name: '🦘 Hüpf-Hammer',    aus: 'huepfer', s: 1.4, hp: 20, tempo: 3.8, schaden: 25, staerke: 18, beute: [7, 7],  boss: true, springt: true, info: 'springt dich an – Schockwelle!' },
-  blitz:   { name: '⚡ Blitz-Bot',       aus: 'blitz',   s: 1.3, hp: 16, tempo: 5.2, schaden: 22, staerke: 22, beute: [6, 8],  boss: true, rennt: true, info: 'rast blitzschnell auf dich zu' },
-  riese:   { name: '👑 RIESEN-ROBO',    aus: 'riese',   s: 2.6, hp: 90, tempo: 2.4, schaden: 40, staerke: 30, beute: [30, 20], boss: true, stampft: true, helfer: true, gebSchaden: 5, info: 'stampft und ruft Helfer' },
+  brecher: { name: '💪 Brecher',        aus: 'boss',    s: 1.8, hp: 60,  tempo: 3.8, schaden: 40, staerke: 26, beute: [12, 8],  boss: true, schlagWelle: true, info: 'jeder Schlag macht eine Schockwelle' },
+  kanone:  { name: '💣 Kanonen-König',  aus: 'kanone',  s: 1.6, hp: 45,  tempo: 3.0, schaden: 25, staerke: 18, beute: [12, 10], boss: true, fern: true, abstand: true, info: 'schießt Feuerbälle' },
+  huepfer: { name: '🦘 Hüpf-Hammer',    aus: 'huepfer', s: 1.5, hp: 40,  tempo: 4.2, schaden: 30, staerke: 22, beute: [10, 10], boss: true, springt: true, info: 'springt dich an – Schockwelle!' },
+  blitz:   { name: '⚡ Blitz-Bot',       aus: 'blitz',   s: 1.4, hp: 35,  tempo: 6.0, schaden: 28, staerke: 24, beute: [10, 12], boss: true, rennt: true, info: 'rast blitzschnell auf dich zu' },
+  riese:   { name: '👑 RIESEN-ROBO',    aus: 'riese',   s: 2.8, hp: 180, tempo: 2.6, schaden: 45, staerke: 32, beute: [40, 30], boss: true, stampft: true, helfer: true, info: 'stampft und ruft Helfer' },
+  kaiser:  { name: '💀 ROBO-KAISER',    aus: 'kaiser',  s: 3.3, hp: 400, tempo: 2.8, schaden: 50, staerke: 34, beute: [100, 80], boss: true, fern: true, springt: true, rennt: true, stampft: true, helfer: true, schlagWelle: true, info: 'kann ALLES!' },
 };
+// Boss-Fahrplan: bei welchem Überfall kommen welche Bosse?
+const BOSS_PLAN = {
+  3: ['brecher'], 5: ['blitz'], 7: ['kanone'], 9: ['huepfer'], 10: ['riese'],
+  13: ['brecher', 'blitz'], 15: ['kanone', 'huepfer'], 18: ['brecher', 'kanone', 'blitz'], 20: ['riese', 'huepfer'],
+  23: ['blitz', 'blitz', 'kanone'], 25: ['kaiser'],
+};
+function bosseFuerWelle(w) {
+  if (w <= 25) return BOSS_PLAN[w] || [];
+  const nb = k => NORMALE_BOSSE[(w * 7 + k * 3) % NORMALE_BOSSE.length];
+  if (w % 25 === 0) return ['kaiser', 'riese'];          // danach geht's immer härter weiter
+  if (w % 10 === 0) return ['riese', nb(0), nb(1)];
+  if (w % 5 === 0) return [nb(0), nb(1), nb(2)];
+  return [];
+}
+function naechsteBossWelle() {
+  for (let w = stand.welle + 1; w < stand.welle + 30; w++) if (bosseFuerWelle(w).length) return w;
+  return null;
+}
 const NORMALE_BOSSE = ['brecher', 'kanone', 'huepfer', 'blitz'];
 const MAX_GEGNER = 32;
 let gegner = [], gegnerSchuesse = [], ringe = [], kameraWackeln = 0;
@@ -1705,7 +1727,7 @@ function gegnerSpawnen(art = 'roboter', x, z) {
     z = Math.max(-rand, Math.min(rand, um.pos.z + Math.sin(w) * r));
   }
   const g = new Figur(AUSSEHEN[a.aus], a.s);
-  const staerker = 1 + stand.welle * 0.08;   // jede Welle werden sie etwas stärker
+  const staerker = 1 + stand.welle * (a.boss ? 0.12 : 0.08);   // jede Welle werden sie stärker – Bosse noch mehr
   Object.assign(g, { art, info: a, boss: !!a.boss, tempo: a.tempo, schaden: a.schaden, staerke: a.staerke });
   g.hp = g.maxHp = Math.ceil(a.hp * staerker);
   g.aufstehZeit = a.boss ? 0.7 : 1.0;   // Roboter stehen schneller wieder auf als du!
@@ -1724,6 +1746,12 @@ function gegnerSchaden(g, n) {
   if (g.tot) return;
   g.hp -= n;
   g.blitzT = 0.12;
+  if (g.boss && !g.wut && g.hp > 0 && g.hp <= g.maxHp / 2) { // halbes Leben weg: WUT-MODUS!
+    g.wut = true; g.tempo *= 1.35;
+    allenMelden(`😡 ${g.info.name} wird WÜTEND!`, 2.5, 'boss');
+    const m = g.mitte();
+    for (let k = 0; k < 12; k++) rauch(m.x + rnd(-1, 1) * g.s, m.y + rnd(0, 1) * g.s, m.z + rnd(-1, 1) * g.s, 0xff2a2a, g.s, 2 * g.s, 1.2, 1, 0.8);
+  }
   if (g.hp > 0) return;
   g.tot = true; g.totT = g.boss ? 5 : 4;
   const m = g.mitte();
@@ -1736,6 +1764,7 @@ function gegnerSchaden(g, n) {
   if (g.boss) {
     stand.bossKills = (stand.bossKills || 0) + 1;
     if (g.art === 'riese') stand.rieseKills = (stand.rieseKills || 0) + 1;
+    if (g.art === 'kaiser') stand.kaiserKills = (stand.kaiserKills || 0) + 1;
     allenMelden(`🏆 ${g.info.name} besiegt! +${eisen} Eisen +${kupfer} Kupfer`, 4, 'tada');
     kameraWackeln = 0.6;
   } else meldung(`💥 Roboter kaputt! +${eisen} Eisen +${kupfer} Kupfer`, 1.5);
@@ -1768,24 +1797,34 @@ function bossSpezial(g, dt) {
   }
   if (g.stampf > 0) { // Riese holt zum Stampfen aus
     g.stampf -= dt; g.arme = 'hoch';
-    if (g.stampf <= 0) schockwelle(g.pos, 7, g.staerke, g.schaden, g);
+    if (g.stampf <= 0) schockwelle(g.pos, 7 * g.s / 2.6, g.staerke, g.schaden, g);
     return [0, 0];
   }
   const kannAngreifen = sp.modus === 'steht' && sp.hp > 0;
+  const tempoMal = g.wut ? 0.55 : 1;   // wütend = viel öfter Spezialattacken
   if (g.spezialT <= 0 && kannAngreifen) {
-    if (a.fern && d < 32) { g.spezialT = 1.5; energieSchuss(g); }
-    else if (a.springt && d < 20 && d > 3) {
+    const moeglich = [];   // welche Attacken gehen gerade? Eine davon wird ausgesucht
+    if (a.fern && d < 32) moeglich.push('feuer');
+    if (a.springt && d < 20 && d > 3) moeglich.push('sprung');
+    if (a.rennt && d < 24 && d > 3) moeglich.push('ansturm');
+    if (a.stampft && d < 9 * g.s / 2.6) moeglich.push('stampf');
+    const was = wahl(moeglich);
+    if (was === 'feuer') {
+      g.spezialT = 1.5 * tempoMal;
+      energieSchuss(g);
+      if (g.wut || g.art === 'kaiser') { energieSchuss(g, 0.25); energieSchuss(g, -0.25); }   // 3 Feuerbälle!
+    } else if (was === 'sprung') {
       const flug = 1.2;
       g.vel.set(dx / flug, SCHWERKRAFT * flug / 2, dz / flug); g.aufBoden = false; g.pos.y += 0.05;
-      g.sprung = { x: dx / flug, z: dz / flug }; g.sprungZeit = 0; g.spezialT = 4;
+      g.sprung = { x: dx / flug, z: dz / flug }; g.sprungZeit = 0; g.spezialT = 4 * tempoMal;
       staub(g.pos.x, g.pos.z, 8); SOUND.wusch();
       return [g.sprung.x, g.sprung.z];
-    } else if (a.rennt && d < 24 && d > 3) {
-      g.ansturm = { t: 1.4, x: 0, z: 0 }; g.spezialT = 3.2; SOUND.zisch();
+    } else if (was === 'ansturm') {
+      g.ansturm = { t: 1.4, x: 0, z: 0 }; g.spezialT = 3.2 * tempoMal; SOUND.zisch();
       return [0, 0];
-    } else if (a.stampft && d < 9) { g.stampf = 0.9; g.spezialT = 4.5; return [0, 0]; }
+    } else if (was === 'stampf') { g.stampf = 0.9; g.spezialT = 4.5 * tempoMal; return [0, 0]; }
   }
-  if (a.fern && d < 32 && sp.hp > 0) { // Kanonen-König hält Abstand und zielt
+  if (a.abstand && d < 32 && sp.hp > 0) { // Kanonen-König hält Abstand und zielt
     g.yaw = winkelNaeher(g.yaw, Math.atan2(dx, dz), dt * 6);
     g.arme = 'vor';
     const k = d > 13 ? 1 : d < 8 ? -1 : 0;
@@ -1797,14 +1836,14 @@ function bossSpezial(g, dt) {
 // Feuerball vom Kanonen-König
 const FEUER_GEO = new THREE.SphereGeometry(0.32, 14, 10);
 const FEUER_MAT = new THREE.MeshBasicMaterial({ color: 0xff4a1a });
-function energieSchuss(g) {
+function energieSchuss(g, drehen = 0) {
   const start = g.mitte(); start.y += 0.45 * g.s;
   const opfer = g.zielFigur || spieler;
   const ziel = opfer.mitte();
   const flug = start.distanceTo(ziel) / 20;
   ziel.addScaledVector(opfer.vel, flug * 0.7);
   ziel.y += 0.5 * 6 * flug * flug;
-  const v = ziel.sub(start).normalize().multiplyScalar(20);
+  const v = ziel.sub(start).normalize().multiplyScalar(20).applyAxisAngle(Y_ACHSE, drehen);
   start.addScaledVector(v, 0.05);
   feuerballZeigen(start, v, false);
   anAlle({ t: 'feuer', a: [r2(start.x), r2(start.y), r2(start.z)], v: [r2(v.x), r2(v.y), r2(v.z)] });
@@ -1909,7 +1948,7 @@ function gegnerUpdate(g, dt) {
       if (g.helferT <= 0) {
         g.helferT = 12;
         for (let k = 0; k < 3 && gegner.length < MAX_GEGNER; k++) gegnerSpawnen('roboter', g.pos.x + rnd(-4, 4), g.pos.z + rnd(-4, 4));
-        allenMelden('👑 Der Riesen-Robo ruft Helfer!', 1.5);
+        allenMelden(`${g.info.name} ruft Helfer!`, 1.5);
       }
     }
     let wx = 0, wz = 0;
@@ -1921,7 +1960,11 @@ function gegnerUpdate(g, dt) {
       if (d > reichweite) { wx = dx / d * g.tempo; wz = dz / d * g.tempo; g.angriffT = Math.min(g.angriffT, 0); }
       else g.angriffT += dt;
       if (g.angriffT >= 0.45) { // zuhauen!
-        g.angriffT = -0.6;
+        g.angriffT = g.wut ? -0.25 : -0.6;
+        if (g.info.schlagWelle && !zielGeb) { // Brecher & Kaiser: der Schlag macht eine Schockwelle
+          const vorn = new THREE.Vector3(g.pos.x + Math.sin(g.yaw) * g.s, 0, g.pos.z + Math.cos(g.yaw) * g.s);
+          schockwelle(vorn, 2 * g.s, g.staerke, g.schaden, g);
+        } else
         if (zielGeb) gebaeudeGetroffen(zielGeb, g.info.gebSchaden || 1);
         else if (d < reichweite + 0.5 && sp.modus === 'steht') treffeSpieler(sp, g.pos, g.schaden, g.staerke);
       }
@@ -1976,16 +2019,12 @@ function wellenUpdate(dt) {
   stand.welleT = WELLEN_PAUSE;
   stand.welleWinkel = Math.random() * Math.PI * 2;
   const w = stand.welle;
-  const bosse = [];
-  if (w >= 2 && w % 2 === 0) bosse.push(wahl(NORMALE_BOSSE));   // jede 2. Welle ein Boss
-  if (w >= 7) bosse.push(wahl(NORMALE_BOSSE));                    // ab Welle 7 in jeder Welle noch einer
-  if (w >= 12 && w % 2 === 1) bosse.push(wahl(NORMALE_BOSSE));
-  if (w % 10 === 0) bosse.push('riese');                         // jede 10. Welle der RIESE
+  const bosse = bosseFuerWelle(w);
   const anzahl = Math.min(3 + Math.floor(w * 1.5), 22);
   for (const b of bosse) gegnerSpawnen(b);   // Bosse kommen immer!
   for (let k = 0; k < anzahl && gegner.length < MAX_GEGNER; k++) gegnerSpawnen('roboter');
   const namen = bosse.map(b => GEGNER_ARTEN[b].name).join(' + ');
-  allenMelden(`🤖 Welle ${w} kommt!${bosse.length ? `\n⚠️ BOSS: ${namen}` : ''}`, 4, bosse.length ? 'boss' : 'alarm');
+  allenMelden(bosse.length ? `☠️ BOSS-ÜBERFALL ${w}! ☠️\n${namen}` : `🤖 Überfall ${w} kommt!`, bosse.length ? 5 : 3, bosse.length ? 'boss' : 'alarm');
 }
 
 // ================= PARTIKEL: Splitter, Funken, Rauch, Staub =================
@@ -2357,12 +2396,13 @@ function hudUpdate() {
   setHTML(slots[0].querySelector('.nm'), WAFFEN[waffeNr].name);
   const lebend = gegner.filter(g => !g.tot).length;
   setHTML(el.bossLeiste, gegner.filter(g => g.boss && !g.tot).slice(0, 4).map(g =>
-    `<div class="boss"><span>${g.info.name}</span> <small>${g.info.info}</small><div class="bossBalken"><div style="width:${Math.max(0, g.hp / g.maxHp * 100)}%"></div></div></div>`).join(''));
+    `<div class="boss"><span>${g.hp < g.maxHp / 2 ? '😡 ' : ''}${g.info.name}</span> <small>${g.info.info}</small><div class="bossBalken"><div style="width:${Math.max(0, g.hp / g.maxHp * 100)}%"></div></div></div>`).join(''));
   setHTML(el.welle, stand.gegnerAn
     ? (stand.welleT > 0
         ? `🤖 Überfall ${stand.welle + 1} in <b>${Math.floor(Math.ceil(stand.welleT) / 60)}:${String(Math.ceil(stand.welleT) % 60).padStart(2, '0')}</b>`
         : `⚠️ <b>Überfall ${stand.welle + 1} wartet!</b><br>Er kommt, sobald du am HUB bist.`)
       + (amHub() ? '' : '<br><small>🌲 Du bist unterwegs – hier draußen kommt kein Überfall</small>')
+      + (() => { const n = naechsteBossWelle(); return n ? `<br>${n === stand.welle + 1 ? '⚠️ <b>Nächster Überfall ist ein BOSS:</b>' : `👹 Boss bei Überfall <b>${n}</b>:`} ${bosseFuerWelle(n).map(b => GEGNER_ARTEN[b].name).join(' + ')}` : ''; })()
       + (lebend ? `<br>Roboter unterwegs: <b>${lebend}</b>` : '')
     : '🕊️ Friedlich (keine Roboter)');
   WERKZEUGE.forEach((w, k) => {
