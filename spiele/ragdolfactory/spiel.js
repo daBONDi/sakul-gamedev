@@ -686,7 +686,11 @@ function bauen(typ, i, j, dir) {
     x: i * G, z: j * G, hoehe: info.hoehe,
     box: { x1: i * G - info.halb, x2: i * G + info.halb, z1: j * G - info.halb, z2: j * G + info.halb, y2: info.hoehe },
   };
-  b.gruppe = bauModell(typ);
+  const erz = erzFelsen.get(key(i, j));
+  b.gruppe = bauModell(typ, typ === 'bohrer' && erz ? erz.art : null);
+  b.bauT = 0;
+  dekoZeigen(i, j, false);
+  if (typ === 'bohrer' && erz) erz.gruppe.visible = false;
   b.gruppe.position.set(b.x, 0, b.z);
   b.gruppe.rotation.y = DIR_WINKEL[dir];
   szene.add(b.gruppe);
@@ -701,6 +705,10 @@ function abreissen(b, zurueckgeben) {
   szene.remove(b.gruppe);
   zellen.delete(key(b.i, b.j));
   gebaeude = gebaeude.filter(x => x !== b);
+  dekoZeigen(b.i, b.j, true);
+  const erz = erzFelsen.get(key(b.i, b.j));
+  if (erz) erz.gruppe.visible = true;
+  for (let k = 0; k < 8; k++) rauch(b.x + rnd(-0.8, 0.8), rnd(0.3, 1.5), b.z + rnd(-0.8, 0.8), 0x777777, 1.2, 2, 1.5, 0.8);
   if (zurueckgeben) for (const [m, n] of Object.entries(GEBAEUDE[b.typ].kosten)) stand.lager[m] += n;
   puff(b.x, 1, b.z, 0x888888, 14);
 }
@@ -747,7 +755,8 @@ function gebaeudeUpdate(b, dt) {
       const it = b.items[k];
       const grenze = k === 0 ? 1 : b.items[k - 1].p - 0.34;
       it.p = Math.min(it.p + BAND_TEMPO * dt, Math.max(it.p, grenze));
-      it.mesh.position.set(b.x + dx * (it.p - 0.5) * G, 0.42, b.z + dz * (it.p - 0.5) * G);
+      it.mesh.position.set(b.x + dx * (it.p - 0.5) * G, ITEMS[it.art].barren ? 0.41 : 0.5, b.z + dz * (it.p - 0.5) * G);
+      it.mesh.rotation.y = DIR_WINKEL[b.dir];
     }
     const vorne = b.items[0];
     if (vorne && vorne.p >= 1) {
@@ -756,13 +765,29 @@ function gebaeudeUpdate(b, dt) {
     }
   } else if (b.typ === 'bohrer') {
     b.arbeitet = b.puffer.length < 3;
-    if (b.arbeitet) { b.t += dt; if (b.t >= BOHR_ZEIT) { b.t = 0; b.puffer.push(b.erz); } }
+    if (b.arbeitet) {
+      b.t += dt;
+      if (b.t >= BOHR_ZEIT) { b.t = 0; b.puffer.push(b.erz); }
+      b.effektT = (b.effektT || 0) - dt;
+      if (b.effektT <= 0) {
+        b.effektT = rnd(0.25, 0.5);
+        staub(b.x + rnd(-0.4, 0.4), b.z + rnd(-0.4, 0.4), 1);
+        puff(b.x, 0.35, b.z, b.erz === 'eisenerz' ? 0xff7a40 : 0xffb050, 2, { leucht: true, groesse: 0.35, leben: 0.35, tempo: 0.6 });
+      }
+    }
     ausgeben(b);
   } else if (b.typ === 'schmelze') {
     b.arbeitet = b.ein.length > 0 && b.puffer.length < 4;
     if (b.arbeitet) {
       b.t += dt;
       if (b.t >= SCHMELZ_ZEIT) { b.t = 0; b.puffer.push(b.ein.shift() === 'eisenerz' ? 'eisenbarren' : 'kupferbarren'); }
+      b.effektT = (b.effektT || 0) - dt;
+      if (b.effektT <= 0) {
+        b.effektT = 0.22;
+        const [x, y, z] = gebaeudePunkt(b, b.gruppe.userData.rauch);
+        rauch(x, y, z, 0x5a5a5e, 0.5, 2.2, 2.6, 1.4, 0.6);
+        if (Math.random() < 0.3) { const [fx, fy, fz] = gebaeudePunkt(b, [0, 0.95, 0.9]); puff(fx, fy, fz, 0xffa030, 2, { leucht: true, groesse: 0.25, leben: 0.4, tempo: 0.5 }); }
+      }
     }
     ausgeben(b);
   } else if (b.typ === 'turm') {
@@ -780,7 +805,7 @@ function gebaeudeUpdate(b, dt) {
       zielP.y += 0.5 * BALL_SCHWERKRAFT * flug * flug;          // etwas höher zielen, weil der Ball runterfällt
       const richtung = zielP.sub(start).normalize();
       b.gruppe.userData.kopf.rotation.y = Math.atan2(richtung.x, richtung.z) - b.gruppe.rotation.y;
-      if (b.cd <= 0) { b.cd = 0.9; ballSchiessen(start.addScaledVector(richtung, 0.9), richtung); }
+      if (b.cd <= 0) { b.cd = 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
     }
   }
 }
@@ -804,8 +829,31 @@ const ruheAbstand = (a, b) => Math.hypot(RUHE[a][0] - RUHE[b][0], RUHE[a][1] - R
 const AUSSEHEN = {
   spieler: { anzug: 0xff8c1a, hose: 0x34456b, haut: 0xf1c27d, helm: 0xffd23f, kopf: 'mensch' },
   roboter: { anzug: 0x8a8f99, hose: 0x5a5f69, haut: 0x6a6f79, helm: 0xff3030, kopf: 'roboter' },
-  boss:    { anzug: 0x7d3fbf, hose: 0x3d2060, haut: 0x5a2d8a, helm: 0x39ff6a, kopf: 'roboter' },
+  boss:    { anzug: 0x7d3fbf, hose: 0x3d2060, haut: 0x5a2d8a, helm: 0x39ff6a, kopf: 'roboter', boss: true },
 };
+const alsText = c => '#' + new THREE.Color(c).getHexString();
+function figurMaterialien(a) { // Materialien nur einmal pro Aussehen bauen
+  if (a._m) return a._m;
+  const robo = a.kopf === 'roboter';
+  const dunkler = new THREE.Color(a.anzug).multiplyScalar(0.6);
+  a._m = {
+    anzug: robo ? mat(0xffffff, { map: roboterTextur(alsText(a.anzug), 'rgba(140,70,20,0.7)'), metalness: 0.5, roughness: 0.5 })
+                : mat(0xffffff, { map: stoffTextur(alsText(a.anzug)), roughness: 0.85 }),
+    bein: robo ? mat(0xffffff, { map: roboterTextur(alsText(a.hose), 'rgba(120,60,20,0.6)'), metalness: 0.5, roughness: 0.55 })
+               : mat(0xffffff, { map: stoffTextur(alsText(a.hose)), roughness: 0.9 }),
+    kopf: robo ? mat(0xffffff, { map: roboterTextur(alsText(a.haut), 'rgba(140,70,20,0.6)'), metalness: 0.5, roughness: 0.45 }) : null,
+    haut: mat(a.haut, { roughness: 0.6 }),
+    helm: mat(a.helm, { roughness: 0.35 }),
+    leucht: mat(a.helm, { emissive: a.helm, emissiveIntensity: 2.2 }),
+    panzer: mat(dunkler.clone().multiplyScalar(1.3), { metalness: 0.6, roughness: 0.4 }),
+    dunkler: mat(dunkler, { roughness: 0.8 }),
+    handschuh: mat(0x3d3f44, { roughness: 0.9 }), stiefel: mat(0x5a3b22, { roughness: 0.85 }), guertel: mat(0x4a3020, { roughness: 0.7 }),
+    dunkelOliv: mat(0x434f22), haare: mat(0x5a3a1a), backen: mat(0xff9a8a, { roughness: 0.8 }), mund: mat(0x8a3a3a),
+    lampe: mat(0xffffee, { emissive: 0xffffcc, emissiveIntensity: 2 }), antenne: mat(0xff3030, { emissive: 0xff0000, emissiveIntensity: 1.5 }),
+    horn: mat(0xe8e0c8, { roughness: 0.5 }),
+  };
+  return a._m;
+}
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3();
 const _m4 = new THREE.Matrix4(), Y_ACHSE = new THREE.Vector3(0, 1, 0);
@@ -824,43 +872,128 @@ class Figur {
     this.modus = 'steht'; this.t = 0; this.blend = 0; this.arme = ''; this.schlag = 0; this.unverwundbar = 0;
 
     this.gruppe = new THREE.Group(); szene.add(this.gruppe);
-    const mA = mat(aussehen.anzug), mH = mat(aussehen.hose), mK = mat(aussehen.haut), mHelm = mat(aussehen.helm, aussehen.kopf === 'roboter' ? { emissive: aussehen.helm, emissiveIntensity: 1 } : {});
+    this.staubZeit = 0;
+    const M = figurMaterialien(aussehen), robo = aussehen.kopf === 'roboter', boss = !!aussehen.boss;
+    const K = (b, h, t, m, x = 0, y = 0, z = 0) => kasten(b * s, h * s, t * s, m, x * s, y * s, z * s);
+    const Z = (r1, r2, h, m, x = 0, y = 0, z = 0, seg = 10) => rohr(r1 * s, r2 * s, h * s, m, x * s, y * s, z * s, seg);
+    const Ku = (r, m, x = 0, y = 0, z = 0) => kugel(r * s, m, x * s, y * s, z * s);
+    const dreh = (o, rx, ry, rz) => { o.rotation.set(rx, ry, rz); return o; };
+
+    // Arme und Beine
     this.glieder = [];
     const glied = (a, b, r, m) => {
       const len = ruheAbstand(a, b) * s;
-      const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r * s, len, 3, 8), m);
+      const mesh = new THREE.Mesh(geo(`kap${r * s},${len}`, () => new THREE.CapsuleGeometry(r * s, len, 4, 10)), m);
       mesh.castShadow = true; this.gruppe.add(mesh); this.glieder.push([I[a], I[b], mesh, len]);
     };
-    glied('lS', 'lE', 0.075, mA); glied('lE', 'lHa', 0.07, mA); glied('rS', 'rE', 0.075, mA); glied('rE', 'rHa', 0.07, mA);
-    glied('lH', 'lK', 0.1, mH); glied('lK', 'lF', 0.09, mH); glied('rH', 'rK', 0.1, mH); glied('rK', 'rF', 0.09, mH);
+    const R = robo ? 1.15 : 1;
+    glied('lS', 'lE', 0.075 * R, M.anzug); glied('lE', 'lHa', 0.068 * R, M.anzug);
+    glied('rS', 'rE', 0.075 * R, M.anzug); glied('rE', 'rHa', 0.068 * R, M.anzug);
+    glied('lH', 'lK', 0.1 * R, M.bein); glied('lK', 'lF', 0.088 * R, M.bein);
+    glied('rH', 'rK', 0.1 * R, M.bein); glied('rK', 'rF', 0.088 * R, M.bein);
+    // Gelenke: Knieschoner / Roboter-Gelenke
     this.kugeln = [];
-    const kugel = (n, r, m) => {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r * s, 10, 8), m);
-      mesh.castShadow = true; this.gruppe.add(mesh); this.kugeln.push([I[n], mesh]);
-    };
-    kugel('lHa', 0.09, mK); kugel('rHa', 0.09, mK); kugel('lF', 0.12, MAT.dunkel); kugel('rF', 0.12, MAT.dunkel);
+    const gelenk = (n, r, m) => { const k = Ku(r, m); this.gruppe.add(k); this.kugeln.push([I[n], k]); };
+    if (robo) for (const n of ['lE', 'rE', 'lK', 'rK']) gelenk(n, 0.1, MAT.dunkelMetall);
+    else for (const n of ['lK', 'rK']) gelenk(n, 0.105, M.dunkler);
+    if (robo) for (const n of ['lS', 'rS', 'lH', 'rH']) gelenk(n, 0.095, MAT.dunkelMetall);
 
-    this.koerper = new THREE.Group();
-    this.koerper.add(kasten(0.5 * s, 0.62 * s, 0.3 * s, mA));
-    this.koerper.add(kasten(0.52 * s, 0.1 * s, 0.32 * s, mH, 0, -0.22 * s, 0)); // Gürtel
-    if (aussehen.kopf === 'mensch') this.koerper.add(kasten(0.36 * s, 0.4 * s, 0.16 * s, mat(0x556b2f), 0, 0.02 * s, -0.22 * s)); // Rucksack
-    this.kopf = new THREE.Group();
-    if (aussehen.kopf === 'mensch') {
-      this.kopf.add(new THREE.Mesh(new THREE.SphereGeometry(0.2 * s, 16, 12), mK));
-      const helm = new THREE.Mesh(new THREE.SphereGeometry(0.23 * s, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mHelm);
-      helm.position.y = 0.03 * s; this.kopf.add(helm);
-      this.kopf.add(rohr(0.27 * s, 0.27 * s, 0.03 * s, mHelm, 0, 0.03 * s, 0.03 * s, 16));
-      for (const x of [-0.07, 0.07]) {
-        const auge = new THREE.Mesh(new THREE.SphereGeometry(0.035 * s, 8, 6), MAT.dunkel);
-        auge.position.set(x * s, -0.02 * s, 0.18 * s); this.kopf.add(auge);
+    // Hände und Füße drehen sich mit dem Körper mit
+    this.enden = [];
+    const ende = (n, obj) => { obj.traverse(o => { o.castShadow = true; }); this.gruppe.add(obj); this.enden.push([I[n], obj]); };
+    for (const n of ['lHa', 'rHa']) {
+      const h = new THREE.Group();
+      if (robo) {
+        h.add(K(0.15, 0.1, 0.13, MAT.dunkelMetall));
+        for (const x of [-0.045, 0, 0.045]) h.add(dreh(K(0.03, 0.11, 0.03, MAT.metall, x, -0.08, 0.04), 0.4, 0, 0));
+      } else {
+        h.add(Ku(0.085, M.handschuh));
+        h.add(K(0.05, 0.05, 0.08, M.handschuh, (n === 'lHa' ? -0.06 : 0.06), 0.02, 0.04));
+      }
+      ende(n, h);
+    }
+    for (const n of ['lF', 'rF']) {
+      const f = new THREE.Group();
+      if (robo) {
+        f.add(K(0.21, 0.12, 0.33, MAT.dunkelMetall, 0, -0.02, 0.06));
+        f.add(K(0.22, 0.06, 0.1, MAT.warn, 0, 0.0, 0.2));
+      } else {
+        f.add(K(0.17, 0.13, 0.3, M.stiefel, 0, -0.02, 0.05));
+        f.add(K(0.18, 0.04, 0.31, MAT.schwarz, 0, -0.08, 0.05));
+        f.add(K(0.175, 0.04, 0.05, MAT.gelb, 0, 0.03, -0.08));
+      }
+      ende(n, f);
+    }
+
+    // Körper
+    const k = this.koerper = new THREE.Group();
+    if (robo) {
+      k.add(K(0.52, 0.62, 0.32, M.anzug));
+      k.add(K(0.4, 0.3, 0.04, MAT.dunkelMetall, 0, 0.1, 0.17));
+      k.add(dreh(Z(0.085, 0.085, 0.04, M.leucht, 0, 0.1, 0.2, 14), Math.PI / 2, 0, 0));
+      k.add(dreh(new THREE.Mesh(geo(`kern${s}`, () => new THREE.TorusGeometry(0.1 * s, 0.018 * s, 6, 16)), MAT.chrom), 0, 0, 0));
+      k.children[k.children.length - 1].position.set(0, 0.1 * s, 0.2 * s);
+      for (const y of [-0.1, -0.16]) k.add(K(0.3, 0.035, 0.02, MAT.schwarz, 0, y, 0.165));
+      for (const x of [-0.3, 0.3]) {
+        k.add(dreh(K(0.22, 0.12, 0.32, M.panzer, x, 0.3, 0), 0, 0, x > 0 ? -0.3 : 0.3));
+        k.add(Z(0.045, 0.05, 0.3, MAT.dunkelMetall, x * 0.4, 0.2, -0.19, 8));
+        k.add(Z(0.055, 0.055, 0.04, MAT.schwarz, x * 0.4, 0.36, -0.19, 8));
+      }
+      k.add(K(0.44, 0.1, 0.28, MAT.dunkelMetall, 0, -0.27, 0));
+      if (boss) {
+        for (const x of [-0.32, 0.32]) for (const z of [-0.08, 0.08]) k.add(dreh(Z(0.001, 0.06, 0.28, M.horn, x, 0.48, z, 6), 0, 0, x > 0 ? -0.3 : 0.3));
+        for (const y of [0.2, 0.0, -0.2]) k.add(dreh(Z(0.001, 0.06, 0.22, M.horn, 0, y, -0.25, 6), -Math.PI / 2, 0, 0));
       }
     } else {
-      this.kopf.add(kasten(0.38 * s, 0.32 * s, 0.34 * s, mK));
-      this.kopf.add(kasten(0.3 * s, 0.08 * s, 0.03 * s, mHelm, 0, 0.02 * s, 0.17 * s)); // leuchtende Augen
-      this.kopf.add(rohr(0.02 * s, 0.02 * s, 0.25 * s, MAT.metall, 0, 0.28 * s, 0, 6));
-      const spitze = new THREE.Mesh(new THREE.SphereGeometry(0.05 * s), mHelm); spitze.position.y = 0.42 * s; this.kopf.add(spitze);
+      k.add(K(0.5, 0.62, 0.3, M.anzug));
+      for (const y of [0.12, -0.02]) k.add(K(0.51, 0.05, 0.31, MAT.reflex, 0, y, 0));
+      k.add(K(0.03, 0.5, 0.01, MAT.dunkel, 0, 0.02, 0.155));
+      k.add(K(0.32, 0.07, 0.24, M.dunkler, 0, 0.33, 0));
+      for (const x of [-0.24, 0.24]) k.add(K(0.14, 0.06, 0.22, M.dunkler, x, 0.29, 0));
+      k.add(K(0.52, 0.08, 0.32, M.guertel, 0, -0.24, 0));
+      k.add(K(0.08, 0.06, 0.02, MAT.gold, 0, -0.24, 0.165));
+      for (const x of [-0.19, 0.19]) k.add(K(0.1, 0.12, 0.08, MAT.oliv, x, -0.27, 0.14));
+      k.add(K(0.1, 0.06, 0.01, MAT.weiss, -0.13, 0.2, 0.155));
+      // Rucksack mit Tank und Antenne
+      k.add(K(0.36, 0.42, 0.16, MAT.oliv, 0, 0.03, -0.23));
+      k.add(K(0.37, 0.12, 0.17, M.dunkelOliv, 0, 0.2, -0.235));
+      k.add(Z(0.07, 0.07, 0.42, MAT.chrom, 0.2, 0.03, -0.3, 10), Z(0.04, 0.04, 0.06, MAT.rot, 0.2, 0.27, -0.3, 8));
+      k.add(Z(0.01, 0.01, 0.35, MAT.dunkel, -0.13, 0.38, -0.26, 4));
+      k.add(Ku(0.028, M.antenne, -0.13, 0.56, -0.26));
     }
-    for (const t of [this.koerper, this.kopf]) { t.traverse(o => { o.castShadow = true; }); this.gruppe.add(t); }
+
+    // Kopf
+    const h = this.kopf = new THREE.Group();
+    if (robo) {
+      h.add(K(0.38, 0.32, 0.34, M.kopf));
+      h.add(K(0.32, 0.12, 0.02, MAT.schwarz, 0, 0.03, 0.17));
+      for (const x of [-0.08, 0.08]) h.add(K(0.09, 0.05, 0.02, M.leucht, x, 0.03, 0.18));
+      h.add(K(0.24, 0.08, 0.02, MAT.gitter, 0, -0.09, 0.172));
+      for (const x of [-0.2, 0.2]) h.add(dreh(Z(0.06, 0.06, 0.04, MAT.dunkelMetall, x, 0, 0, 10), 0, 0, Math.PI / 2));
+      h.add(Z(0.015, 0.015, 0.25, MAT.metall, 0.1, 0.28, -0.05, 4));
+      h.add(Ku(0.04, M.leucht, 0.1, 0.42, -0.05));
+      if (boss) {
+        for (const x of [-0.16, 0.16]) h.add(dreh(Z(0.001, 0.07, 0.3, M.horn, x, 0.27, 0, 6), 0, 0, x > 0 ? -0.5 : 0.5));
+        h.add(K(0.4, 0.05, 0.36, MAT.gold, 0, 0.17, 0));
+      }
+    } else {
+      h.add(Ku(0.2, M.haut));
+      for (const x of [-0.075, 0.075]) {
+        h.add(Ku(0.045, MAT.weiss, x, 0.0, 0.16));
+        h.add(Ku(0.025, MAT.schwarz, x, 0.0, 0.2));
+        h.add(K(0.07, 0.015, 0.02, M.haare, x, 0.07, 0.18));
+        h.add(Ku(0.03, M.backen, x * 1.6, -0.06, 0.15));
+      }
+      h.add(Ku(0.03, M.haut, 0, -0.04, 0.2));
+      h.add(K(0.08, 0.015, 0.02, M.mund, 0, -0.1, 0.18));
+      const helm = new THREE.Mesh(geo(`helm${s}`, () => new THREE.SphereGeometry(0.235 * s, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2)), M.helm);
+      helm.position.y = 0.03 * s; h.add(helm);
+      h.add(Z(0.275, 0.275, 0.025, M.helm, 0, 0.03, 0.03, 20));
+      h.add(K(0.05, 0.05, 0.4, M.helm, 0, 0.25, 0));
+      h.add(dreh(Z(0.045, 0.045, 0.06, MAT.dunkel, 0, 0.13, 0.22, 10), Math.PI / 2, 0, 0));
+      h.add(Ku(0.035, M.lampe, 0, 0.13, 0.25));
+    }
+    for (const t of [k, h]) { t.traverse(o => { o.castShadow = true; }); this.gruppe.add(t); }
   }
 
   mitte() { // Mitte vom Bauch
@@ -914,6 +1047,7 @@ class Figur {
         p[k].y = r;
         a[k].y = r + vy * 0.4;
         a[k].x = p[k].x - vx * 0.82; a[k].z = p[k].z - vz * 0.82;
+        if (vy < -0.12 && zeit - this.staubZeit > 0.25) { this.staubZeit = zeit; staub(p[k].x, p[k].z, 5 * this.s); }
       }
     }
     const m = this.mitte(), boxen = boxenNahe(m.x, m.z);
@@ -991,11 +1125,13 @@ class Figur {
     const oben = _c.subVectors(mS, mH).normalize();
     const rechts = _d.subVectors(p[I.rS], p[I.lS]); rechts.addScaledVector(oben, -rechts.dot(oben)).normalize();
     const vorn = _e.crossVectors(oben, rechts);
+    const blick = Math.atan2(vorn.x, vorn.z);
     _m4.makeBasis(rechts.negate(), oben, vorn);
     this.koerper.quaternion.setFromRotationMatrix(_m4);
     this.koerper.position.addVectors(mS, mH).multiplyScalar(0.5);
     this.kopf.quaternion.copy(this.koerper.quaternion);
     this.kopf.position.copy(p[I.kopf]);
+    for (const [i, obj] of this.enden) { obj.position.copy(p[i]); obj.rotation.set(0, blick, 0); }
   }
 
   entfernen() { szene.remove(this.gruppe); }
@@ -1065,6 +1201,9 @@ function schleuderCheck(f) {
   f.pos.y += 0.3;
   f.sofortStehen();
   f.umfallen(DIRS[b.dir][0] * 11, 19, DIRS[b.dir][1] * 11);
+  b.knall = 1;
+  staub(b.x, b.z, 8);
+  puff(b.x, 0.4, b.z, 0x3dff8a, 12, { leucht: true, groesse: 0.4, leben: 0.6 });
   SOUND.wusch();
 }
 
@@ -1087,6 +1226,8 @@ function spielerUpdate(dt) {
     koerperBewegen(f, wx, wz, dt, taste.Space);
     f.yaw = winkelNaeher(f.yaw, kamYaw, dt * 14);
     f.arme = werkzeug === 'hand' ? 'zielen' : '';
+    f.staubLauf = (f.staubLauf || 0) - dt;
+    if (f.aufBoden && Math.hypot(f.vel.x, f.vel.z) > 8 && f.staubLauf <= 0) { f.staubLauf = 0.12; staub(f.pos.x, f.pos.z, 1); }
     schleuderCheck(f);
   }
   f.update(dt);
@@ -1112,7 +1253,7 @@ function spielerGetroffen(von, schaden, staerke) {
 // ================= BÄLLE + SCHLAGEN =================
 const BALL_SCHWERKRAFT = 12;
 const BALL_GEO = new THREE.SphereGeometry(0.18, 12, 8);
-const BALL_MATS = [0xff4fa3, 0xffe14f, 0x4fd8ff, 0x8aff4f].map(c => mat(c, { roughness: 0.3, emissive: c, emissiveIntensity: 0.25 }));
+const BALL_MATS = BALL_FARBEN.map(c => mat(c, { roughness: 0.3, emissive: c, emissiveIntensity: 0.25 }));
 let baelle = [];
 
 function ballSchiessen(start, richtung) {
@@ -1144,6 +1285,7 @@ function baelleUpdate(dt) {
         g.umfallen(n.x * 11, 5, n.z * 11);
         gegnerSchaden(g, 1);
         b.verbraucht = true; b.vel.multiplyScalar(-0.25);
+        puff(b.pos.x, b.pos.y, b.pos.z, 0xffe14f, 8, { leucht: true, groesse: 0.6, leben: 0.4 });
         SOUND.klong();
         break;
       }
@@ -1212,6 +1354,7 @@ function gegnerSpawnen(boss) {
   g.yaw = Math.atan2(-g.pos.x, -g.pos.z);
   g.sofortStehen();
   gegner.push(g);
+  for (let k = 0; k < 6; k++) rauch(g.pos.x + rnd(-0.6, 0.6), rnd(0.3, 1.8) * g.s, g.pos.z + rnd(-0.6, 0.6), boss ? 0x9a5ad8 : 0x777777, 1, 1.8, 1.2, 0.6);
 }
 
 function gegnerSchaden(g, n) {
@@ -1219,6 +1362,10 @@ function gegnerSchaden(g, n) {
   g.hp -= n;
   if (g.hp > 0) return;
   g.tot = true; g.totT = 4;
+  const m = g.mitte();
+  puff(m.x, m.y, m.z, 0x8a8f99, 10, { groesse: 1.2 });
+  puff(m.x, m.y, m.z, 0xffd060, 12, { leucht: true, groesse: 0.5, leben: 0.5 });
+  for (let k = 0; k < 6; k++) rauch(m.x + rnd(-0.4, 0.4), m.y + rnd(0, 0.6), m.z + rnd(-0.4, 0.4), 0x333333, 0.8, 2, 1.8, 0.8, 0.7);
   stand.kills++;
   const eisen = g.boss ? 6 : 1, kupfer = g.boss ? 4 : 1;
   stand.lager.eisen += eisen; stand.lager.kupfer += kupfer;
@@ -1318,25 +1465,53 @@ function wellenUpdate(dt) {
   SOUND.alarm();
 }
 
-// ================= PARTIKEL =================
+// ================= PARTIKEL: Splitter, Funken, Rauch, Staub =================
 const PUFF_GEO = new THREE.BoxGeometry(0.15, 0.15, 0.15);
 const puffMats = {};
 let partikel = [];
-function puff(x, y, z, farbe, n) {
-  const m = puffMats[farbe] || (puffMats[farbe] = mat(farbe));
-  for (let k = 0; k < n; k++) {
+function puff(x, y, z, farbe, n, { leucht = false, groesse = 1, leben = 0.8, tempo = 1 } = {}) {
+  const name = farbe + (leucht ? 'L' : '');
+  const m = puffMats[name] || (puffMats[name] = leucht ? new THREE.MeshBasicMaterial({ color: farbe }) : mat(farbe));
+  for (let k = 0; k < n && partikel.length < 400; k++) {
     const p = new THREE.Mesh(PUFF_GEO, m);
-    p.position.set(x, y, z); szene.add(p);
-    partikel.push({ mesh: p, v: new THREE.Vector3((Math.random() - 0.5) * 6, 3 + Math.random() * 5, (Math.random() - 0.5) * 6), t: 0.8 });
+    p.position.set(x, y, z); p.scale.setScalar(groesse * rnd(0.6, 1.2)); p.castShadow = !leucht; szene.add(p);
+    partikel.push({ mesh: p, v: new THREE.Vector3(rnd(-3, 3) * tempo, rnd(3, 8) * tempo, rnd(-3, 3) * tempo), t: leben * rnd(0.7, 1.2) });
   }
+}
+let rauchListe = [];
+function rauch(x, y, z, farbe = 0xdddddd, groesse = 0.6, wachsen = 1.5, leben = 2, hoch = 1.2, deckkraft = 0.55) {
+  if (rauchListe.length > 260) return;
+  const m = new THREE.SpriteMaterial({ map: TEX.rauch, color: farbe, transparent: true, depthWrite: false, opacity: deckkraft });
+  const sp = new THREE.Sprite(m);
+  sp.position.set(x, y, z); sp.scale.setScalar(groesse); szene.add(sp);
+  rauchListe.push({ sp, v: new THREE.Vector3(rnd(-0.3, 0.3), hoch, rnd(-0.3, 0.3)), t: leben, max: leben, g: groesse, w: wachsen, o: deckkraft });
+}
+function staub(x, z, n = 5) {
+  for (let k = 0; k < n; k++) rauch(x + rnd(-0.3, 0.3), 0.15, z + rnd(-0.3, 0.3), 0xc9b48a, 0.5, 1.4, 0.9, rnd(0.3, 0.9), 0.5);
 }
 function partikelUpdate(dt) {
   for (const p of partikel) {
     p.v.y -= 15 * dt; p.mesh.position.addScaledVector(p.v, dt); p.t -= dt;
-    p.mesh.rotation.x += dt * 8;
+    if (p.mesh.position.y < 0.07) { p.mesh.position.y = 0.07; p.v.set(p.v.x * 0.5, -p.v.y * 0.3, p.v.z * 0.5); }
+    p.mesh.rotation.x += dt * 8; p.mesh.rotation.z += dt * 5;
     if (p.t <= 0) szene.remove(p.mesh);
   }
   partikel = partikel.filter(p => p.t > 0);
+  for (const r of rauchListe) {
+    r.t -= dt;
+    r.sp.position.addScaledVector(r.v, dt);
+    r.v.x += 0.4 * dt; // ein bisschen Wind
+    const f = 1 - r.t / r.max;
+    r.sp.scale.setScalar(r.g + r.w * f);
+    r.sp.material.opacity = r.o * (1 - f) * Math.min(1, f * 6);
+    if (r.t <= 0) { szene.remove(r.sp); r.sp.material.dispose(); }
+  }
+  rauchListe = rauchListe.filter(r => r.t > 0);
+}
+// Punkt am Gebäude (gedreht wie das Gebäude) in Welt-Koordinaten
+function gebaeudePunkt(b, [lx, ly, lz]) {
+  const w = b.gruppe.rotation.y, c = Math.cos(w), si = Math.sin(w);
+  return [b.x + lx * c + lz * si, ly, b.z - lx * si + lz * c];
 }
 
 // ================= BAUEN =================
@@ -1394,6 +1569,7 @@ function platzieren(typ, i, j, dir) {
   for (const [m, n] of Object.entries(GEBAEUDE[typ].kosten)) stand.lager[m] -= n;
   const b = bauen(typ, i, j, dir);
   puff(i * G, 0.3, j * G, 0xdddddd, 6);
+  for (let k = 0; k < 8; k++) { const w = k / 8 * Math.PI * 2; rauch(i * G + Math.cos(w) * 1.1, 0.2, j * G + Math.sin(w) * 1.1, 0xd8d0c0, 0.5, 1.2, 0.8, 0.4, 0.6); }
   SOUND.bau();
   speicherT = 4;
   return b;
@@ -1674,8 +1850,23 @@ function kameraUpdate() {
   kamera.position.set(ziel.x - Math.cos(kamYaw) * 0.7, ziel.y, ziel.z + Math.sin(kamYaw) * 0.7).addScaledVector(d, -4.5);
   if (kamera.position.y < 0.4) kamera.position.y = 0.4;
   kamera.lookAt(_c.copy(kamera.position).add(d));
-  sonne.position.set(f.pos.x + 20, 40, f.pos.z + 12);
+  sonne.position.set(f.pos.x, 0, f.pos.z).addScaledVector(SONNEN_RICHTUNG, 60);
   sonne.target.position.set(f.pos.x, 0, f.pos.z);
+}
+
+let anzeigeT = 0;
+function hubAnzeige(a) { // Bildschirm am HUB zeigt das Lager
+  const text = stand.lager.eisen + '|' + stand.lager.kupfer;
+  if (text === a.text) return;
+  a.text = text;
+  const g = a.gx;
+  g.fillStyle = '#0c1a2e'; g.fillRect(0, 0, 256, 128);
+  g.strokeStyle = '#3aa0ff'; g.lineWidth = 4; g.strokeRect(4, 4, 248, 120);
+  g.font = 'bold 26px system-ui, sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.fillStyle = '#7fd0ff'; g.fillText('LAGER', 16, 26);
+  g.fillStyle = '#d0d6dc'; g.fillRect(18, 54, 26, 20); g.fillStyle = '#fff'; g.fillText('Eisen: ' + stand.lager.eisen, 56, 64);
+  g.fillStyle = '#f08a4a'; g.fillRect(18, 90, 26, 20); g.fillStyle = '#fff'; g.fillText('Kupfer: ' + stand.lager.kupfer, 56, 100);
+  a.tex.needsUpdate = true;
 }
 
 function zeichnen(echtDt) {
@@ -1683,10 +1874,34 @@ function zeichnen(echtDt) {
   for (const g of gegner) g.zeichnen();
   for (const b of gebaeude) {
     const u = b.gruppe.userData;
-    if (u.dreh && b.arbeitet) u.dreh.rotation.y += echtDt * 8;
-    if (u.glut) u.glut.emissiveIntensity = b.arbeitet ? 1.5 + Math.sin(zeit * 10) * 0.3 : 0.3;
+    if (u.dreh && b.arbeitet) u.dreh.rotation.y += echtDt * 14;
+    if (u.bohr && b.arbeitet) { u.bohr.rotation.y -= echtDt * 10; u.bohr.position.y = Math.sin(zeit * 6) * 0.04; }
+    if (u.lampe) u.lampe.emissiveIntensity = b.arbeitet ? (Math.sin(zeit * 8) > 0 ? 3 : 0.2) : 0;
+    if (u.glut) {
+      u.glut.emissiveIntensity = b.arbeitet ? 1.8 + Math.sin(zeit * 13) * 0.3 + Math.sin(zeit * 7.3) * 0.2 : 0.3;
+      u.glutBoden.opacity = b.arbeitet ? 0.35 + Math.sin(zeit * 11) * 0.06 : 0.05;
+    }
+    if (u.schuessel) u.schuessel.rotation.y += echtDt * 0.5;
+    if (u.blink) u.blink.emissiveIntensity = (zeit % 1.2) < 0.15 ? 4 : 0.3;
+    if (u.anzeige) hubAnzeige(u.anzeige);
+    if (u.pad) {
+      b.knall = Math.max(0, (b.knall || 0) - echtDt * 3);
+      u.pad.position.y = 0.26 + b.knall * 0.3;
+      u.ring.emissiveIntensity = 0.8 + Math.sin(zeit * 4) * 0.5 + b.knall * 3;
+    }
+    if (u.laeufe) { b.rueckstoss = Math.max(0, (b.rueckstoss || 0) - echtDt * 5); u.laeufe.position.z = -b.rueckstoss * 0.18; }
+    // Aufplopp-Animation beim Bauen
+    if (b.bauT < 1) {
+      b.bauT = Math.min(1, b.bauT + echtDt / 0.35);
+      const t = b.bauT, k = 1.70158;
+      const sk = 1 + (k + 1) * Math.pow(t - 1, 3) + k * Math.pow(t - 1, 2);
+      b.gruppe.scale.set(sk, sk, sk);
+    }
     b.gruppe.position.x = b.x + (b.wackel > 0 ? (Math.random() - 0.5) * 0.2 : 0);
   }
+  for (const m of Object.values(ERZ_MAT)) m.emissiveIntensity = 0.5 + Math.sin(zeit * 2.2) * 0.3;
+  for (const w of wolken) { w.position.x += echtDt * 2; if (w.position.x > 320) w.position.x = -320; }
+  himmel.position.copy(kamera.position);
   kameraUpdate();
   geistUpdate();
   hudUpdate();
@@ -1711,4 +1926,4 @@ function schleife(jetzt) {
 requestAnimationFrame(schleife);
 
 // zum Testen
-window.__spiel = { update, stand, spieler, gegner: () => gegner, gebaeude: () => gebaeude, platzieren, gegnerSpawnen, bauen, zellen, pause, schlagen, schiessen, setKam: (y, p) => { kamYaw = y; kamPitch = p; } };
+window.__spiel = { update, zeichnen, stand, spieler, gegner: () => gegner, gebaeude: () => gebaeude, platzieren, gegnerSpawnen, bauen, zellen, pause, schlagen, schiessen, setKam: (y, p) => { kamYaw = y; kamPitch = p; } };
