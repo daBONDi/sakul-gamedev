@@ -807,6 +807,7 @@ function abreissen(b, zurueckgeben) {
   zellen.delete(key(b.i, b.j));
   gebaeude = gebaeude.filter(x => x !== b);
   dekoZeigen(b.i, b.j, true);
+  anAlle({ t: 'weg', i: b.i, j: b.j });
   const erz = erzFelsen.get(key(b.i, b.j));
   if (erz) erz.gruppe.visible = true;
   for (let k = 0; k < 8; k++) rauch(b.x + rnd(-0.8, 0.8), rnd(0.3, 1.5), b.z + rnd(-0.8, 0.8), 0x777777, 1.2, 2, 1.5, 0.8);
@@ -839,6 +840,7 @@ function ausgeben(b) {
 
 let plingT = 0;
 function liefern(art) {
+  if (istGast()) return;   // das Lager zählt nur der Chef
   const m = ITEMS[art].metall;
   if (ITEMS[art].barren) { stand.lager[m]++; stand.geliefert[m]++; }
   else {
@@ -906,7 +908,7 @@ function gebaeudeUpdate(b, dt) {
       zielP.y += 0.5 * BALL_SCHWERKRAFT * flug * flug;          // etwas höher zielen, weil der Ball runterfällt
       const richtung = zielP.sub(start).normalize();
       b.gruppe.userData.kopf.rotation.y = Math.atan2(richtung.x, richtung.z) - b.gruppe.rotation.y;
-      if (b.cd <= 0) { b.cd = hat('tuerme') ? 0.45 : 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung, 2); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
+      if (b.cd <= 0) { b.cd = hat('tuerme') ? 0.45 : 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung, 2, { deko: istGast() }); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
     }
   }
 }
@@ -1195,6 +1197,7 @@ class Figur {
   update(dt) {
     if (this.unverwundbar > 0) this.unverwundbar -= dt;
     this.schlag = Math.max(0, this.schlag - dt * 4);
+    if (this.modus === 'netz') return;   // Punkte kommen übers Internet
     if (this.modus === 'ragdoll') {
       this.simulieren();
       this.t += dt;
@@ -1343,6 +1346,7 @@ spieler.sofortStehen();
 let kamYaw = 0, kamPitch = -0.25, schussCD = 0, zeit = 0, getroffenT = 0;
 
 function spielerUpdate(dt) {
+  const taste = pausiert ? {} : TASTEN;
   const f = spieler;
   schussCD -= dt; getroffenT -= dt;
   if (f.modus === 'steht') {
@@ -1444,11 +1448,11 @@ function waffenModellZeigen() {
   for (const [id, m] of Object.entries(waffenModelle)) m.visible = werkzeug === 'hand' && id === WAFFEN[waffeNr].id;
 }
 
-function ballSchiessen(start, richtung, schaden = 1, { tempo = BALL_TEMPO, leben = 2.5, groesse = 1, durch = false, stoss = 1, matr = null } = {}) {
+function ballSchiessen(start, richtung, schaden = 1, { tempo = BALL_TEMPO, leben = 2.5, groesse = 1, durch = false, stoss = 1, matr = null, deko = false } = {}) {
   const m = new THREE.Mesh(BALL_GEO, matr || BALL_MATS[Math.floor(Math.random() * 4)]);
   m.scale.setScalar(groesse); m.castShadow = true; szene.add(m);
   baelle.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(tempo), t: leben, verbraucht: false,
-    schaden: schaden * schadenMal(), r: 0.18 * groesse, durch, stoss, getroffen: new Set() });
+    schaden: schaden * schadenMal(), r: 0.18 * groesse, durch, stoss, deko, getroffen: new Set() });
 }
 
 function trifft(g, pos, r) {
@@ -1472,12 +1476,11 @@ function baelleUpdate(dt) {
     if (geb && b.pos.y < geb.box.y2 && b.pos.x > geb.box.x1 && b.pos.x < geb.box.x2 && b.pos.z > geb.box.z1 && b.pos.z < geb.box.z2) {
       b.pos.addScaledVector(b.vel, -dt); b.vel.multiplyScalar(-0.4);
     }
-    if (!b.verbraucht) {
+    if (!b.verbraucht && !b.deko) {
       for (const g of gegner) {
         if (b.getroffen.has(g) || !trifft(g, b.pos, b.r)) continue;
         const n = b.vel.clone().normalize();
-        g.umfallen(n.x * 11 * b.stoss / g.s, 5 * b.stoss / g.s, n.z * 11 * b.stoss / g.s);
-        gegnerSchaden(g, b.schaden);
+        gegnerTreffen(g, n.x * 11 * b.stoss / g.s, 5 * b.stoss / g.s, n.z * 11 * b.stoss / g.s, b.schaden);
         puff(b.pos.x, b.pos.y, b.pos.z, 0xffe14f, 8, { leucht: true, groesse: 0.6, leben: 0.4 });
         SOUND.klong();
         if (b.durch) { b.getroffen.add(g); continue; }   // Bowlingkugel rollt weiter!
@@ -1501,10 +1504,10 @@ const RAKETE_GEO = (() => {
   return mergeGeometries([k.toNonIndexed(), s.toNonIndexed(), f.toNonIndexed(), f2.toNonIndexed()]);
 })();
 const RAKETE_MAT = mat(0xe8e8e8, { roughness: 0.4, metalness: 0.4, emissive: 0x330000 });
-function raketeSchiessen(start, richtung) {
+function raketeSchiessen(start, richtung, deko = false) {
   const m = new THREE.Mesh(RAKETE_GEO, RAKETE_MAT);
   m.position.copy(start); m.lookAt(start.clone().add(richtung)); m.castShadow = true; szene.add(m);
-  raketen.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(34), t: 3 });
+  raketen.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(34), t: 3, deko });
 }
 function raketenUpdate(dt) {
   for (const r of raketen) {
@@ -1515,12 +1518,12 @@ function raketenUpdate(dt) {
     const kk = key(zelleVon(r.pos.x), zelleVon(r.pos.z)), box = zellen.get(kk)?.box || hindernisse.get(kk);
     if (box && r.pos.y < box.y2 && r.pos.x > box.x1 && r.pos.x < box.x2 && r.pos.z > box.z1 && r.pos.z < box.z2) knall = true;
     if (!knall) for (const g of gegner) if (!g.tot && trifft(g, r.pos, 0.25)) { knall = true; break; }
-    if (knall) { explosion(r.pos, 4.5, 6); r.t = 0; szene.remove(r.mesh); }
+    if (knall) { explosion(r.pos, 4.5, 6, r.deko); r.t = 0; szene.remove(r.mesh); }
   }
   raketen = raketen.filter(r => r.t > 0);
 }
 // Explosion: Roboter fliegen weg (und du auch, wenn du zu nah dran bist – Raketen-Sprung!)
-function explosion(pos, radius, schaden) {
+function explosion(pos, radius, schaden, deko = false) {
   const p = pos.clone();
   SOUND.bumm(0.3);
   const ring = new THREE.Mesh(RING_GEO, new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.8, depthWrite: false }));
@@ -1531,13 +1534,13 @@ function explosion(pos, radius, schaden) {
   for (let k = 0; k < 10; k++) rauch(p.x + rnd(-1, 1), p.y + rnd(0, 1), p.z + rnd(-1, 1), wahl([0x444444, 0x666666, 0xff8a30]), 1.2, 2.5, 1.4, 1, 0.75);
   const ds = spieler.pos.distanceTo(p);
   if (ds < 30) kameraWackeln = Math.max(kameraWackeln, 0.45 * (1 - ds / 30));
+  if (deko) return;   // nur zum Anschauen (Rakete von einem Freund)
   for (const g of gegner) {
     const m = g.mitte(), d = m.distanceTo(p);
     if (d > radius + 0.5 * g.s) continue;
     const dir = m.sub(p); dir.y = 0; dir.normalize();
     const k = 1 - Math.min(1, d / (radius + 0.5 * g.s)) * 0.6;
-    g.umfallen(dir.x * 14 * k / g.s, 10 * k / g.s, dir.z * 14 * k / g.s);
-    gegnerSchaden(g, Math.ceil(schaden * k * schadenMal()));
+    gegnerTreffen(g, dir.x * 14 * k / g.s, 10 * k / g.s, dir.z * 14 * k / g.s, Math.ceil(schaden * k * schadenMal()));
   }
   const sm = spieler.mitte(), dsp = sm.distanceTo(p);
   if (dsp < radius * 0.55) { // Raketen-Sprung: kein Schaden, aber du fliegst!
@@ -1579,8 +1582,7 @@ function blitzSchiessen(start) {
     const m = ziel.mitte();
     blitzLinie(von, m);
     schon.add(ziel);
-    ziel.umfallen(rnd(-3, 3), 7 / ziel.s, rnd(-3, 3));
-    gegnerSchaden(ziel, 3 * schadenMal());
+    gegnerTreffen(ziel, rnd(-3, 3), 7 / ziel.s, rnd(-3, 3), 3 * schadenMal());
     von = m;
     let naechster = null, nd = 11;
     for (const g of gegner) {
@@ -1613,20 +1615,26 @@ function schiessen() {
     ballSchiessen(start, richtung);
     if (hat('robo10')) for (const a of [-0.08, 0.08]) ballSchiessen(start, richtung.clone().applyAxisAngle(Y_ACHSE, a));
     SOUND.plopp();
+    schussMelden('ball', start, richtung);
   } else if (w.id === 'schrot') {
     richtung.y += 0.03;
     for (let k = 0; k < 8; k++) ballSchiessen(start, streuen(richtung, 0.13), 1, { tempo: 26, leben: 0.9, stoss: 1.3 });
     SOUND.schrot();
+    schussMelden('schrot', start, richtung);
   } else if (w.id === 'minigun') {
     richtung.y += 0.03;
-    ballSchiessen(start, streuen(richtung, 0.035), 1, { tempo: 38, leben: 1.6, groesse: 0.7 });
+    const r = streuen(richtung, 0.035);
+    ballSchiessen(start, r, 1, { tempo: 38, leben: 1.6, groesse: 0.7 });
     SOUND.tack();
+    schussMelden('minigun', start, r);
   } else if (w.id === 'bowling') {
     richtung.y = Math.max(richtung.y, -0.15) + 0.06; richtung.normalize();
     ballSchiessen(start, richtung, 4, { tempo: 22, leben: 4, groesse: 2.4, durch: true, stoss: 1.8, matr: BOWLING_MAT });
     SOUND.bowling();
+    schussMelden('bowling', start, richtung);
   } else if (w.id === 'rakete') {
     raketeSchiessen(start, richtung);
+    schussMelden('rakete', start, richtung);
     if (hat('riese')) raketeSchiessen(start.clone().addScaledVector(Y_ACHSE, 0.4), richtung.clone().applyAxisAngle(Y_ACHSE, 0.06));
     SOUND.rakete();
   } else if (w.id === 'blitz') {
@@ -1648,8 +1656,7 @@ function schlagen() {
     const dm = Math.hypot(m.x - f.pos.x, m.z - f.pos.z);
     if (Math.min(d, dm) > (mega ? 5 : 2.3) || (dx * fx + dz * fz) / (d || 1) < 0.2) continue;
     const k = mega ? 1.8 : 1;
-    g.umfallen(fx * 14 * k / g.s, 8 * k / g.s, fz * 14 * k / g.s);
-    gegnerSchaden(g, (mega ? 5 : 2) * schadenMal());
+    gegnerTreffen(g, fx * 14 * k / g.s, 8 * k / g.s, fz * 14 * k / g.s, (mega ? 5 : 2) * schadenMal());
     traf = true;
   }
   if (mega) {
@@ -1664,7 +1671,7 @@ function schlagen() {
     erz.schlaege++;
     puff(zi * G, 0.5, zj * G, erz.art === 'eisen' ? 0xb5553a : 0xff8c3a, 5);
     if (erz.schlaege >= (mega ? 1 : 3)) {
-      erz.schlaege = 0; stand.lager[erz.art]++;
+      erz.schlaege = 0; lagerPlus(erz.art, 1);
       meldung(`+1 ${erz.art === 'eisen' ? 'Eisenbarren' : 'Kupferbarren'} (mit der Faust!)`, 1.2);
     }
     traf = true;
@@ -1693,15 +1700,16 @@ function gegnerSpawnen(art = 'roboter', x, z) {
   const a = GEGNER_ARTEN[art];
   if (x === undefined) {
     const w = (stand.welleWinkel ?? Math.random() * 6.28) + (Math.random() - 0.5) * 1.2, r = rnd(42, 58), rand = WELT * G - 3;
-    x = Math.max(-rand, Math.min(rand, spieler.pos.x + Math.cos(w) * r));
-    z = Math.max(-rand, Math.min(rand, spieler.pos.z + Math.sin(w) * r));
+    const um = wahl(alleSpieler().filter(f => Math.hypot(f.pos.x, f.pos.z) < HUB_NAEHE)) || spieler;
+    x = Math.max(-rand, Math.min(rand, um.pos.x + Math.cos(w) * r));
+    z = Math.max(-rand, Math.min(rand, um.pos.z + Math.sin(w) * r));
   }
   const g = new Figur(AUSSEHEN[a.aus], a.s);
   const staerker = 1 + stand.welle * 0.08;   // jede Welle werden sie etwas stärker
   Object.assign(g, { art, info: a, boss: !!a.boss, tempo: a.tempo, schaden: a.schaden, staerke: a.staerke });
   g.hp = g.maxHp = Math.ceil(a.hp * staerker);
   g.aufstehZeit = a.boss ? 0.7 : 1.0;   // Roboter stehen schneller wieder auf als du!
-  g.angriffT = -0.5; g.spezialT = rnd(1.5, 3); g.helferT = 8;
+  g.angriffT = -0.5; g.spezialT = rnd(1.5, 3); g.helferT = 8; g.id = ++gegnerZaehler;
   g.pos.set(x, 0, z);
   g.yaw = Math.atan2(spieler.pos.x - g.pos.x, spieler.pos.z - g.pos.z);
   g.sofortStehen();
@@ -1728,15 +1736,14 @@ function gegnerSchaden(g, n) {
   if (g.boss) {
     stand.bossKills = (stand.bossKills || 0) + 1;
     if (g.art === 'riese') stand.rieseKills = (stand.rieseKills || 0) + 1;
-    meldung(`🏆 ${g.info.name} besiegt! +${eisen} Eisen +${kupfer} Kupfer`, 4);
-    SOUND.tada();
+    allenMelden(`🏆 ${g.info.name} besiegt! +${eisen} Eisen +${kupfer} Kupfer`, 4, 'tada');
     kameraWackeln = 0.6;
   } else meldung(`💥 Roboter kaputt! +${eisen} Eisen +${kupfer} Kupfer`, 1.5);
 }
 
 // Boss-Spezialattacken. Gibt [wx, wz] zurück, wenn der Boss gerade selbst bestimmt, wohin er läuft
 function bossSpezial(g, dt) {
-  const a = g.info, sp = spieler;
+  const a = g.info, sp = g.zielFigur || spieler;
   const dx = sp.pos.x - g.pos.x, dz = sp.pos.z - g.pos.z, d = Math.hypot(dx, dz) || 1;
   g.spezialT -= dt;
   if (g.sprung) { // Hüpf-Hammer fliegt gerade
@@ -1756,7 +1763,7 @@ function bossSpezial(g, dt) {
     if (an.t <= 0) { g.ansturm = null; return [0, 0]; }
     g.arme = 'vor'; g.yaw = Math.atan2(an.x, an.z);
     puff(g.pos.x, 0.8 * g.s, g.pos.z, 0x66ffff, 1, { leucht: true, groesse: 0.6, leben: 0.3, tempo: 0.3 });
-    if (d < 1.4 * g.s) { spielerGetroffen(g.pos, g.schaden, g.staerke); an.t = Math.min(an.t, 0.1); }
+    if (d < 1.4 * g.s) { treffeSpieler(sp, g.pos, g.schaden, g.staerke); an.t = Math.min(an.t, 0.1); }
     return [an.x, an.z];
   }
   if (g.stampf > 0) { // Riese holt zum Stampfen aus
@@ -1792,14 +1799,19 @@ const FEUER_GEO = new THREE.SphereGeometry(0.32, 14, 10);
 const FEUER_MAT = new THREE.MeshBasicMaterial({ color: 0xff4a1a });
 function energieSchuss(g) {
   const start = g.mitte(); start.y += 0.45 * g.s;
-  const ziel = spieler.mitte();
+  const opfer = g.zielFigur || spieler;
+  const ziel = opfer.mitte();
   const flug = start.distanceTo(ziel) / 20;
-  ziel.addScaledVector(spieler.vel, flug * 0.7);
+  ziel.addScaledVector(opfer.vel, flug * 0.7);
   ziel.y += 0.5 * 6 * flug * flug;
   const v = ziel.sub(start).normalize().multiplyScalar(20);
   start.addScaledVector(v, 0.05);
+  feuerballZeigen(start, v, false);
+  anAlle({ t: 'feuer', a: [r2(start.x), r2(start.y), r2(start.z)], v: [r2(v.x), r2(v.y), r2(v.z)] });
+}
+function feuerballZeigen(start, v, deko = true) {
   const mesh = new THREE.Mesh(FEUER_GEO, FEUER_MAT); mesh.position.copy(start); szene.add(mesh);
-  gegnerSchuesse.push({ mesh, pos: start, vel: v, t: 3 });
+  gegnerSchuesse.push({ mesh, pos: start, vel: v, t: 3, deko });
   rauch(start.x, start.y, start.z, 0xff7a30, 0.8, 1.2, 0.5, 0.5, 0.8);
   SOUND.peng();
 }
@@ -1813,7 +1825,7 @@ function gegnerSchuesseUpdate(dt) {
     if (Math.random() < 0.6) rauch(s.pos.x, s.pos.y, s.pos.z, wahl([0xff7a30, 0xffc040, 0x555555]), 0.35, 0.6, 0.4, 0.2, 0.7);
     const geb = zellen.get(key(zelleVon(s.pos.x), zelleVon(s.pos.z)));
     const inGeb = geb && s.pos.y < geb.box.y2 && s.pos.x > geb.box.x1 && s.pos.x < geb.box.x2 && s.pos.z > geb.box.z1 && s.pos.z < geb.box.z2;
-    const trifftSpieler = spieler.modus === 'steht' && s.pos.distanceTo(spieler.mitte()) < 0.9;
+    const trifftSpieler = !s.deko && alleSpieler().some(f => f.modus === 'steht' && f.hp > 0 && s.pos.distanceTo(f.mitte()) < 0.9);
     if (trifftSpieler || inGeb || s.pos.y < 0.3 || s.t <= 0) {
       if (inGeb) gebaeudeGetroffen(geb, 2);
       schockwelle(s.pos, 2.8, 15, 20, null, true);
@@ -1836,10 +1848,14 @@ function schockwelle(pos, radius, staerke, schaden, von, klein = false) {
     rauch(p.x + Math.cos(w) * radius * 0.5, 0.3, p.z + Math.sin(w) * radius * 0.5, klein ? 0xff9a50 : 0xc9b48a, 0.8, 2, 0.9, 0.6, 0.7);
   }
   puff(p.x, 0.4, p.z, klein ? 0xffa030 : 0x8a7a5a, klein ? 10 : 18, { leucht: klein, groesse: 0.8, tempo: 1.3 });
-  const sp = spieler;
-  const ds = Math.hypot(sp.pos.x - p.x, sp.pos.z - p.z);
+  const ds = Math.hypot(spieler.pos.x - p.x, spieler.pos.z - p.z);
   if (ds < 30) kameraWackeln = Math.max(kameraWackeln, (klein ? 0.25 : 0.7) * (1 - ds / 30));
-  if (ds < radius && sp.pos.y < p.y + 2) spielerGetroffen(p, schaden * (1 - ds / radius * 0.5), staerke);
+  if (istGast()) return;   // beim Gast nur zum Anschauen – der Chef rechnet
+  if (!klein) anAlle({ t: 'welle', x: r2(p.x), z: r2(p.z), r: radius });
+  for (const f of alleSpieler()) {
+    const d = Math.hypot(f.pos.x - p.x, f.pos.z - p.z);
+    if (d < radius && f.pos.y < p.y + 2) treffeSpieler(f, p, schaden * (1 - d / radius * 0.5), staerke);
+  }
   for (const h of gegner) {
     if (h === von || h.tot || h.modus !== 'steht') continue;
     const dx = h.pos.x - p.x, dz = h.pos.z - p.z, d = Math.hypot(dx, dz) || 1;
@@ -1868,9 +1884,14 @@ function gegnerUpdate(g, dt) {
   if (g.blitzT > 0) g.blitzT -= dt;
   if (g.modus !== 'steht') { g.sprung = null; g.ansturm = null; g.stampf = 0; }
   if (g.modus === 'steht') {
-    const sp = spieler;
+    let sp = spieler, ds = Infinity;   // der nächste Spieler ist das Ziel
+    for (const f of alleSpieler()) {
+      if (f.hp <= 0) continue;
+      const d = Math.hypot(f.pos.x - g.pos.x, f.pos.z - g.pos.z);
+      if (d < ds) { ds = d; sp = f; }
+    }
+    g.zielFigur = sp;
     let zx, zz, zielGeb = null, reichweite;
-    const ds = Math.hypot(sp.pos.x - g.pos.x, sp.pos.z - g.pos.z);
     if (sp.hp > 0 && ds < (g.boss ? 40 : 30)) { zx = sp.pos.x; zz = sp.pos.z; reichweite = 1.3 * g.s; }
     else {
       let bd = Infinity;
@@ -1888,7 +1909,7 @@ function gegnerUpdate(g, dt) {
       if (g.helferT <= 0) {
         g.helferT = 12;
         for (let k = 0; k < 3 && gegner.length < MAX_GEGNER; k++) gegnerSpawnen('roboter', g.pos.x + rnd(-4, 4), g.pos.z + rnd(-4, 4));
-        meldung('👑 Der Riesen-Robo ruft Helfer!', 1.5);
+        allenMelden('👑 Der Riesen-Robo ruft Helfer!', 1.5);
       }
     }
     let wx = 0, wz = 0;
@@ -1902,7 +1923,7 @@ function gegnerUpdate(g, dt) {
       if (g.angriffT >= 0.45) { // zuhauen!
         g.angriffT = -0.6;
         if (zielGeb) gebaeudeGetroffen(zielGeb, g.info.gebSchaden || 1);
-        else if (d < reichweite + 0.5) spielerGetroffen(g.pos, g.schaden, g.staerke);
+        else if (d < reichweite + 0.5 && sp.modus === 'steht') treffeSpieler(sp, g.pos, g.schaden, g.staerke);
       }
       g.arme = g.angriffT > 0 ? 'hoch' : 'vor';
     }
@@ -1950,7 +1971,7 @@ function wellenUpdate(dt) {
   stand.welleT -= dt;
   if (stand.welleT > 0) return;
   stand.welleT = 0;
-  if (!amHub()) return;   // Roboter greifen erst an, wenn du beim HUB bist
+  if (!alleSpieler().some(f => Math.hypot(f.pos.x, f.pos.z) < HUB_NAEHE)) return;   // Roboter greifen erst an, wenn jemand beim HUB ist
   stand.welle++;
   stand.welleT = WELLEN_PAUSE;
   stand.welleWinkel = Math.random() * Math.PI * 2;
@@ -1964,8 +1985,7 @@ function wellenUpdate(dt) {
   for (const b of bosse) gegnerSpawnen(b);   // Bosse kommen immer!
   for (let k = 0; k < anzahl && gegner.length < MAX_GEGNER; k++) gegnerSpawnen('roboter');
   const namen = bosse.map(b => GEGNER_ARTEN[b].name).join(' + ');
-  meldung(`🤖 Welle ${w} kommt!${bosse.length ? `\n⚠️ BOSS: ${namen}` : ''}`, 4);
-  if (bosse.length) SOUND.boss(); else SOUND.alarm();
+  allenMelden(`🤖 Welle ${w} kommt!${bosse.length ? `\n⚠️ BOSS: ${namen}` : ''}`, 4, bosse.length ? 'boss' : 'alarm');
 }
 
 // ================= PARTIKEL: Splitter, Funken, Rauch, Staub =================
@@ -2054,7 +2074,7 @@ function kostenText(typ) {
   return Object.entries(GEBAEUDE[typ].kosten).map(([m, n]) => `${n} ${m === 'eisen' ? '⬜' : '🟧'}`).join(' ');
 }
 
-function bauProblem(typ, i, j) {
+function bauProblem(typ, i, j, wer = spieler) {
   if (!freigeschaltet(typ)) return `🔒 Erst Meilenstein „${MEILENSTEINE.find(m => m.id === GEBAEUDE[typ].sperre).text}“ schaffen`;
   if (Math.abs(i) > WELT - 2 || Math.abs(j) > WELT - 2) return 'Zu weit draußen';
   if (zellen.get(key(i, j))) return 'Da steht schon was';
@@ -2063,21 +2083,33 @@ function bauProblem(typ, i, j) {
   const erz = erzFelsen.get(key(i, j));
   if (typ === 'bohrer' && !erz) return 'Bohrer nur auf Erz-Felsen!';
   if (typ !== 'bohrer' && erz) return 'Hier ist ein Erz-Felsen – nur für Bohrer';
-  if (GEBAEUDE[typ].hoehe > 1 && zelleVon(spieler.pos.x) === i && zelleVon(spieler.pos.z) === j) return 'Du stehst im Weg';
+  if (GEBAEUDE[typ].hoehe > 1 && zelleVon(wer.pos.x) === i && zelleVon(wer.pos.z) === j) return 'Du stehst im Weg';
   if (!genugGeld(typ)) return 'Zu wenig Barren';
   return '';
 }
 
-function platzieren(typ, i, j, dir) {
-  const problem = bauProblem(typ, i, j);
+function platzieren(typ, i, j, dir, wer = spieler) {
+  const problem = bauProblem(typ, i, j, wer);
   if (problem) return problem;
+  if (istGast()) { anChef({ t: 'bauen', typ, i, j, d: dir }); return null; }   // der Chef baut es für alle
   for (const [m, n] of Object.entries(GEBAEUDE[typ].kosten)) stand.lager[m] -= n;
   const b = bauen(typ, i, j, dir);
   puff(i * G, 0.3, j * G, 0xdddddd, 6);
   for (let k = 0; k < 8; k++) { const w = k / 8 * Math.PI * 2; rauch(i * G + Math.cos(w) * 1.1, 0.2, j * G + Math.sin(w) * 1.1, 0xd8d0c0, 0.5, 1.2, 0.8, 0.4, 0.6); }
   SOUND.bau();
   speicherT = 4;
+  anAlle({ t: 'gebaut', typ, i, j, d: dir });
   return b;
+}
+
+function bandDrehenLokal(i, j, dir) {
+  const b = zellen.get(key(i, j));
+  if (b && b.typ === 'band') { b.dir = dir; b.gruppe.rotation.y = DIR_WINKEL[dir]; }
+}
+function bandDrehen(i, j, dir) {
+  if (istGast()) { anChef({ t: 'drehen', i, j, d: dir }); return; }
+  bandDrehenLokal(i, j, dir);
+  anAlle({ t: 'gedreht', i, j, d: dir });
 }
 
 function bandZiehen() { // Band: Maus halten und ziehen = viele Bänder hintereinander
@@ -2088,14 +2120,12 @@ function bandZiehen() { // Band: Maus halten und ziehen = viele Bänder hinterei
     const di = z[0] - letzteZelle[0], dj = z[1] - letzteZelle[1];
     if (Math.abs(di) + Math.abs(dj) === 1) {
       dir = DIRS.findIndex(([a, b]) => a === di && b === dj);
-      if (letztesBand && zellen.get(key(letzteZelle[0], letzteZelle[1])) === letztesBand) {
-        letztesBand.dir = dir; letztesBand.gruppe.rotation.y = DIR_WINKEL[dir];
-      }
+      if (letztesBand) bandDrehen(letzteZelle[0], letzteZelle[1], dir);
     }
   }
   letzteZelle = z;
   const b = platzieren('band', z[0], z[1], dir);
-  letztesBand = typeof b === 'object' ? b : null;
+  letztesBand = typeof b !== 'string';
   if (typeof b === 'string' && b !== 'Da steht schon was') meldung(b, 1);
 }
 
@@ -2107,6 +2137,7 @@ function klick() {
     const b = zellen.get(key(z[0], z[1]));
     if (!b) return;
     if (b.typ === 'hub') { meldung('Den HUB kann man nicht abreißen', 1.2); return; }
+    if (istGast()) { anChef({ t: 'abriss', i: b.i, j: b.j }); SOUND.klong(); return; }
     abreissen(b, true); SOUND.klong(); speicherT = 4;
     return;
   }
@@ -2204,6 +2235,10 @@ function karteMalen(g, px, mx, mz, meter, drehung, rund) {
     g.beginPath(); g.arc(e.pos.x, e.pos.z, (e.boss ? 2.6 : 1.3) * gr, 0, 7); g.fill();
     if (e.boss) { g.strokeStyle = '#fff'; g.lineWidth = 0.6 * gr; g.stroke(); }
   }
+  for (const f of fremde.values()) { // Freunde
+    g.fillStyle = alsText(SPIELER_FARBEN[f.nr] || 0xffffff); g.strokeStyle = '#fff'; g.lineWidth = 0.6 * gr;
+    g.beginPath(); g.arc(f.pos.x, f.pos.z, 2.2 * gr, 0, 7); g.fill(); g.stroke();
+  }
   // Spieler-Pfeil
   const fx = Math.sin(kamYaw), fz = Math.cos(kamYaw), rx = -fz, rz = fx, p = spieler.pos, a = 3 * gr;
   g.fillStyle = '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 0.5 * gr;
@@ -2242,6 +2277,7 @@ function grosseKarte(auf) {
 // ================= SPEICHERN =================
 let speicherT = 0;
 function speichern() {
+  if (istGast()) return;   // Gäste speichern die Welt vom Chef nicht
   speicherT = 0;
   stand.bauten = gebaeude.filter(b => b.typ !== 'hub').map(b => ({ t: b.typ, i: b.i, j: b.j, d: b.dir }));
   try { localStorage.setItem(SPEICHER_NAME, JSON.stringify(stand)); } catch (e) { /* egal */ }
@@ -2285,7 +2321,7 @@ const SOUND = {
 };
 
 // ================= HUD =================
-const el = Object.fromEntries(['waffen', 'meilensteinListe', 'minikarte', 'hubWeg', 'grosseKarte', 'karteGross', 'bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
+const el = Object.fromEntries(['netzStatus', 'raumAuf', 'raumCode', 'beitreten', 'waffen', 'meilensteinListe', 'minikarte', 'hubWeg', 'grosseKarte', 'karteGross', 'bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
   .map(id => [id, document.getElementById(id)]));
 const altesHTML = new Map();
 function setHTML(e, html) { if (altesHTML.get(e) !== html) { altesHTML.set(e, html); e.innerHTML = html; } }
@@ -2308,7 +2344,8 @@ const slots = WERKZEUGE.map((w, k) => {
 
 function hudUpdate() {
   setHTML(el.lager, `⬜ Eisenbarren: <b>${stand.lager.eisen}</b><br>🟧 Kupferbarren: <b>${stand.lager.kupfer}</b>` +
-    `<br><small>Erz im HUB: ${stand.erz.eisen}/3 Eisen · ${stand.erz.kupfer}/3 Kupfer</small>`);
+    `<br><small>Erz im HUB: ${stand.erz.eisen}/3 Eisen · ${stand.erz.kupfer}/3 Kupfer</small>` +
+    (netz.modus !== 'solo' ? `<br>🌐 Raum <b>${netz.code}</b> · ${fremde.size + 1} Spieler${istGast() ? '' : ' · du bist Chef'}` : ''));
   el.lebenBalken.style.width = Math.max(0, spieler.hp / SPIELER_LEBEN * 100) + '%';
   const ms = aktuellerMeilenstein();
   setHTML(el.meilenstein, ms
@@ -2346,14 +2383,13 @@ function meilensteinPruefen() {
   for (const [m, n] of Object.entries(ms.bonus || {})) stand.lager[m] += n;
   const neueWaffe = WAFFEN.findIndex(w => w.sperre === ms.id);
   if (neueWaffe >= 0) { waffeNr = neueWaffe; werkzeugWaehlen('hand'); }
-  meldung(`🎉 Meilenstein geschafft! ${ms.belohnung}`, 4);
-  SOUND.tada();
+  allenMelden(`🎉 Meilenstein geschafft! ${ms.belohnung}`, 4, 'tada');
   puff(0, 4, 0, 0xffd166, 30);
   speichern();
 }
 
 // ================= EINGABE =================
-const taste = {};
+const taste = {}, TASTEN = taste;
 let pausiert = true;
 
 function werkzeugWaehlen(w) {
@@ -2440,6 +2476,10 @@ el.los.addEventListener('click', () => {
   pause(false);
   sperreMaus();
 });
+el.raumAuf.addEventListener('click', () => raumOeffnen());
+el.beitreten.addEventListener('click', () => raumBeitreten(el.raumCode.value));
+el.raumCode.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') raumBeitreten(el.raumCode.value); });
+el.raumCode.addEventListener('input', () => { el.raumCode.value = el.raumCode.value.toUpperCase().replace(/[^A-Z]/g, ''); });
 el.neu.addEventListener('click', () => {
   if (!confirm('Wirklich eine neue Fabrik anfangen? Deine jetzige Fabrik ist dann weg.')) return;
   try { localStorage.removeItem(SPEICHER_NAME); } catch (e) { /* egal */ }
@@ -2447,27 +2487,314 @@ el.neu.addEventListener('click', () => {
 });
 if (stand.bauten && stand.bauten.length) el.los.textContent = '▶ Weiterspielen';
 
+// ================= ONLINE MIT FREUNDEN =================
+// Einer ist der "Chef" (macht den Raum auf). Der Chef rechnet die Welt: Roboter, Fabrik, Lager, Meilensteine.
+// Die Freunde ("Gäste") steuern nur ihre eigene Figur und schicken dem Chef, was sie tun.
+const RAUM_VORSILBE = 'ragdolfactory-raum-';
+const MAX_SPIELER = 4;
+const SPIELER_FARBEN = [0xff8c1a, 0x2a9df4, 0x3ddc84, 0xc77dff];
+const SPIELER_NAMEN = ['Spieler 1', 'Spieler 2', 'Spieler 3', 'Spieler 4'];
+SPIELER_FARBEN.forEach((c, k) => { AUSSEHEN['spieler' + k] = { ...AUSSEHEN.spieler, anzug: c, _m: undefined }; });
+const ARME = ['', 'vor', 'hoch', 'zielen'];
+const netz = { modus: 'solo', peer: null, code: '', ich: 'chef', nr: 0, gaeste: new Map(), chef: null, sendeT: 0, standT: 0 };
+const fremde = new Map();   // andere Spieler: id -> Figur
+let gegnerZaehler = 0;
+const istGast = () => netz.modus === 'gast';
+const alleSpieler = () => [spieler, ...fremde.values()];
+const r2 = v => Math.round(v * 100) / 100;
+
+function anAlle(nachricht, ausser) { // Chef schickt an alle Gäste
+  if (netz.modus !== 'chef') return;
+  for (const [id, g] of netz.gaeste) if (id !== ausser && g.conn.open) g.conn.send(nachricht);
+}
+function anChef(nachricht) { if (netz.chef?.open) netz.chef.send(nachricht); }
+function allenMelden(text, dauer = 2.5, ton) {
+  meldung(text, dauer);
+  if (ton) SOUND[ton]?.();
+  anAlle({ t: 'meldung', text, d: dauer, ton });
+}
+
+// Wenn ein Spieler getroffen wird: bei mir selbst direkt, bei Freunden per Nachricht
+function treffeSpieler(f, von, schaden, staerke) {
+  if (f === spieler) { spielerGetroffen(von, schaden, staerke); return; }
+  for (const g of netz.gaeste.values()) if (g.figur === f && g.conn.open) g.conn.send({ t: 'getroffen', v: [r2(von.x), r2(von.z)], s: schaden, k: staerke });
+}
+// Wenn ich einen Roboter treffe: als Chef direkt, als Gast dem Chef sagen
+function gegnerTreffen(g, vx, vy, vz, schaden) {
+  if (istGast()) { anChef({ t: 'treffer', id: g.id, v: [r2(vx), r2(vy), r2(vz)], s: schaden }); return; }
+  g.umfallen(vx, vy, vz);
+  gegnerSchaden(g, schaden);
+}
+function lagerPlus(m, n) { if (istGast()) anChef({ t: 'lager', m, n }); else stand.lager[m] += n; }
+
+// ---------- Figuren als Zahlen-Listen verschicken ----------
+function figurDaten(f, id, extra) {
+  const zustand = f.tot ? 2 : f.modus === 'steht' || f.modus === 'aufstehen' && f.blend > 0.5 ? 0 : 1;
+  const d = [id, r2(f.pos.x), r2(f.pos.y), r2(f.pos.z), r2(f.yaw), zustand, Math.max(0, ARME.indexOf(f.arme)), f.aufBoden ? 1 : 0, ...extra];
+  if (zustand !== 0) for (const p of f.p) d.push(r2(p.x), r2(p.y), r2(p.z));
+  return d;
+}
+function zielSetzen(f, d, start) { // empfangene Zahlen merken – die Figur gleitet dann sanft dorthin
+  const z = f.ziel || (f.ziel = { punkte: TEILE.map(() => new THREE.Vector3()), neu: true });
+  [, z.x, z.y, z.z, z.yaw, z.zustand, z.arme, z.boden] = d;
+  if (z.zustand !== 0) for (let k = 0; k < 13; k++) z.punkte[k].set(d[start + k * 3], d[start + k * 3 + 1], d[start + k * 3 + 2]);
+}
+function figurFolgen(f, dt) {
+  const z = f.ziel;
+  if (!z) return;
+  const k = 1 - Math.exp(-14 * dt);
+  if (z.zustand === 0) {
+    if (f.modus !== 'steht' || z.neu) { f.modus = 'steht'; f.pos.set(z.x, z.y, z.z); f.yaw = z.yaw; }
+    const ax = f.pos.x, az = f.pos.z;
+    f.pos.x += (z.x - f.pos.x) * k; f.pos.y += (z.y - f.pos.y) * k; f.pos.z += (z.z - f.pos.z) * k;
+    f.vel.set((f.pos.x - ax) / dt, 0, (f.pos.z - az) / dt);
+    f.yaw = winkelNaeher(f.yaw, z.yaw, k);
+    f.arme = ARME[z.arme] || ''; f.aufBoden = !!z.boden;
+    f.update(dt);
+  } else {
+    if (f.modus !== 'netz' || z.neu) { for (let n = 0; n < 13; n++) f.p[n].copy(z.punkte[n]); }
+    f.modus = 'netz';
+    for (let n = 0; n < 13; n++) { f.a[n].copy(f.p[n]); f.p[n].lerp(z.punkte[n], k); }
+    f.pos.set(z.x, z.y, z.z);
+  }
+  z.neu = false;
+}
+
+// ---------- andere Spieler ----------
+function fremdenSpieler(id, nr) {
+  let f = fremde.get(id);
+  if (f) return f;
+  f = new Figur(AUSSEHEN['spieler' + nr] || AUSSEHEN.spieler1, 1);
+  f.hp = SPIELER_LEBEN; f.nr = nr; f.id = id;
+  f.namensSchild = schild(SPIELER_NAMEN[nr] || 'Freund', alsText(SPIELER_FARBEN[nr] || 0xffffff));
+  f.namensSchild.scale.set(1.3, 0.5, 1); szene.add(f.namensSchild);
+  fremde.set(id, f);
+  return f;
+}
+function fremdenEntfernen(id) {
+  const f = fremde.get(id);
+  if (!f) return;
+  f.entfernen(); szene.remove(f.namensSchild);
+  fremde.delete(id);
+}
+function meineFarbe(nr) { // meinen Anzug in meiner Spieler-Farbe färben
+  const m = figurMaterialien(AUSSEHEN.spieler);
+  m.anzug.map = stoffTextur(alsText(SPIELER_FARBEN[nr])); m.anzug.needsUpdate = true;
+  m.dunkler.color.set(SPIELER_FARBEN[nr]).multiplyScalar(0.6);
+}
+
+// ---------- Schüsse der anderen sehen (nur zum Anschauen) ----------
+function schussZeigen(d) {
+  const start = new THREE.Vector3(...d.a), r = new THREE.Vector3(...d.r);
+  if (d.w === 'rakete') raketeSchiessen(start, r, true);
+  else if (d.w === 'bowling') ballSchiessen(start, r, 0, { tempo: 22, leben: 4, groesse: 2.4, durch: true, matr: BOWLING_MAT, deko: true });
+  else for (let k = 0; k < (d.w === 'schrot' ? 8 : 1); k++) {
+    ballSchiessen(start, d.w === 'schrot' ? streuen(r, 0.13) : r, 0, { tempo: d.w === 'minigun' ? 38 : d.w === 'schrot' ? 26 : BALL_TEMPO, leben: d.w === 'schrot' ? 0.9 : 2, groesse: d.w === 'minigun' ? 0.7 : 1, deko: true });
+  }
+}
+function schussMelden(w, start, r) {
+  const d = { t: 'schuss', w, a: [r2(start.x), r2(start.y), r2(start.z)], r: [r2(r.x), r2(r.y), r2(r.z)] };
+  if (istGast()) anChef(d); else anAlle(d);
+}
+
+// ---------- Chef ----------
+function raumOeffnen() {
+  if (netz.peer || typeof Peer === 'undefined') { netzStatus('❌ Online geht gerade nicht (keine Internet-Verbindung?)'); return; }
+  const buchstaben = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  netz.code = Array.from({ length: 4 }, () => wahl([...buchstaben])).join('');
+  netzStatus('⏳ Raum wird geöffnet …');
+  const peer = netz.peer = new Peer(RAUM_VORSILBE + netz.code);
+  peer.on('open', () => {
+    netz.modus = 'chef'; netz.ich = 'chef'; netz.nr = 0;
+    netzStatus(`✅ Raum offen! Code für deine Freunde: <b class="code">${netz.code}</b>`);
+  });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id') { netz.peer = null; peer.destroy(); raumOeffnen(); return; } // Code schon vergeben -> neuer Code
+    netzStatus('❌ Fehler: ' + e.type);
+  });
+  peer.on('connection', conn => {
+    conn.on('open', () => {
+      const belegt = new Set([0, ...[...netz.gaeste.values()].map(g => g.nr)]);
+      const nr = [1, 2, 3].find(n => !belegt.has(n));
+      if (nr === undefined || netz.gaeste.size >= MAX_SPIELER - 1) { conn.send({ t: 'voll' }); setTimeout(() => conn.close(), 500); return; }
+      const id = 'g' + nr + '-' + Math.floor(Math.random() * 1e6);
+      const figur = fremdenSpieler(id, nr);
+      figur.pos.set(rnd(-2, 2), 0, G * 1.5 + rnd(0, 2)); figur.sofortStehen();
+      netz.gaeste.set(id, { conn, figur, nr });
+      conn.send({ t: 'welt', id, nr, stand: standOhneBauten(), bauten: bautenListe() });
+      allenMelden(`🎉 ${SPIELER_NAMEN[nr]} ist dabei!`, 3, 'tada');
+    });
+    conn.on('data', d => { for (const [id, g] of netz.gaeste) if (g.conn === conn) chefEmpfang(id, d); });
+    conn.on('close', () => {
+      for (const [id, g] of netz.gaeste) if (g.conn === conn) {
+        netz.gaeste.delete(id); fremdenEntfernen(id);
+        allenMelden(`👋 ${SPIELER_NAMEN[g.nr]} ist gegangen`, 2.5);
+      }
+    });
+  });
+}
+const bautenListe = () => gebaeude.filter(b => b.typ !== 'hub').map(b => ({ t: b.typ, i: b.i, j: b.j, d: b.dir }));
+const standOhneBauten = () => { const s = { ...stand }; delete s.bauten; return s; };
+
+function chefEmpfang(id, d) {
+  const gast = netz.gaeste.get(id);
+  if (!gast) return;
+  if (d.t === 'ich') {
+    zielSetzen(gast.figur, d.f, 11);
+    gast.figur.hp = d.f[9]; gast.figur.waffe = d.f[10];
+  } else if (d.t === 'bauen') {
+    if (!GEBAEUDE[d.typ] || d.typ === 'hub') return;
+    const r = platzieren(d.typ, d.i, d.j, d.d, gast.figur);
+    if (typeof r === 'string' && r !== 'Da steht schon was') gast.conn.send({ t: 'meldung', text: r, d: 1.2 });
+  } else if (d.t === 'abriss') {
+    const b = zellen.get(key(d.i, d.j));
+    if (b && b.typ !== 'hub') { abreissen(b, true); speicherT = 4; }
+  } else if (d.t === 'drehen') bandDrehen(d.i, d.j, d.d);
+  else if (d.t === 'treffer') {
+    const g = gegner.find(x => x.id === d.id);
+    if (g) { g.umfallen(...d.v); gegnerSchaden(g, Math.min(20, d.s)); }
+  } else if (d.t === 'lager') { if (ITEMS[d.m + 'erz'] && d.n === 1) stand.lager[d.m] += 1; }
+  else if (d.t === 'schuss') { schussZeigen(d); anAlle(d, id); }
+}
+
+// ---------- Gast ----------
+function raumBeitreten(code) {
+  code = (code || '').trim().toUpperCase();
+  if (code.length !== 4) { netzStatus('Der Code hat 4 Buchstaben'); return; }
+  if (netz.peer || typeof Peer === 'undefined') { netzStatus('❌ Online geht gerade nicht'); return; }
+  netzStatus('⏳ Verbinde …');
+  const peer = netz.peer = new Peer();
+  peer.on('open', () => {
+    const conn = peer.connect(RAUM_VORSILBE + code, { reliable: true });
+    netz.chef = conn;
+    conn.on('data', gastEmpfang);
+    conn.on('close', () => {
+      if (netz.modus !== 'gast') return;
+      meldung('👋 Der Chef hat das Spiel verlassen', 5);
+      netzStatus('Verbindung weg – lade die Seite neu');
+      setTimeout(() => location.reload(), 4000);
+    });
+  });
+  peer.on('error', e => {
+    netzStatus(e.type === 'peer-unavailable' ? '❌ Raum nicht gefunden – stimmt der Code?' : '❌ Fehler: ' + e.type);
+    peer.destroy(); netz.peer = null;
+  });
+  netz.code = code;
+}
+function gastEmpfang(d) {
+  if (d.t === 'welt') {
+    netz.modus = 'gast'; netz.ich = d.id; netz.nr = d.nr;
+    meineFarbe(d.nr);
+    for (const b of [...gebaeude]) if (b.typ !== 'hub') { for (const it of b.items) szene.remove(it.mesh); szene.remove(b.gruppe); zellen.delete(key(b.i, b.j)); dekoZeigen(b.i, b.j, true); const e = erzFelsen.get(key(b.i, b.j)); if (e) e.gruppe.visible = true; }
+    gebaeude = gebaeude.filter(b => b.typ === 'hub');
+    for (const g of gegner) g.entfernen();
+    gegner = [];
+    Object.assign(stand, d.stand);
+    for (const b of d.bauten) if (GEBAEUDE[b.t] && !zellen.get(key(b.i, b.j))) bauen(b.t, b.i, b.j, b.d);
+    spieler.pos.set(rnd(-2, 2), 0, G * 1.5 + rnd(0, 2)); spieler.sofortStehen();
+    el.gegnerAn.disabled = true;
+    netzStatus(`✅ Du bist im Raum <b class="code">${netz.code}</b> als ${SPIELER_NAMEN[d.nr]}`);
+    meldung(`🎉 Du spielst jetzt mit deinen Freunden!`, 3);
+  } else if (d.t === 'voll') netzStatus('❌ Der Raum ist voll (höchstens 4 Spieler)');
+  else if (netz.modus !== 'gast') return;
+  else if (d.t === 'schnapp') schnappschussLesen(d);
+  else if (d.t === 'stand') Object.assign(stand, d.s);
+  else if (d.t === 'gebaut') { if (!zellen.get(key(d.i, d.j))) { bauen(d.typ, d.i, d.j, d.d); puff(d.i * G, 0.3, d.j * G, 0xdddddd, 6); SOUND.bau(); } }
+  else if (d.t === 'weg') { const b = zellen.get(key(d.i, d.j)); if (b) abreissen(b, false); }
+  else if (d.t === 'gedreht') bandDrehenLokal(d.i, d.j, d.d);
+  else if (d.t === 'getroffen') spielerGetroffen(new THREE.Vector3(d.v[0], 0, d.v[1]), d.s, d.k);
+  else if (d.t === 'meldung') { meldung(d.text, d.d); if (d.ton) SOUND[d.ton]?.(); }
+  else if (d.t === 'welle') schockwelle(new THREE.Vector3(d.x, 0, d.z), d.r, 0, 0, null, false);
+  else if (d.t === 'feuer') feuerballZeigen(new THREE.Vector3(...d.a), new THREE.Vector3(...d.v));
+  else if (d.t === 'schuss') schussZeigen(d);
+}
+
+// Schnappschuss: Chef schickt alle Roboter und alle Spieler
+const ARTEN_LISTE = Object.keys(GEGNER_ARTEN);
+function schnappschussMachen() {
+  const g = gegner.map(e => figurDaten(e, e.id, [ARTEN_LISTE.indexOf(e.art), Math.max(0, e.hp), e.maxHp]));
+  const p = [figurDaten(spieler, 'chef', [0, Math.round(spieler.hp), waffeNr])];
+  for (const [id, gast] of netz.gaeste) p.push(figurDaten(gast.figur, id, [gast.nr, Math.round(gast.figur.hp || 0), gast.figur.waffe || 0]));
+  return { t: 'schnapp', g, p };
+}
+function schnappschussLesen(d) {
+  const da = new Set();
+  for (const e of d.g) {
+    const id = e[0];
+    da.add(id);
+    let g = gegner.find(x => x.id === id);
+    if (!g) {
+      const art = ARTEN_LISTE[e[8]] || 'roboter', a = GEGNER_ARTEN[art];
+      g = new Figur(AUSSEHEN[a.aus], a.s);
+      Object.assign(g, { id, art, info: a, boss: !!a.boss });
+      gegner.push(g);
+      for (let k = 0; k < (a.boss ? 14 : 6); k++) rauch(e[1] + rnd(-0.6, 0.6) * g.s, rnd(0.3, 1.8) * g.s, e[3] + rnd(-0.6, 0.6) * g.s, a.boss ? AUSSEHEN[a.aus].helm : 0x777777, g.s, 1.8 * g.s, 1.2, 0.6);
+    }
+    if (g.hp !== undefined && e[9] < g.hp) g.blitzT = 0.12;
+    g.hp = e[9]; g.maxHp = e[10];
+    zielSetzen(g, e, 11);
+    if (e[5] === 2 && !g.tot) { // gerade kaputt gegangen
+      g.tot = true;
+      for (let k = 0; k < 13; k++) g.p[k].copy(g.ziel.punkte[k]);
+      const m = g.mitte();
+      puff(m.x, m.y, m.z, 0x8a8f99, g.boss ? 30 : 10, { groesse: 1.2 * g.s });
+      puff(m.x, m.y, m.z, 0xffd060, g.boss ? 40 : 12, { leucht: true, groesse: 0.5 * g.s, leben: 0.6 });
+    }
+  }
+  for (const g of gegner) if (!da.has(g.id)) { g.entfernen(); g.weg = true; }
+  gegner = gegner.filter(g => !g.weg);
+  const sp = new Set();
+  for (const s of d.p) {
+    if (s[0] === netz.ich) continue;
+    sp.add(s[0]);
+    const f = fremdenSpieler(s[0], s[8]);
+    f.hp = s[9]; f.waffe = s[10];
+    zielSetzen(f, s, 11);
+  }
+  for (const id of [...fremde.keys()]) if (!sp.has(id)) fremdenEntfernen(id);
+}
+
+function netzUpdate(dt) {
+  if (netz.modus === 'solo') return;
+  for (const f of fremde.values()) {
+    figurFolgen(f, dt);
+    f.namensSchild.position.copy(f.modus === 'steht' ? f.pos : f.mitte()).y += f.modus === 'steht' ? 2.3 : 1;
+  }
+  if (istGast()) for (const g of gegner) figurFolgen(g, dt);
+  netz.sendeT -= dt; netz.standT -= dt;
+  if (netz.sendeT <= 0) {
+    netz.sendeT = 1 / 15;
+    if (netz.modus === 'chef' && netz.gaeste.size) anAlle(schnappschussMachen());
+    if (istGast()) anChef({ t: 'ich', f: figurDaten(spieler, netz.ich, [netz.nr, Math.round(spieler.hp), waffeNr]) });
+  }
+  if (netz.modus === 'chef' && netz.standT <= 0) { netz.standT = 0.5; anAlle({ t: 'stand', s: standOhneBauten() }); }
+}
+
+function netzStatus(html) { el.netzStatus.innerHTML = html; }
+
 // ================= HAUPT-SCHLEIFE =================
 function winkelNaeher(a, b, k) { return a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * Math.min(1, k); }
 
 function update(dt) {
   zeit += dt; plingT -= dt;
   spielerUpdate(dt);
-  for (const g of gegner) gegnerUpdate(g, dt);
-  gegner = gegner.filter(g => !g.weg);
+  if (!istGast()) {   // Roboter rechnet nur der Chef (oder du allein)
+    for (const g of gegner) gegnerUpdate(g, dt);
+    gegner = gegner.filter(g => !g.weg);
+  }
   for (const b of [...gebaeude]) gebaeudeUpdate(b, dt);
   baelleUpdate(dt);
   gegnerSchuesseUpdate(dt);
   ringeUpdate(dt);
-  bowling();
-  wellenUpdate(dt);
+  if (!istGast()) { bowling(); wellenUpdate(dt); }
   partikelUpdate(dt);
   bandTextur.offset.y += BAND_TEMPO * G * dt;   // Pfeile laufen mit dem Band mit
   if (mausUnten && werkzeug === 'band') bandZiehen();
   if (mausUnten && werkzeug === 'hand' && !pausiert) schiessen();   // Maus gedrückt halten = Dauerfeuer
   raketenUpdate(dt);
   blitzeUpdate(dt);
-  meilensteinPruefen();
+  if (!istGast()) meilensteinPruefen();
+  netzUpdate(dt);
   speicherT += dt;
   if (speicherT > 5) speichern();
 }
@@ -2504,6 +2831,7 @@ function hubAnzeige(a) { // Bildschirm am HUB zeigt das Lager
 
 function zeichnen(echtDt) {
   spieler.zeichnen();
+  for (const f of fremde.values()) f.zeichnen();
   for (const g of gegner) { g.zeichnen(); g.gruppe.visible = !(g.blitzT > 0 && Math.floor(zeit * 40) % 2); }
   for (const b of gebaeude) {
     const u = b.gruppe.userData;
@@ -2556,7 +2884,7 @@ function schleife(jetzt) {
   let dt = (jetzt - letzte) / 1000; letzte = jetzt;
   if (!(dt > 0)) dt = 0;
   dt = Math.min(dt, 0.1);
-  if (!pausiert) {
+  if (!pausiert || netz.modus !== 'solo') {   // online läuft das Spiel auch im Menü weiter
     akku += dt;
     let n = 0;
     while (akku >= DT && n < 6) { update(DT); akku -= DT; n++; }
