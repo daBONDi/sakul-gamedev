@@ -32,6 +32,12 @@
     .boss small { font-weight: normal; opacity: 0.8; }
     .bossBalken { height: 10px; background: #3a1010; border-radius: 5px; overflow: hidden; margin-top: 4px; }
     .bossBalken div { height: 100%; background: linear-gradient(90deg, #ff2a2a, #ffb020); transition: width 0.15s; }
+    #kartenEcke { position: fixed; right: 12px; bottom: 12px; text-align: center; }
+    #minikarte { width: 190px; height: 190px; border-radius: 50%; border: 4px solid rgba(20, 25, 45, 0.85); box-shadow: 0 4px 14px #0006; display: block; }
+    #hubWeg { margin-top: 4px; font-size: 14px; text-shadow: 0 1px 3px #000; }
+    #grosseKarte { position: fixed; inset: 0; background: rgba(10, 15, 30, 0.7); display: none; align-items: center; justify-content: center; }
+    #grosseKarte .innen { background: #1f2747; padding: 14px; border-radius: 16px; text-align: center; }
+    #karteGross { width: min(640px, 80vh); height: min(640px, 80vh); border-radius: 8px; display: block; margin-bottom: 8px; }
     #rot { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255, 0, 0, 0.55)); opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     #menue { position: fixed; inset: 0; background: rgba(15, 20, 40, 0.85); display: flex; align-items: center; justify-content: center; }
     #menue .innen { max-width: 620px; padding: 24px 32px; background: #1f2747; border-radius: 18px; box-shadow: 0 10px 40px #0008; }
@@ -61,6 +67,9 @@
   <div id="meldung"></div>
   <div id="leiste"></div>
   <div id="rot"></div>
+  <div id="kartenEcke"><canvas id="minikarte" width="190" height="190"></canvas><div id="hubWeg"></div></div>
+  <div id="grosseKarte"><div class="innen"><canvas id="karteGross" width="640" height="640"></canvas>
+    <div class="legende">🗺️ <b>Karte</b> (M = zu) · <span style="color:#c0583a">●</span> Eisen · <span style="color:#ff8c3a">●</span> Kupfer · <span style="color:#ffe14f">◯</span> Reines Erz · <span style="color:#ff3030">●</span> Roboter · <span style="color:#2d6b2f">●</span> Wald · <span style="color:#2f86c9">●</span> See</div></div></div>
 
   <div id="menue">
     <div class="innen">
@@ -74,6 +83,7 @@
         <tr><td>F</td><td>Faustschlag (haut auch Erz aus Felsen!)</td></tr>
         <tr><td>0–5 / Mausrad</td><td>Werkzeug wählen, Rechtsklick = Hand</td></tr>
         <tr><td>R</td><td>Gebäude drehen</td></tr>
+        <tr><td>M</td><td>Große Karte</td></tr>
         <tr><td>X</td><td>Abreißen (du bekommst alles zurück)</td></tr>
         <tr><td>G</td><td>Einfach umfallen 🤪</td></tr>
         <tr><td>Esc</td><td>Pause</td></tr>

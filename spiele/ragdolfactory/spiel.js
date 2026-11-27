@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ================= EINSTELLUNGEN (hier kannst du rumprobieren!) =================
 const G = 2;                 // Größe eines Bau-Feldes in Metern
-const WELT = 28;             // so viele Felder geht die Welt von der Mitte bis zum Rand
+const WELT = 80;             // so viele Felder geht die Welt von der Mitte bis zum Rand (1 Feld = 2 m)
 const SCHWERKRAFT = 22;
 const LAUF_TEMPO = 6, RENN_TEMPO = 10, SPRUNG_KRAFT = 8.5;
 const BAND_TEMPO = 1.5;      // Felder pro Sekunde auf dem Förderband
@@ -72,8 +72,8 @@ document.body.prepend(renderer.domElement);
 const HORIZONT = 0xc4e3fa;
 const szene = new THREE.Scene();
 szene.background = new THREE.Color(HORIZONT);
-szene.fog = new THREE.Fog(HORIZONT, 70, 330);
-const kamera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 700);
+szene.fog = new THREE.Fog(HORIZONT, 90, 520);
+const kamera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1100);
 
 const SONNEN_RICHTUNG = new THREE.Vector3(30, 38, 16).normalize();
 szene.add(new THREE.HemisphereLight(0xcfe8ff, 0x5b7a3a, 1.1));
@@ -224,7 +224,7 @@ function roboterTextur(farbe, rost) {
 }
 
 // ---------- Himmel, Berge, Wolken ----------
-const himmel = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.ShaderMaterial({
+const himmel = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
   uniforms: {
     oben: { value: new THREE.Color(0x2f7fe0) }, mitte: { value: new THREE.Color(HORIZONT) },
@@ -248,8 +248,8 @@ szene.add(himmel);
 { // Berge in der Ferne
   const bergMat = mat(0x7f8fa6, { flatShading: true, roughness: 1 }), schneeMat = mat(0xf4f8ff, { flatShading: true, roughness: 0.9 });
   for (let k = 0; k < 40; k++) {
-    const w = k / 40 * Math.PI * 2 + rnd(-0.05, 0.05), r = rnd(220, 290);
-    const br = rnd(40, 80), h = rnd(35, 85), seg = Math.floor(rnd(5, 8));
+    const w = k / 40 * Math.PI * 2 + rnd(-0.05, 0.05), r = WELT * G + rnd(200, 290);
+    const br = rnd(70, 130), h = rnd(60, 150), seg = Math.floor(rnd(5, 8));
     const berg = new THREE.Mesh(new THREE.ConeGeometry(br, h, seg), bergMat);
     berg.position.set(Math.cos(w) * r, h / 2 - 2, Math.sin(w) * r); berg.rotation.y = rnd(0, 6);
     const schnee = new THREE.Mesh(new THREE.ConeGeometry(br * 0.31, h * 0.3, seg), schneeMat);
@@ -261,7 +261,7 @@ const wolken = [];
 {
   const wolkenMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x8899aa, flatShading: true });
   const geo = new THREE.IcosahedronGeometry(1, 1);
-  for (let k = 0; k < 22; k++) {
+  for (let k = 0; k < 45; k++) {
     const w = new THREE.Group();
     const n = Math.floor(rnd(5, 9));
     for (let s = 0; s < n; s++) {
@@ -271,7 +271,7 @@ const wolken = [];
       kugel.position.set(rnd(-12, 12), rnd(-2, 3), rnd(-6, 6));
       w.add(kugel);
     }
-    w.position.set(rnd(-300, 300), rnd(70, 110), rnd(-300, 300));
+    w.position.set(rnd(-650, 650), rnd(90, 150), rnd(-650, 650)); w.scale.setScalar(rnd(1.2, 2));
     szene.add(w); wolken.push(w);
   }
 }
@@ -363,7 +363,7 @@ const zellen = new Map();          // "i,j" -> Gebäude
 const erzFelsen = new Map();       // "i,j" -> { art, schlaege, gruppe }
 const key = (i, j) => i + ',' + j;
 const zelleVon = x => Math.round(x / G);
-const RAND = WELT * G + 60;
+const RAND = WELT * G + 320;   // Boden geht bis unter die Berge
 
 { // Boden: Gras-Textur + große hellere/dunklere Flecken
   TEX.gras.repeat.set(RAND, RAND); TEX.gras.offset.set(0.5, 0.5);
@@ -395,6 +395,78 @@ const PLATTE = 5; // Beton-Platz um den HUB (halbe Breite in Metern)
   }
 }
 
+// ---------- Die große Welt: Seen, Wälder und Erz weiter draußen ----------
+// Mit "festem Zufall": die Welt sieht jedes Mal gleich aus, damit dein Spielstand passt.
+function festerZufall(samen) {
+  return () => {
+    samen = (samen + 0x6D2B79F5) | 0;
+    let t = Math.imul(samen ^ (samen >>> 15), 1 | samen);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const wz = festerZufall(20261127);
+const wr = (a, b) => a + wz() * (b - a);
+const ALTE_WELT = 29;            // so weit ging die Welt früher (in Feldern) – da drin bleibt alles wie es war
+const besetzt = new Map();       // "i,j" -> 'baum' oder 'wasser' (da kann man nicht bauen)
+const hindernisse = new Map();   // "i,j" -> Kiste zum Dagegenlaufen (Baumstämme)
+const SEEN = [];                 // [x, z, radius] in Metern
+const WALDBAEUME = [];           // [x, z, größe, tanne?]
+const weitDraussen = (i, j) => Math.max(Math.abs(i), Math.abs(j)) > ALTE_WELT;
+const imSee = (x, z, rand = 0) => SEEN.some(([sx, sz, sr]) => Math.hypot(x - sx, z - sz) < sr + rand);
+
+for (let n = 0, versuch = 0; n < 9 && versuch < 800; versuch++) { // Seen
+  const r = wr(7, 16), x = wr(-WELT * G + r + 6, WELT * G - r - 6), z = wr(-WELT * G + r + 6, WELT * G - r - 6);
+  if (Math.max(Math.abs(x), Math.abs(z)) - r < ALTE_WELT * G + 4) continue;
+  if (SEEN.some(([sx, sz, sr]) => Math.hypot(sx - x, sz - z) < sr + r + 10)) continue;
+  SEEN.push([x, z, r]); n++;
+  for (let i = zelleVon(x - r) - 1; i <= zelleVon(x + r) + 1; i++) for (let j = zelleVon(z - r) - 1; j <= zelleVon(z + r) + 1; j++) {
+    if (Math.hypot(i * G - x, j * G - z) < r + 1) besetzt.set(key(i, j), 'wasser');
+  }
+}
+for (let n = 0, versuch = 0; n < 70 && versuch < 4000; versuch++) { // Erz-Felsen weiter draußen
+  const i = Math.round(wr(-WELT + 3, WELT - 3)), j = Math.round(wr(-WELT + 3, WELT - 3));
+  if (!weitDraussen(i, j) || besetzt.has(key(i, j))) continue;
+  if (ERZ_ORTE.some(([, a, b]) => Math.hypot(a - i, b - j) < 5)) continue;
+  const rein = Math.hypot(i, j) > WELT * 0.75 && wz() < 0.6;   // ganz weit draußen: reines Erz!
+  ERZ_ORTE.push([wz() < 0.55 ? 'eisen' : 'kupfer', i, j, rein]); n++;
+}
+for (let n = 0; n < 18; n++) { // Wälder
+  let cx, cz, versuch = 0;
+  do { cx = wr(-WELT * G + 10, WELT * G - 10); cz = wr(-WELT * G + 10, WELT * G - 10); versuch++; }
+  while ((Math.max(Math.abs(cx), Math.abs(cz)) < ALTE_WELT * G + 10 || imSee(cx, cz, 8)) && versuch < 200);
+  const r = wr(10, 22), anzahl = Math.floor(r * wr(1.8, 2.6)), tannenWald = wz() < 0.6;
+  for (let k = 0; k < anzahl; k++) {
+    const w = wr(0, Math.PI * 2), d = Math.sqrt(wz()) * r;
+    const i = zelleVon(cx + Math.cos(w) * d), j = zelleVon(cz + Math.sin(w) * d), kk = key(i, j);
+    if (!weitDraussen(i, j) || Math.abs(i) > WELT - 1 || Math.abs(j) > WELT - 1 || besetzt.has(kk)) continue;
+    if (ERZ_ORTE.some(([, a, b]) => Math.abs(a - i) <= 1 && Math.abs(b - j) <= 1)) continue;
+    const x = i * G + wr(-0.4, 0.4), z = j * G + wr(-0.4, 0.4);
+    besetzt.set(kk, 'baum');
+    hindernisse.set(kk, { x1: x - 0.3, x2: x + 0.3, z1: z - 0.3, z2: z + 0.3, y2: 6 });
+    WALDBAEUME.push([x, z, wr(0.9, 1.7), wz() < (tannenWald ? 0.85 : 0.2)]);
+  }
+}
+
+{ // Seen zeichnen: Sand-Ufer, Wasser, Seerosen
+  const sandMat = mat(0xd9c38f, { roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
+  const wasserMat = new THREE.MeshStandardMaterial({ color: 0x2f86c9, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.88, emissive: 0x0a2a44 });
+  const tiefMat = new THREE.MeshBasicMaterial({ color: 0x14507f, transparent: true, opacity: 0.45, depthWrite: false });
+  const blattMat = mat(0x3f9a40, { side: THREE.DoubleSide }), bluteMat = mat(0xff8ad0, { emissive: 0x552244 });
+  const flach = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.rotation.x = -Math.PI / 2; o.position.set(x, y, z); o.receiveShadow = true; szene.add(o); return o; };
+  for (const [x, z, r] of SEEN) {
+    flach(new THREE.CircleGeometry(r + 1.8, 48), sandMat, x, 0.02, z);
+    flach(new THREE.CircleGeometry(r, 48), wasserMat, x, 0.07, z);
+    flach(new THREE.CircleGeometry(r * 0.6, 40), tiefMat, x, 0.075, z);
+    for (let k = 0; k < 7; k++) {
+      const w = rnd(0, 6.28), d = rnd(0.3, 0.85) * r;
+      const b = flach(new THREE.CircleGeometry(rnd(0.3, 0.55), 10, 0.4, 5.6), blattMat, x + Math.cos(w) * d, 0.09, z + Math.sin(w) * d);
+      if (Math.random() < 0.5) { const bl = new THREE.Mesh(kugelGeo(0.12), bluteMat); bl.position.z = 0.08; b.add(bl); }
+    }
+  }
+  MAT.wasser = wasserMat;
+}
+
 // Deko mit "Instanzen": tausende Grashalme, Blumen, Steinchen – aber schnell
 const dekoProZelle = new Map();
 const NULL_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -420,7 +492,7 @@ function dekoZeigen(i, j, zeigen) {
   }
 }
 const aufPlatte = (x, z) => Math.abs(x) < PLATTE + 0.3 && Math.abs(z) < PLATTE + 0.3;
-const nahErz = (x, z) => ERZ_ORTE.some(([, i, j]) => Math.hypot(x - i * G, z - j * G) < 1.6);
+const nahErz = (x, z) => imSee(x, z, 1.9) || besetzt.get(key(zelleVon(x), zelleVon(z))) === 'baum' && Math.random() < 0.7 || ERZ_ORTE.some(([, i, j]) => Math.abs(x - i * G) < 1.6 && Math.abs(z - j * G) < 1.6);
 function freierPlatz(weit) {
   for (;;) { const x = rnd(-weit, weit), z = rnd(-weit, weit); if (!aufPlatte(x, z) && !nahErz(x, z)) return [x, z]; }
 }
@@ -440,13 +512,14 @@ function freierPlatz(weit) {
   halm.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   halm.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   const halmMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 1 });
-  deko(halm, halmMat, 9000, () => [...freierPlatz(WELT * G + 40), rnd(0.7, 1.4)]);
+  deko(halm, halmMat, 9000, () => [...freierPlatz(70), rnd(0.7, 1.4)]);
+  deko(halm, halmMat, 18000, () => [...freierPlatz(WELT * G + 30), rnd(0.8, 1.5)]);
   // Blumen
   const blume = new THREE.IcosahedronGeometry(0.07, 0); blume.translate(0, 0.25, 0);
-  deko(blume, mat(0xffffff, { roughness: 0.6, emissive: 0x222222 }), 900, () => [...freierPlatz(WELT * G + 30), rnd(0.8, 1.3)], false,
+  deko(blume, mat(0xffffff, { roughness: 0.6, emissive: 0x222222 }), 2600, () => [...freierPlatz(WELT * G + 30), rnd(0.8, 1.3)], false,
     [0xffffff, 0xffe14f, 0xc77dff, 0xff5d73, 0x7ec8ff]);
   // Steinchen
-  deko(zackig(new THREE.DodecahedronGeometry(0.12, 0), 0.5), MAT.fels, 500, () => [...freierPlatz(WELT * G + 30), rnd(0.6, 2.2), 0.02], true);
+  deko(zackig(new THREE.DodecahedronGeometry(0.12, 0), 0.5), MAT.fels, 1300, () => [...freierPlatz(WELT * G + 30), rnd(0.6, 2.2), 0.02], true);
 }
 
 { // Bäume + Büsche rund um das Gelände
@@ -462,15 +535,20 @@ function freierPlatz(weit) {
     .map(([x, y, z, r]) => { const g = new THREE.IcosahedronGeometry(r, 0); g.translate(x, y, z); return g; }));
   const stammGeo = new THREE.CylinderGeometry(0.16, 0.26, 2.4, 7); stammGeo.translate(0, 1.2, 0);
   const ring = (rMin, rMax) => () => { const w = rnd(0, Math.PI * 2), r = rnd(rMin, rMax); return [Math.cos(w) * r, Math.sin(w) * r, rnd(0.8, 1.6)]; };
-  const orteT = Array.from({ length: 110 }, ring(WELT * G + 6, WELT * G + 55));
-  const orteL = Array.from({ length: 80 }, ring(WELT * G + 6, WELT * G + 55));
+  const orteT = Array.from({ length: 260 }, ring(WELT * G + 6, WELT * G + 60));
+  const orteL = Array.from({ length: 160 }, ring(WELT * G + 6, WELT * G + 60));
+  for (const [x, z, gr, tanne] of WALDBAEUME) (tanne ? orteT : orteL).push([x, z, gr]);
+  const waldBuesche = WALDBAEUME.filter(() => Math.random() < 0.4).map(([x, z]) => [x + rnd(-1.5, 1.5), z + rnd(-1.5, 1.5), rnd(0.6, 1.2)]);
+  for (const [x, z, r] of SEEN) for (let n = 0; n < 6; n++) { const w = rnd(0, 6.28); waldBuesche.push([x + Math.cos(w) * (r + 2.3), z + Math.sin(w) * (r + 2.3), rnd(0.5, 0.9)]); }
+  let wb = 0;
+  deko(buschGeo, MAT.blatt, waldBuesche.length, () => waldBuesche[wb++], true, [0x3f9a40, 0x4caf50, 0x2f8a3a]);
   let k = 0;
   deko(stammGeo, MAT.rinde, orteT.length + orteL.length, () => { const o = k < orteT.length ? orteT[k] : orteL[k - orteT.length]; k++; return o; }, true);
   k = 0; deko(tanneGeo, MAT.blatt, orteT.length, () => orteT[k++], true, [0x2f7a3a, 0x2a6e35, 0x3a8a42]);
   k = 0; deko(laubGeo, MAT.blatt, orteL.length, () => orteL[k++], true, [0x4caf50, 0x5cbf4a, 0x8bc34a, 0xd4a03a]);
-  deko(buschGeo, MAT.blatt, 120, ring(WELT * G + 3, WELT * G + 40), true, [0x3f9a40, 0x4caf50, 0x2f8a3a]);
+  deko(buschGeo, MAT.blatt, 250, ring(WELT * G + 3, WELT * G + 40), true, [0x3f9a40, 0x4caf50, 0x2f8a3a]);
   // große Felsen
-  deko(zackig(new THREE.DodecahedronGeometry(1, 0), 0.4), MAT.fels, 60, ring(WELT * G + 4, WELT * G + 50), true);
+  deko(zackig(new THREE.DodecahedronGeometry(1, 0), 0.4), MAT.fels, 140, ring(WELT * G + 4, WELT * G + 55), true);
 }
 
 { // Holzzaun um das Gelände
@@ -496,7 +574,7 @@ const KRISTALL_GEO = (() => {
   return mergeGeometries([saeule, spitze]);
 })();
 const FELS_GEO = zackig(new THREE.DodecahedronGeometry(0.6, 1), 0.35);
-for (const [art, i, j] of ERZ_ORTE) {
+for (const [art, i, j, rein] of ERZ_ORTE) {
   const grp = new THREE.Group();
   grp.position.set(i * G, 0, j * G);
   for (let k = 0; k < 4; k++) {
@@ -504,12 +582,12 @@ for (const [art, i, j] of ERZ_ORTE) {
     f.position.set(rnd(-0.45, 0.45), 0.05, rnd(-0.45, 0.45)); f.scale.set(rnd(0.8, 1.3), rnd(0.3, 0.55), rnd(0.8, 1.3));
     f.rotation.y = rnd(0, 6); f.castShadow = f.receiveShadow = true; grp.add(f);
   }
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < (rein ? 15 : 9); k++) {
     const kr = new THREE.Mesh(KRISTALL_GEO, ERZ_MAT[art]);
     const w = rnd(0, Math.PI * 2), r = rnd(0.1, 0.65);
     kr.position.set(Math.cos(w) * r, 0.15, Math.sin(w) * r);
     kr.rotation.set(Math.sin(w) * rnd(0.2, 0.6), rnd(0, 6), -Math.cos(w) * rnd(0.2, 0.6));
-    kr.scale.setScalar(rnd(0.7, 1.5)); kr.castShadow = true; grp.add(kr);
+    kr.scale.setScalar(rnd(0.7, 1.5) * (rein ? 1.35 : 1)); kr.castShadow = true; grp.add(kr);
   }
   for (let k = 0; k < 6; k++) { // Brocken drumherum
     const b = new THREE.Mesh(ERZ_GEO, ITEMS[art + 'erz'].mat);
@@ -517,7 +595,11 @@ for (const [art, i, j] of ERZ_ORTE) {
     b.position.set(Math.cos(w) * r, 0.06, Math.sin(w) * r); b.scale.setScalar(rnd(0.5, 0.9)); b.castShadow = true; grp.add(b);
   }
   szene.add(grp);
-  erzFelsen.set(key(i, j), { art, schlaege: 0, gruppe: grp });
+  if (rein) { // goldener Ring = reines Erz
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.05, 6, 32), mat(0xffd84a, { emissive: 0xffb000, emissiveIntensity: 1.2 }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.08; grp.add(ring);
+  }
+  erzFelsen.set(key(i, j), { art, schlaege: 0, gruppe: grp, rein: !!rein });
 }
 
 // ================= GEBÄUDE-MODELLE =================
@@ -697,7 +779,7 @@ function bauen(typ, i, j, dir) {
   szene.add(b.gruppe);
   zellen.set(key(i, j), b);
   gebaeude.push(b);
-  if (typ === 'bohrer') b.erz = erzFelsen.get(key(i, j)).art + 'erz';
+  if (typ === 'bohrer') { b.erz = erz.art + 'erz'; b.rein = erz.rein; }
   return b;
 }
 
@@ -768,7 +850,7 @@ function gebaeudeUpdate(b, dt) {
     b.arbeitet = b.puffer.length < 3;
     if (b.arbeitet) {
       b.t += dt;
-      if (b.t >= BOHR_ZEIT) { b.t = 0; b.puffer.push(b.erz); }
+      if (b.t >= BOHR_ZEIT / (b.rein ? 2 : 1)) { b.t = 0; b.puffer.push(b.erz); }
       b.effektT = (b.effektT || 0) - dt;
       if (b.effektT <= 0) {
         b.effektT = rnd(0.25, 0.5);
@@ -1173,6 +1255,7 @@ function boxenNahe(x, z) {
   const ci = zelleVon(x), cj = zelleVon(z), liste = [];
   for (let i = ci - 2; i <= ci + 2; i++) for (let j = cj - 2; j <= cj + 2; j++) {
     const b = zellen.get(key(i, j)); if (b) liste.push(b.box);
+    const h = hindernisse.get(key(i, j)); if (h) liste.push(h);
   }
   return liste;
 }
@@ -1193,6 +1276,11 @@ function koerperBewegen(f, wx, wz, dt, springen) {
   const unter = zellen.get(key(zelleVon(f.pos.x), zelleVon(f.pos.z)));
   if (f.aufBoden && unter && unter.typ === 'band' && f.pos.y > 0.2) {
     bx = DIRS[unter.dir][0] * BAND_TEMPO * G; bz = DIRS[unter.dir][1] * BAND_TEMPO * G;
+  }
+  const imWasser = f.pos.y < 0.3 && imSee(f.pos.x, f.pos.z);
+  if (imWasser) { // im Wasser geht's langsamer – und es spritzt!
+    f.vel.x *= 1 - 5 * dt; f.vel.z *= 1 - 5 * dt;
+    if (Math.hypot(f.vel.x, f.vel.z) > 1 && Math.random() < dt * 10) rauch(f.pos.x + rnd(-0.3, 0.3), 0.2, f.pos.z + rnd(-0.3, 0.3), 0xd8f0ff, 0.4, 0.9, 0.6, 1.2, 0.7);
   }
   f.pos.x += (f.vel.x + bx) * dt; f.pos.z += (f.vel.z + bz) * dt; f.pos.y += f.vel.y * dt;
   // Wände von Gebäuden
@@ -1384,8 +1472,9 @@ function gegnerSpawnen(art = 'roboter', x, z) {
   if (!GEGNER_ARTEN[art]) art = 'roboter';
   const a = GEGNER_ARTEN[art];
   if (x === undefined) {
-    const w = (stand.welleWinkel ?? Math.random() * 6.28) + (Math.random() - 0.5) * 1.2, r = WELT * G - 3;
-    x = Math.cos(w) * r; z = Math.sin(w) * r;
+    const w = (stand.welleWinkel ?? Math.random() * 6.28) + (Math.random() - 0.5) * 1.2, r = rnd(42, 58), rand = WELT * G - 3;
+    x = Math.max(-rand, Math.min(rand, spieler.pos.x + Math.cos(w) * r));
+    z = Math.max(-rand, Math.min(rand, spieler.pos.z + Math.sin(w) * r));
   }
   const g = new Figur(AUSSEHEN[a.aus], a.s);
   const staerker = 1 + stand.welle * 0.08;   // jede Welle werden sie etwas stärker
@@ -1394,7 +1483,7 @@ function gegnerSpawnen(art = 'roboter', x, z) {
   g.aufstehZeit = a.boss ? 0.7 : 1.0;   // Roboter stehen schneller wieder auf als du!
   g.angriffT = -0.5; g.spezialT = rnd(1.5, 3); g.helferT = 8;
   g.pos.set(x, 0, z);
-  g.yaw = Math.atan2(-g.pos.x, -g.pos.z);
+  g.yaw = Math.atan2(spieler.pos.x - g.pos.x, spieler.pos.z - g.pos.z);
   g.sofortStehen();
   gegner.push(g);
   for (let k = 0; k < (a.boss ? 14 : 6); k++) {
@@ -1750,6 +1839,8 @@ function bauProblem(typ, i, j) {
   if (!freigeschaltet(typ)) return `🔒 Erst Meilenstein ${GEBAEUDE[typ].sperre} schaffen`;
   if (Math.abs(i) > WELT - 2 || Math.abs(j) > WELT - 2) return 'Zu weit draußen';
   if (zellen.get(key(i, j))) return 'Da steht schon was';
+  const frei = besetzt.get(key(i, j));
+  if (frei) return frei === 'baum' ? 'Hier steht ein Baum 🌲' : 'Hier ist Wasser 💧';
   const erz = erzFelsen.get(key(i, j));
   if (typ === 'bohrer' && !erz) return 'Bohrer nur auf Erz-Felsen!';
   if (typ !== 'bohrer' && erz) return 'Hier ist ein Erz-Felsen – nur für Bohrer';
@@ -1844,9 +1935,89 @@ function geistUpdate() {
       }
       tipp = `${GEBAEUDE[typ].emoji} ${GEBAEUDE[typ].name} (${kostenText(typ)}) · R = drehen`;
       if (problem) tipp += ` · <span class="nein">${problem}</span>`;
+      else if (typ === 'bohrer' && erzFelsen.get(key(z[0], z[1]))?.rein) tipp += ' · ⭐ Reines Erz: doppelt so schnell!';
     }
   }
   setHTML(el.tipp, tipp);
+}
+
+// ================= KARTE (Minikarte unten rechts + große Karte mit M) =================
+const KARTE_M = WELT * G * 2 + 8;          // so viele Meter zeigt die große Karte
+const KARTE_PX = 800;
+const KARTEN_FARBE = { bohrer: '#f2b705', band: '#555a66', schmelze: '#c0503a', hub: '#2a6fdb', schleuder: '#3ddc84', turm: '#ff4040' };
+const karteHintergrund = (() => {
+  const [c, g] = leinwand(KARTE_PX, KARTE_PX);
+  const s = KARTE_PX / KARTE_M;
+  g.scale(s, s); g.translate(KARTE_M / 2, KARTE_M / 2);
+  g.fillStyle = '#5fae45'; g.fillRect(-KARTE_M / 2, -KARTE_M / 2, KARTE_M, KARTE_M);
+  g.fillStyle = '#b4b2aa'; g.fillRect(-PLATTE, -PLATTE, PLATTE * 2, PLATTE * 2);
+  for (const [x, z, r] of SEEN) {
+    g.fillStyle = '#d9c38f'; g.beginPath(); g.arc(x, z, r + 1.8, 0, 7); g.fill();
+    g.fillStyle = '#2f86c9'; g.beginPath(); g.arc(x, z, r, 0, 7); g.fill();
+  }
+  g.fillStyle = '#2d6b2f';
+  for (const [x, z, gr] of WALDBAEUME) { g.beginPath(); g.arc(x, z, 1.5 * gr, 0, 7); g.fill(); }
+  for (const [art, i, j, rein] of ERZ_ORTE) {
+    g.fillStyle = art === 'eisen' ? '#c0583a' : '#ff8c3a';
+    g.beginPath(); g.arc(i * G, j * G, 1.6, 0, 7); g.fill();
+    if (rein) { g.strokeStyle = '#ffe14f'; g.lineWidth = 0.8; g.stroke(); }
+  }
+  g.strokeStyle = '#8a5d36'; g.lineWidth = 1.5;
+  const z = WELT * G + 1.5; g.strokeRect(-z, -z, z * 2, z * 2);
+  return c;
+})();
+
+function karteMalen(g, px, mx, mz, meter, drehung, rund) {
+  const s = px / meter;
+  g.save();
+  g.clearRect(0, 0, px, px);
+  if (rund) { g.beginPath(); g.arc(px / 2, px / 2, px / 2, 0, 7); g.clip(); g.fillStyle = '#2f5a24'; g.fillRect(0, 0, px, px); }
+  g.translate(px / 2, px / 2); g.rotate(drehung); g.scale(s, s); g.translate(-mx, -mz);
+  g.drawImage(karteHintergrund, -KARTE_M / 2, -KARTE_M / 2, KARTE_M, KARTE_M);
+  for (const b of gebaeude) {
+    const h = b.typ === 'band' ? 0.7 : b.typ === 'hub' ? 1.6 : 1;
+    g.fillStyle = KARTEN_FARBE[b.typ]; g.fillRect(b.x - h, b.z - h, h * 2, h * 2);
+  }
+  const gr = Math.max(1, meter / 110);
+  for (const e of gegner) {
+    if (e.tot) continue;
+    g.fillStyle = e.boss ? alsText(AUSSEHEN[e.info.aus].helm) : '#ff3030';
+    g.beginPath(); g.arc(e.pos.x, e.pos.z, (e.boss ? 2.6 : 1.3) * gr, 0, 7); g.fill();
+    if (e.boss) { g.strokeStyle = '#fff'; g.lineWidth = 0.6 * gr; g.stroke(); }
+  }
+  // Spieler-Pfeil
+  const fx = Math.sin(kamYaw), fz = Math.cos(kamYaw), rx = -fz, rz = fx, p = spieler.pos, a = 3 * gr;
+  g.fillStyle = '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 0.5 * gr;
+  g.beginPath(); g.moveTo(p.x + fx * a, p.z + fz * a);
+  g.lineTo(p.x - fx * a * 0.6 + rx * a * 0.7, p.z - fz * a * 0.6 + rz * a * 0.7);
+  g.lineTo(p.x - fx * a * 0.6 - rx * a * 0.7, p.z - fz * a * 0.6 - rz * a * 0.7);
+  g.closePath(); g.fill(); g.stroke();
+  g.restore();
+  if (rund) { // Norden-Zeichen
+    const nx = Math.sin(drehung), nz = -Math.cos(drehung), r = px / 2 - 11;
+    g.fillStyle = '#fff'; g.font = 'bold 14px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('N', px / 2 + nx * r, px / 2 + nz * r);
+  }
+}
+let karteT = 0, grosseKarteAuf = false;
+function karteUpdate(dt) {
+  karteT -= dt;
+  if (karteT > 0) return;
+  karteT = 0.1;
+  const mini = el.minikarte, g = mini.getContext('2d');
+  const drehung = -Math.PI / 2 - Math.atan2(Math.cos(kamYaw), Math.sin(kamYaw));
+  if (g) karteMalen(g, mini.width, spieler.pos.x, spieler.pos.z, 110, drehung, true);
+  const weg = Math.round(Math.hypot(spieler.pos.x, spieler.pos.z));
+  setHTML(el.hubWeg, weg > 12 ? `🏠 HUB: ${weg} m` : '🏠 beim HUB');
+  if (grosseKarteAuf) {
+    const gg = el.karteGross.getContext('2d');
+    if (gg) karteMalen(gg, el.karteGross.width, 0, 0, KARTE_M, 0, false);
+  }
+}
+function grosseKarte(auf) {
+  grosseKarteAuf = auf;
+  el.grosseKarte.style.display = auf ? 'flex' : 'none';
+  karteT = 0;
 }
 
 // ================= SPEICHERN =================
@@ -1890,7 +2061,7 @@ const SOUND = {
 };
 
 // ================= HUD =================
-const el = Object.fromEntries(['bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
+const el = Object.fromEntries(['minikarte', 'hubWeg', 'grosseKarte', 'karteGross', 'bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
   .map(id => [id, document.getElementById(id)]));
 const altesHTML = new Map();
 function setHTML(e, html) { if (altesHTML.get(e) !== html) { altesHTML.set(e, html); e.innerHTML = html; } }
@@ -1964,6 +2135,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ') werkzeugWaehlen('hand');
   if (e.code === 'KeyX') werkzeugWaehlen(werkzeug === 'abriss' ? 'hand' : 'abriss');
   if (e.code === 'KeyR') drehung = (drehung + 1) % 4;
+  if (e.code === 'KeyM') grosseKarte(!grosseKarteAuf);
   if (e.code === 'KeyF') schlagen();
   if (e.code === 'KeyG' && spieler.modus === 'steht') {
     const fx = Math.sin(spieler.yaw), fz = Math.cos(spieler.yaw);
@@ -2107,11 +2279,13 @@ function zeichnen(echtDt) {
     b.gruppe.position.x = b.x + (b.wackel > 0 ? (Math.random() - 0.5) * 0.2 : 0);
   }
   for (const m of Object.values(ERZ_MAT)) m.emissiveIntensity = 0.5 + Math.sin(zeit * 2.2) * 0.3;
-  for (const w of wolken) { w.position.x += echtDt * 2; if (w.position.x > 320) w.position.x = -320; }
+  for (const w of wolken) { w.position.x += echtDt * 2; if (w.position.x > 680) w.position.x = -680; }
   himmel.position.copy(kamera.position);
+  if (MAT.wasser) MAT.wasser.emissiveIntensity = 1 + Math.sin(zeit * 1.5) * 0.3;
   kameraUpdate();
   geistUpdate();
   hudUpdate();
+  karteUpdate(echtDt);
   if (meldungT > 0) { meldungT -= echtDt; if (meldungT <= 0) el.meldung.style.opacity = 0; }
   renderer.render(szene, kamera);
 }
