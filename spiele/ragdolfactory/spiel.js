@@ -9,8 +9,8 @@ const LAUF_TEMPO = 6, RENN_TEMPO = 10, SPRUNG_KRAFT = 8.5;
 const BAND_TEMPO = 1.5;      // Felder pro Sekunde auf dem Förderband
 const BOHR_ZEIT = 2.2;       // Sekunden pro Erz
 const SCHMELZ_ZEIT = 2;      // Sekunden pro Barren
-const ERSTE_WELLE = 90;      // Sekunden bis die ersten Roboter kommen
-const WELLEN_PAUSE = 60;     // Sekunden zwischen den Wellen
+const ERSTE_WELLE = 75;      // Sekunden bis die ersten Roboter kommen
+const WELLEN_PAUSE = 50;     // Sekunden zwischen den Wellen
 const BALL_TEMPO = 30;
 const SPIELER_LEBEN = 100;
 const START_LAGER = { eisen: 30, kupfer: 10 };
@@ -33,6 +33,7 @@ const MEILENSTEINE = [
   { text: 'Liefere 10 Kupferbarren zum HUB', zahl: () => stand.geliefert.kupfer, ziel: 10, belohnung: 'Schleuder freigeschaltet! (Taste 4)' },
   { text: 'Haue 10 Roboter kaputt', zahl: () => stand.kills, ziel: 10, belohnung: 'Deine Kanone schießt jetzt 3 Bälle!' },
   { text: 'Liefere 100 Eisenbarren zum HUB', zahl: () => stand.geliefert.eisen, ziel: 100, belohnung: '🏆 Du bist FABRIK-CHEF! 🏆' },
+  { text: 'Besiege 3 Bosse', zahl: () => stand.bossKills || 0, ziel: 3, belohnung: 'Deine Bälle machen jetzt DOPPELTEN Schaden!' },
 ];
 
 // Erz-Felsen: [Art, Feld-x, Feld-z]
@@ -49,7 +50,7 @@ const DIR_WINKEL = [Math.PI / 2, 0, -Math.PI / 2, Math.PI];
 function neuerStand() {
   return {
     lager: { ...START_LAGER }, erz: { eisen: 0, kupfer: 0 }, geliefert: { eisen: 0, kupfer: 0 },
-    kills: 0, meilenstein: 0, welle: 0, welleT: ERSTE_WELLE, gegnerAn: true, bauten: [],
+    kills: 0, bossKills: 0, meilenstein: 0, welle: 0, welleT: ERSTE_WELLE, gegnerAn: true, bauten: [],
   };
 }
 let stand = neuerStand();
@@ -805,7 +806,7 @@ function gebaeudeUpdate(b, dt) {
       zielP.y += 0.5 * BALL_SCHWERKRAFT * flug * flug;          // etwas höher zielen, weil der Ball runterfällt
       const richtung = zielP.sub(start).normalize();
       b.gruppe.userData.kopf.rotation.y = Math.atan2(richtung.x, richtung.z) - b.gruppe.rotation.y;
-      if (b.cd <= 0) { b.cd = 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
+      if (b.cd <= 0) { b.cd = 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung, 2); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
     }
   }
 }
@@ -829,7 +830,11 @@ const ruheAbstand = (a, b) => Math.hypot(RUHE[a][0] - RUHE[b][0], RUHE[a][1] - R
 const AUSSEHEN = {
   spieler: { anzug: 0xff8c1a, hose: 0x34456b, haut: 0xf1c27d, helm: 0xffd23f, kopf: 'mensch' },
   roboter: { anzug: 0x8a8f99, hose: 0x5a5f69, haut: 0x6a6f79, helm: 0xff3030, kopf: 'roboter' },
-  boss:    { anzug: 0x7d3fbf, hose: 0x3d2060, haut: 0x5a2d8a, helm: 0x39ff6a, kopf: 'roboter', boss: true },
+  boss:    { anzug: 0x7d3fbf, hose: 0x3d2060, haut: 0x5a2d8a, helm: 0x39ff6a, kopf: 'roboter', extra: ['stacheln', 'hoerner'] },
+  kanone:  { anzug: 0x30343f, hose: 0x1e2028, haut: 0x454a55, helm: 0xff2a2a, kopf: 'roboter', extra: ['kanone'] },
+  huepfer: { anzug: 0x2fa84f, hose: 0x1d6b33, haut: 0x3c8f50, helm: 0xffee33, kopf: 'roboter', extra: ['duesen'] },
+  blitz:   { anzug: 0x1e7fd8, hose: 0x174f8a, haut: 0x2a6bb0, helm: 0x66ffff, kopf: 'roboter', extra: ['blitz'] },
+  riese:   { anzug: 0x8a1c1c, hose: 0x4a0e0e, haut: 0x6a1515, helm: 0xffaa00, kopf: 'roboter', extra: ['stacheln', 'krone'] },
 };
 const alsText = c => '#' + new THREE.Color(c).getHexString();
 function figurMaterialien(a) { // Materialien nur einmal pro Aussehen bauen
@@ -873,7 +878,7 @@ class Figur {
 
     this.gruppe = new THREE.Group(); szene.add(this.gruppe);
     this.staubZeit = 0;
-    const M = figurMaterialien(aussehen), robo = aussehen.kopf === 'roboter', boss = !!aussehen.boss;
+    const M = figurMaterialien(aussehen), robo = aussehen.kopf === 'roboter', extra = aussehen.extra || [];
     const K = (b, h, t, m, x = 0, y = 0, z = 0) => kasten(b * s, h * s, t * s, m, x * s, y * s, z * s);
     const Z = (r1, r2, h, m, x = 0, y = 0, z = 0, seg = 10) => rohr(r1 * s, r2 * s, h * s, m, x * s, y * s, z * s, seg);
     const Ku = (r, m, x = 0, y = 0, z = 0) => kugel(r * s, m, x * s, y * s, z * s);
@@ -940,9 +945,22 @@ class Figur {
         k.add(Z(0.055, 0.055, 0.04, MAT.schwarz, x * 0.4, 0.36, -0.19, 8));
       }
       k.add(K(0.44, 0.1, 0.28, MAT.dunkelMetall, 0, -0.27, 0));
-      if (boss) {
+      if (extra.includes('stacheln')) {
         for (const x of [-0.32, 0.32]) for (const z of [-0.08, 0.08]) k.add(dreh(Z(0.001, 0.06, 0.28, M.horn, x, 0.48, z, 6), 0, 0, x > 0 ? -0.3 : 0.3));
         for (const y of [0.2, 0.0, -0.2]) k.add(dreh(Z(0.001, 0.06, 0.22, M.horn, 0, y, -0.25, 6), -Math.PI / 2, 0, 0));
+      }
+      if (extra.includes('kanone')) for (const x of [-0.3, 0.3]) { // zwei Schulter-Kanonen
+        k.add(K(0.2, 0.2, 0.26, MAT.dunkelMetall, x, 0.46, 0));
+        k.add(dreh(Z(0.08, 0.1, 0.6, MAT.dunkelMetall, x, 0.5, 0.25, 10), Math.PI / 2, 0, 0));
+        k.add(dreh(Z(0.11, 0.11, 0.08, MAT.warn, x, 0.5, 0.05, 10), Math.PI / 2, 0, 0));
+        k.add(dreh(Z(0.07, 0.07, 0.03, M.leucht, x, 0.5, 0.56, 10), Math.PI / 2, 0, 0));
+      }
+      if (extra.includes('duesen')) for (const x of [-0.13, 0.13]) { // Sprung-Düsen
+        k.add(Z(0.08, 0.06, 0.28, MAT.dunkelMetall, x, -0.02, -0.25, 10));
+        k.add(Ku(0.065, M.leucht, x, -0.19, -0.25));
+      }
+      if (extra.includes('blitz')) for (let n = 0; n < 3; n++) { // Blitz-Zacken
+        k.add(dreh(K(0.04, 0.24, 0.14, M.leucht, 0, 0.22 - n * 0.18, -0.23), (n % 2 ? 0.5 : -0.5), 0, 0));
       }
     } else {
       k.add(K(0.5, 0.62, 0.3, M.anzug));
@@ -972,10 +990,14 @@ class Figur {
       for (const x of [-0.2, 0.2]) h.add(dreh(Z(0.06, 0.06, 0.04, MAT.dunkelMetall, x, 0, 0, 10), 0, 0, Math.PI / 2));
       h.add(Z(0.015, 0.015, 0.25, MAT.metall, 0.1, 0.28, -0.05, 4));
       h.add(Ku(0.04, M.leucht, 0.1, 0.42, -0.05));
-      if (boss) {
-        for (const x of [-0.16, 0.16]) h.add(dreh(Z(0.001, 0.07, 0.3, M.horn, x, 0.27, 0, 6), 0, 0, x > 0 ? -0.5 : 0.5));
-        h.add(K(0.4, 0.05, 0.36, MAT.gold, 0, 0.17, 0));
+      if (extra.includes('hoerner')) for (const x of [-0.16, 0.16]) h.add(dreh(Z(0.001, 0.07, 0.3, M.horn, x, 0.27, 0, 6), 0, 0, x > 0 ? -0.5 : 0.5));
+      if (extra.includes('krone')) {
+        h.add(K(0.4, 0.06, 0.36, MAT.gold, 0, 0.19, 0));
+        for (const [x, z] of [[-0.15, -0.13], [0.15, -0.13], [-0.15, 0.13], [0.15, 0.13], [0, 0.15]]) h.add(Z(0.001, 0.045, 0.16, MAT.gold, x, 0.3, z, 4));
+        h.add(Ku(0.04, M.leucht, 0, 0.24, 0.19));
       }
+      if (extra.includes('kanone')) h.add(K(0.4, 0.06, 0.06, MAT.warn, 0, 0.13, 0.15));
+      if (extra.includes('blitz')) h.add(dreh(K(0.04, 0.2, 0.2, M.leucht, 0, 0.25, 0), 0.3, 0, 0));
     } else {
       h.add(Ku(0.2, M.haut));
       for (const x of [-0.075, 0.075]) {
@@ -1079,7 +1101,7 @@ class Figur {
       if (this.tot) return;
       let ruhig = true;
       for (let k = 0; k < 13; k++) if (this.p[k].distanceToSquared(this.a[k]) > 0.0009) { ruhig = false; break; }
-      if ((this.t > 1.6 && ruhig) || this.t > 6) this.aufstehen();
+      if ((this.t > (this.aufstehZeit || 1.6) && ruhig) || this.t > 6) this.aufstehen();
       return;
     }
     for (let k = 0; k < 13; k++) this.a[k].copy(this.p[k]);
@@ -1256,10 +1278,10 @@ const BALL_GEO = new THREE.SphereGeometry(0.18, 12, 8);
 const BALL_MATS = BALL_FARBEN.map(c => mat(c, { roughness: 0.3, emissive: c, emissiveIntensity: 0.25 }));
 let baelle = [];
 
-function ballSchiessen(start, richtung) {
+function ballSchiessen(start, richtung, schaden = 1) {
   const m = new THREE.Mesh(BALL_GEO, BALL_MATS[Math.floor(Math.random() * 4)]);
   m.castShadow = true; szene.add(m);
-  baelle.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(BALL_TEMPO), t: 2.5, verbraucht: false });
+  baelle.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(BALL_TEMPO), t: 2.5, verbraucht: false, schaden: schaden * (stand.meilenstein >= 5 ? 2 : 1) });
 }
 
 function trifft(g, pos, r) {
@@ -1282,8 +1304,8 @@ function baelleUpdate(dt) {
       for (const g of gegner) {
         if (!trifft(g, b.pos, 0.18)) continue;
         const n = b.vel.clone().normalize();
-        g.umfallen(n.x * 11, 5, n.z * 11);
-        gegnerSchaden(g, 1);
+        g.umfallen(n.x * 11 / g.s, 5 / g.s, n.z * 11 / g.s);
+        gegnerSchaden(g, b.schaden);
         b.verbraucht = true; b.vel.multiplyScalar(-0.25);
         puff(b.pos.x, b.pos.y, b.pos.z, 0xffe14f, 8, { leucht: true, groesse: 0.6, leben: 0.4 });
         SOUND.klong();
@@ -1323,7 +1345,7 @@ function schlagen() {
     const m = g.mitte();
     const dm = Math.hypot(m.x - f.pos.x, m.z - f.pos.z);
     if (Math.min(d, dm) > 2.3 || (dx * fx + dz * fz) / (d || 1) < 0.2) continue;
-    g.umfallen(fx * 14, 8, fz * 14);
+    g.umfallen(fx * 14 / g.s, 8 / g.s, fz * 14 / g.s);
     gegnerSchaden(g, 2);
     traf = true;
   }
@@ -1342,49 +1364,204 @@ function schlagen() {
   if (traf) SOUND.klong(); else SOUND.wusch();
 }
 
-// ================= GEGNER (Roboter) =================
-let gegner = [];
+// ================= GEGNER (Roboter + Bosse) =================
+// hp = Leben, tempo = Lauf-Tempo, schaden = wie viel Leben sie dir abziehen, staerke = wie weit du fliegst
+// beute = [Eisen, Kupfer], die du bekommst, wenn du ihn kaputt machst
+const GEGNER_ARTEN = {
+  roboter: { name: 'Roboter',          aus: 'roboter', s: 1,   hp: 5,  tempo: 4.4, schaden: 18, staerke: 13, beute: [1, 1] },
+  brecher: { name: '💪 Brecher',        aus: 'boss',    s: 1.7, hp: 30, tempo: 3.4, schaden: 35, staerke: 24, beute: [8, 5],  boss: true, gebSchaden: 3, info: 'haut extrem fest zu' },
+  kanone:  { name: '💣 Kanonen-König',  aus: 'kanone',  s: 1.5, hp: 22, tempo: 2.8, schaden: 22, staerke: 16, beute: [8, 6],  boss: true, fern: true, info: 'schießt Feuerbälle' },
+  huepfer: { name: '🦘 Hüpf-Hammer',    aus: 'huepfer', s: 1.4, hp: 20, tempo: 3.8, schaden: 25, staerke: 18, beute: [7, 7],  boss: true, springt: true, info: 'springt dich an – Schockwelle!' },
+  blitz:   { name: '⚡ Blitz-Bot',       aus: 'blitz',   s: 1.3, hp: 16, tempo: 5.2, schaden: 22, staerke: 22, beute: [6, 8],  boss: true, rennt: true, info: 'rast blitzschnell auf dich zu' },
+  riese:   { name: '👑 RIESEN-ROBO',    aus: 'riese',   s: 2.6, hp: 90, tempo: 2.4, schaden: 40, staerke: 30, beute: [30, 20], boss: true, stampft: true, helfer: true, gebSchaden: 5, info: 'stampft und ruft Helfer' },
+};
+const NORMALE_BOSSE = ['brecher', 'kanone', 'huepfer', 'blitz'];
+const MAX_GEGNER = 32;
+let gegner = [], gegnerSchuesse = [], ringe = [], kameraWackeln = 0;
 
-function gegnerSpawnen(boss) {
-  const w = (stand.welleWinkel ?? Math.random() * 6.28) + (Math.random() - 0.5) * 1.2, r = WELT * G - 3;
-  const g = new Figur(boss ? AUSSEHEN.boss : AUSSEHEN.roboter, boss ? 1.6 : 1);
-  g.boss = boss; g.hp = boss ? 12 : 3; g.tempo = boss ? 2.6 : 3.4; g.schaden = boss ? 30 : 12; g.staerke = boss ? 16 : 10;
-  g.angriffT = -0.5;
-  g.pos.set(Math.cos(w) * r, 0, Math.sin(w) * r);
+function gegnerSpawnen(art = 'roboter', x, z) {
+  if (art === true) art = 'brecher';
+  if (!GEGNER_ARTEN[art]) art = 'roboter';
+  const a = GEGNER_ARTEN[art];
+  if (x === undefined) {
+    const w = (stand.welleWinkel ?? Math.random() * 6.28) + (Math.random() - 0.5) * 1.2, r = WELT * G - 3;
+    x = Math.cos(w) * r; z = Math.sin(w) * r;
+  }
+  const g = new Figur(AUSSEHEN[a.aus], a.s);
+  const staerker = 1 + stand.welle * 0.08;   // jede Welle werden sie etwas stärker
+  Object.assign(g, { art, info: a, boss: !!a.boss, tempo: a.tempo, schaden: a.schaden, staerke: a.staerke });
+  g.hp = g.maxHp = Math.ceil(a.hp * staerker);
+  g.aufstehZeit = a.boss ? 0.7 : 1.0;   // Roboter stehen schneller wieder auf als du!
+  g.angriffT = -0.5; g.spezialT = rnd(1.5, 3); g.helferT = 8;
+  g.pos.set(x, 0, z);
   g.yaw = Math.atan2(-g.pos.x, -g.pos.z);
   g.sofortStehen();
   gegner.push(g);
-  for (let k = 0; k < 6; k++) rauch(g.pos.x + rnd(-0.6, 0.6), rnd(0.3, 1.8) * g.s, g.pos.z + rnd(-0.6, 0.6), boss ? 0x9a5ad8 : 0x777777, 1, 1.8, 1.2, 0.6);
+  for (let k = 0; k < (a.boss ? 14 : 6); k++) {
+    rauch(g.pos.x + rnd(-0.6, 0.6) * g.s, rnd(0.3, 1.8) * g.s, g.pos.z + rnd(-0.6, 0.6) * g.s, a.boss ? AUSSEHEN[a.aus].helm : 0x777777, g.s, 1.8 * g.s, 1.2, 0.6);
+  }
+  return g;
 }
 
 function gegnerSchaden(g, n) {
   if (g.tot) return;
   g.hp -= n;
+  g.blitzT = 0.12;
   if (g.hp > 0) return;
-  g.tot = true; g.totT = 4;
+  g.tot = true; g.totT = g.boss ? 5 : 4;
   const m = g.mitte();
-  puff(m.x, m.y, m.z, 0x8a8f99, 10, { groesse: 1.2 });
-  puff(m.x, m.y, m.z, 0xffd060, 12, { leucht: true, groesse: 0.5, leben: 0.5 });
-  for (let k = 0; k < 6; k++) rauch(m.x + rnd(-0.4, 0.4), m.y + rnd(0, 0.6), m.z + rnd(-0.4, 0.4), 0x333333, 0.8, 2, 1.8, 0.8, 0.7);
+  puff(m.x, m.y, m.z, 0x8a8f99, g.boss ? 30 : 10, { groesse: 1.2 * g.s });
+  puff(m.x, m.y, m.z, 0xffd060, g.boss ? 40 : 12, { leucht: true, groesse: 0.5 * g.s, leben: 0.6 });
+  for (let k = 0; k < (g.boss ? 20 : 6); k++) rauch(m.x + rnd(-0.4, 0.4) * g.s, m.y + rnd(0, 0.6), m.z + rnd(-0.4, 0.4) * g.s, 0x333333, 0.8 * g.s, 2 * g.s, 1.8, 0.8, 0.7);
   stand.kills++;
-  const eisen = g.boss ? 6 : 1, kupfer = g.boss ? 4 : 1;
+  const [eisen, kupfer] = g.info.beute;
   stand.lager.eisen += eisen; stand.lager.kupfer += kupfer;
-  meldung(`💥 Roboter kaputt! +${eisen} Eisen +${kupfer} Kupfer`, 1.5);
+  if (g.boss) {
+    stand.bossKills = (stand.bossKills || 0) + 1;
+    meldung(`🏆 ${g.info.name} besiegt! +${eisen} Eisen +${kupfer} Kupfer`, 4);
+    SOUND.tada();
+    kameraWackeln = 0.6;
+  } else meldung(`💥 Roboter kaputt! +${eisen} Eisen +${kupfer} Kupfer`, 1.5);
+}
+
+// Boss-Spezialattacken. Gibt [wx, wz] zurück, wenn der Boss gerade selbst bestimmt, wohin er läuft
+function bossSpezial(g, dt) {
+  const a = g.info, sp = spieler;
+  const dx = sp.pos.x - g.pos.x, dz = sp.pos.z - g.pos.z, d = Math.hypot(dx, dz) || 1;
+  g.spezialT -= dt;
+  if (g.sprung) { // Hüpf-Hammer fliegt gerade
+    g.sprungZeit += dt;
+    g.arme = 'hoch';
+    if (g.aufBoden && g.sprungZeit > 0.2) {
+      g.sprung = null;
+      schockwelle(g.pos, 4.5 * g.s / 1.4, g.staerke, g.schaden, g);
+      return [0, 0];
+    }
+    return [g.sprung.x, g.sprung.z];
+  }
+  if (g.ansturm) { // Blitz-Bot rast los
+    const an = g.ansturm;
+    an.t -= dt;
+    if (an.t > 0.8) { g.arme = 'hoch'; g.yaw = Math.atan2(dx, dz); an.x = dx / d * 17; an.z = dz / d * 17; return [0, 0]; }
+    if (an.t <= 0) { g.ansturm = null; return [0, 0]; }
+    g.arme = 'vor'; g.yaw = Math.atan2(an.x, an.z);
+    puff(g.pos.x, 0.8 * g.s, g.pos.z, 0x66ffff, 1, { leucht: true, groesse: 0.6, leben: 0.3, tempo: 0.3 });
+    if (d < 1.4 * g.s) { spielerGetroffen(g.pos, g.schaden, g.staerke); an.t = Math.min(an.t, 0.1); }
+    return [an.x, an.z];
+  }
+  if (g.stampf > 0) { // Riese holt zum Stampfen aus
+    g.stampf -= dt; g.arme = 'hoch';
+    if (g.stampf <= 0) schockwelle(g.pos, 7, g.staerke, g.schaden, g);
+    return [0, 0];
+  }
+  const kannAngreifen = sp.modus === 'steht' && sp.hp > 0;
+  if (g.spezialT <= 0 && kannAngreifen) {
+    if (a.fern && d < 32) { g.spezialT = 1.5; energieSchuss(g); }
+    else if (a.springt && d < 20 && d > 3) {
+      const flug = 1.2;
+      g.vel.set(dx / flug, SCHWERKRAFT * flug / 2, dz / flug); g.aufBoden = false; g.pos.y += 0.05;
+      g.sprung = { x: dx / flug, z: dz / flug }; g.sprungZeit = 0; g.spezialT = 4;
+      staub(g.pos.x, g.pos.z, 8); SOUND.wusch();
+      return [g.sprung.x, g.sprung.z];
+    } else if (a.rennt && d < 24 && d > 3) {
+      g.ansturm = { t: 1.4, x: 0, z: 0 }; g.spezialT = 3.2; SOUND.zisch();
+      return [0, 0];
+    } else if (a.stampft && d < 9) { g.stampf = 0.9; g.spezialT = 4.5; return [0, 0]; }
+  }
+  if (a.fern && d < 32 && sp.hp > 0) { // Kanonen-König hält Abstand und zielt
+    g.yaw = winkelNaeher(g.yaw, Math.atan2(dx, dz), dt * 6);
+    g.arme = 'vor';
+    const k = d > 13 ? 1 : d < 8 ? -1 : 0;
+    return [dx / d * g.tempo * k, dz / d * g.tempo * k];
+  }
+  return null;
+}
+
+// Feuerball vom Kanonen-König
+const FEUER_GEO = new THREE.SphereGeometry(0.32, 14, 10);
+const FEUER_MAT = new THREE.MeshBasicMaterial({ color: 0xff4a1a });
+function energieSchuss(g) {
+  const start = g.mitte(); start.y += 0.45 * g.s;
+  const ziel = spieler.mitte();
+  const flug = start.distanceTo(ziel) / 20;
+  ziel.addScaledVector(spieler.vel, flug * 0.7);
+  ziel.y += 0.5 * 6 * flug * flug;
+  const v = ziel.sub(start).normalize().multiplyScalar(20);
+  start.addScaledVector(v, 0.05);
+  const mesh = new THREE.Mesh(FEUER_GEO, FEUER_MAT); mesh.position.copy(start); szene.add(mesh);
+  gegnerSchuesse.push({ mesh, pos: start, vel: v, t: 3 });
+  rauch(start.x, start.y, start.z, 0xff7a30, 0.8, 1.2, 0.5, 0.5, 0.8);
+  SOUND.peng();
+}
+function gegnerSchuesseUpdate(dt) {
+  for (const s of gegnerSchuesse) {
+    s.vel.y -= 6 * dt;
+    s.pos.addScaledVector(s.vel, dt);
+    s.t -= dt;
+    s.mesh.position.copy(s.pos);
+    s.mesh.scale.setScalar(1 + Math.sin(zeit * 30) * 0.15);
+    if (Math.random() < 0.6) rauch(s.pos.x, s.pos.y, s.pos.z, wahl([0xff7a30, 0xffc040, 0x555555]), 0.35, 0.6, 0.4, 0.2, 0.7);
+    const geb = zellen.get(key(zelleVon(s.pos.x), zelleVon(s.pos.z)));
+    const inGeb = geb && s.pos.y < geb.box.y2 && s.pos.x > geb.box.x1 && s.pos.x < geb.box.x2 && s.pos.z > geb.box.z1 && s.pos.z < geb.box.z2;
+    const trifftSpieler = spieler.modus === 'steht' && s.pos.distanceTo(spieler.mitte()) < 0.9;
+    if (trifftSpieler || inGeb || s.pos.y < 0.3 || s.t <= 0) {
+      if (inGeb) gebaeudeGetroffen(geb, 2);
+      schockwelle(s.pos, 2.8, 15, 20, null, true);
+      s.t = 0; szene.remove(s.mesh);
+    }
+  }
+  gegnerSchuesse = gegnerSchuesse.filter(s => s.t > 0);
+}
+
+// Schockwelle: alles in der Nähe fliegt durch die Luft – auch andere Roboter!
+const RING_GEO = new THREE.TorusGeometry(1, 0.12, 6, 40);
+function schockwelle(pos, radius, staerke, schaden, von, klein = false) {
+  const p = pos.clone();
+  if (klein) SOUND.bumm(0.15); else SOUND.bumm(0.35);
+  const ring = new THREE.Mesh(RING_GEO, new THREE.MeshBasicMaterial({ color: klein ? 0xff8a3a : 0xfff0c0, transparent: true, opacity: 0.8, depthWrite: false }));
+  ring.rotation.x = Math.PI / 2; ring.position.set(p.x, 0.25, p.z); szene.add(ring);
+  ringe.push({ mesh: ring, t: 0, max: radius });
+  for (let k = 0; k < (klein ? 8 : 20); k++) {
+    const w = k / (klein ? 8 : 20) * Math.PI * 2;
+    rauch(p.x + Math.cos(w) * radius * 0.5, 0.3, p.z + Math.sin(w) * radius * 0.5, klein ? 0xff9a50 : 0xc9b48a, 0.8, 2, 0.9, 0.6, 0.7);
+  }
+  puff(p.x, 0.4, p.z, klein ? 0xffa030 : 0x8a7a5a, klein ? 10 : 18, { leucht: klein, groesse: 0.8, tempo: 1.3 });
+  const sp = spieler;
+  const ds = Math.hypot(sp.pos.x - p.x, sp.pos.z - p.z);
+  if (ds < 30) kameraWackeln = Math.max(kameraWackeln, (klein ? 0.25 : 0.7) * (1 - ds / 30));
+  if (ds < radius && sp.pos.y < p.y + 2) spielerGetroffen(p, schaden * (1 - ds / radius * 0.5), staerke);
+  for (const h of gegner) {
+    if (h === von || h.tot || h.modus !== 'steht') continue;
+    const dx = h.pos.x - p.x, dz = h.pos.z - p.z, d = Math.hypot(dx, dz) || 1;
+    if (d < radius) h.umfallen(dx / d * 8 / h.s, 7 / h.s, dz / d * 8 / h.s);
+  }
+}
+function ringeUpdate(dt) {
+  for (const r of ringe) {
+    r.t += dt / 0.45;
+    const sk = 0.3 + r.t * r.max;
+    r.mesh.scale.set(sk, sk, 1 + r.t * 2);
+    r.mesh.material.opacity = 0.8 * (1 - r.t);
+    if (r.t >= 1) { szene.remove(r.mesh); r.mesh.material.dispose(); }
+  }
+  ringe = ringe.filter(r => r.t < 1);
 }
 
 function gegnerUpdate(g, dt) {
   if (g.tot) {
     g.update(dt);
     g.totT -= dt;
-    if (g.totT < 1) g.gruppe.position.y -= dt * 1.5;   // im Boden versinken
+    if (g.totT < 1) g.gruppe.position.y -= dt * 1.5 * g.s;   // im Boden versinken
     if (g.totT <= 0) { puff(g.mitte().x, 0.5, g.mitte().z, 0x8a8f99, 10); g.entfernen(); g.weg = true; }
     return;
   }
+  if (g.blitzT > 0) g.blitzT -= dt;
+  if (g.modus !== 'steht') { g.sprung = null; g.ansturm = null; g.stampf = 0; }
   if (g.modus === 'steht') {
     const sp = spieler;
     let zx, zz, zielGeb = null, reichweite;
     const ds = Math.hypot(sp.pos.x - g.pos.x, sp.pos.z - g.pos.z);
-    if (sp.hp > 0 && ds < 28) { zx = sp.pos.x; zz = sp.pos.z; reichweite = 1.3 * g.s; }
+    if (sp.hp > 0 && ds < (g.boss ? 40 : 30)) { zx = sp.pos.x; zz = sp.pos.z; reichweite = 1.3 * g.s; }
     else {
       let bd = Infinity;
       for (const b of gebaeude) {
@@ -1395,19 +1572,30 @@ function gegnerUpdate(g, dt) {
       }
       reichweite = 0.55 * g.s + 0.4;
     }
+    // Der Riese ruft Helfer
+    if (g.info.helfer) {
+      g.helferT -= dt;
+      if (g.helferT <= 0) {
+        g.helferT = 12;
+        for (let k = 0; k < 3 && gegner.length < MAX_GEGNER; k++) gegnerSpawnen('roboter', g.pos.x + rnd(-4, 4), g.pos.z + rnd(-4, 4));
+        meldung('👑 Der Riesen-Robo ruft Helfer!', 1.5);
+      }
+    }
     let wx = 0, wz = 0;
-    if (zx !== undefined) {
+    const spezial = g.boss && !zielGeb ? bossSpezial(g, dt) : null;
+    if (spezial) [wx, wz] = spezial;
+    else if (zx !== undefined) {
       const dx = zx - g.pos.x, dz = zz - g.pos.z, d = Math.hypot(dx, dz);
       if (d > 0.01) g.yaw = winkelNaeher(g.yaw, Math.atan2(dx, dz), dt * 6);
       if (d > reichweite) { wx = dx / d * g.tempo; wz = dz / d * g.tempo; g.angriffT = Math.min(g.angriffT, 0); }
       else g.angriffT += dt;
-      if (g.angriffT >= 0.55) { // zuhauen!
-        g.angriffT = -0.9;
-        if (zielGeb) gebaeudeGetroffen(zielGeb);
+      if (g.angriffT >= 0.45) { // zuhauen!
+        g.angriffT = -0.6;
+        if (zielGeb) gebaeudeGetroffen(zielGeb, g.info.gebSchaden || 1);
         else if (d < reichweite + 0.5) spielerGetroffen(g.pos, g.schaden, g.staerke);
       }
+      g.arme = g.angriffT > 0 ? 'hoch' : 'vor';
     }
-    g.arme = g.angriffT > 0 ? 'hoch' : 'vor';
     // Roboter schubsen sich gegenseitig weg
     for (const h of gegner) {
       if (h === g || h.tot || h.modus !== 'steht') continue;
@@ -1420,16 +1608,16 @@ function gegnerUpdate(g, dt) {
   g.update(dt);
 }
 
-function gebaeudeGetroffen(b) {
+function gebaeudeGetroffen(b, n = 1) {
   b.wackel = 0.3;
   SOUND.klong();
   if (b.typ === 'hub') { // der HUB geht nicht kaputt, aber Roboter klauen Barren
-    if (stand.lager.eisen > 0) stand.lager.eisen--;
+    stand.lager.eisen = Math.max(0, stand.lager.eisen - n);
     meldung('⚠️ Roboter klauen am HUB!', 1);
     return;
   }
-  b.hp--;
-  if (b.hp <= 0) { meldung(`💥 Dein ${GEBAEUDE[b.typ].name} wurde kaputt gemacht!`); abreissen(b, false); speichern(); }
+  b.hp -= n;
+  if (b.hp <= 0 && zellen.get(key(b.i, b.j)) === b) { meldung(`💥 Dein ${GEBAEUDE[b.typ].name} wurde kaputt gemacht!`); abreissen(b, false); speichern(); }
 }
 
 // Fliegende Ragdolls werfen andere um – wie Bowling!
@@ -1443,8 +1631,8 @@ function bowling() {
     for (const h of alle) {
       if (h === f || h.modus !== 'steht' || h.tot) continue;
       if (Math.hypot(h.pos.x - m.x, h.pos.z - m.z) > 0.6 * (f.s + h.s) || m.y > h.pos.y + 2.2 * h.s) continue;
-      if (h === spieler) { spielerGetroffen(m, 5, 8); continue; }
-      h.umfallen(v.x * 0.7, 5, v.z * 0.7);
+      if (h === spieler) { spielerGetroffen(m, 8, 10); continue; }
+      h.umfallen(v.x * 0.7 / h.s, 5 / h.s, v.z * 0.7 / h.s);
       gegnerSchaden(h, 1);
       SOUND.klong();
     }
@@ -1458,11 +1646,18 @@ function wellenUpdate(dt) {
   stand.welle++;
   stand.welleT = WELLEN_PAUSE;
   stand.welleWinkel = Math.random() * Math.PI * 2;
-  const anzahl = Math.min(2 + stand.welle, 14);
-  for (let k = 0; k < anzahl && gegner.length < 25; k++) gegnerSpawnen(false);
-  if (stand.welle % 5 === 0) gegnerSpawnen(true);
-  meldung(`🤖 Welle ${stand.welle} kommt!${stand.welle % 5 === 0 ? ' Mit BOSS!' : ''}`, 3);
-  SOUND.alarm();
+  const w = stand.welle;
+  const bosse = [];
+  if (w >= 2 && w % 2 === 0) bosse.push(wahl(NORMALE_BOSSE));   // jede 2. Welle ein Boss
+  if (w >= 7) bosse.push(wahl(NORMALE_BOSSE));                    // ab Welle 7 in jeder Welle noch einer
+  if (w >= 12 && w % 2 === 1) bosse.push(wahl(NORMALE_BOSSE));
+  if (w % 10 === 0) bosse.push('riese');                         // jede 10. Welle der RIESE
+  const anzahl = Math.min(3 + Math.floor(w * 1.5), 22);
+  for (const b of bosse) gegnerSpawnen(b);   // Bosse kommen immer!
+  for (let k = 0; k < anzahl && gegner.length < MAX_GEGNER; k++) gegnerSpawnen('roboter');
+  const namen = bosse.map(b => GEGNER_ARTEN[b].name).join(' + ');
+  meldung(`🤖 Welle ${w} kommt!${bosse.length ? `\n⚠️ BOSS: ${namen}` : ''}`, 4);
+  if (bosse.length) SOUND.boss(); else SOUND.alarm();
 }
 
 // ================= PARTIKEL: Splitter, Funken, Rauch, Staub =================
@@ -1687,11 +1882,15 @@ const SOUND = {
   pling: () => ton(900, 1400, 0.08, 'sine', 0.04),
   wusch: () => ton(200, 1200, 0.35, 'sawtooth', 0.05),
   alarm: () => { for (let k = 0; k < 3; k++) ton(440, 660, 0.25, 'square', 0.06, k * 0.3); },
+  boss: () => { ton(90, 45, 1.0, 'sawtooth', 0.18); ton(135, 60, 1.0, 'square', 0.08, 0.1); for (let k = 0; k < 4; k++) ton(660, 440, 0.2, 'square', 0.06, 0.3 + k * 0.25); },
+  bumm: (laut = 0.3) => { ton(140, 30, 0.6, 'sawtooth', laut); ton(80, 25, 0.7, 'sine', laut); },
+  peng: () => ton(500, 90, 0.3, 'sawtooth', 0.1),
+  zisch: () => ton(300, 2400, 0.6, 'sawtooth', 0.06),
   tada: () => [523, 659, 784, 1047].forEach((f, k) => ton(f, f, 0.3, 'triangle', 0.15, k * 0.12)),
 };
 
 // ================= HUD =================
-const el = Object.fromEntries(['lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
+const el = Object.fromEntries(['bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
   .map(id => [id, document.getElementById(id)]));
 const altesHTML = new Map();
 function setHTML(e, html) { if (altesHTML.get(e) !== html) { altesHTML.set(e, html); e.innerHTML = html; } }
@@ -1721,6 +1920,8 @@ function hudUpdate() {
     ? `🎯 <b>Meilenstein ${stand.meilenstein + 1}/${MEILENSTEINE.length}</b><br>${ms.text}<br>Fortschritt: <b>${Math.min(ms.zahl(), ms.ziel)} / ${ms.ziel}</b>`
     : '🏆 <b>Alle Meilensteine geschafft!</b><br>Du bist Fabrik-Chef!');
   const lebend = gegner.filter(g => !g.tot).length;
+  setHTML(el.bossLeiste, gegner.filter(g => g.boss && !g.tot).slice(0, 4).map(g =>
+    `<div class="boss"><span>${g.info.name}</span> <small>${g.info.info}</small><div class="bossBalken"><div style="width:${Math.max(0, g.hp / g.maxHp * 100)}%"></div></div></div>`).join(''));
   setHTML(el.welle, stand.gegnerAn
     ? `🤖 Welle ${stand.welle + 1} in <b>${Math.ceil(stand.welleT)} s</b>${lebend ? `<br>Roboter unterwegs: <b>${lebend}</b>` : ''}`
     : '🕊️ Friedlich (keine Roboter)');
@@ -1833,6 +2034,8 @@ function update(dt) {
   gegner = gegner.filter(g => !g.weg);
   for (const b of [...gebaeude]) gebaeudeUpdate(b, dt);
   baelleUpdate(dt);
+  gegnerSchuesseUpdate(dt);
+  ringeUpdate(dt);
   bowling();
   wellenUpdate(dt);
   partikelUpdate(dt);
@@ -1848,6 +2051,10 @@ function kameraUpdate() {
   const ziel = f.modus === 'steht' ? _a.set(f.pos.x, f.pos.y + 1.7, f.pos.z) : _a.copy(f.mitte()).add(_b.set(0, 0.6, 0));
   const d = blickRichtung();
   kamera.position.set(ziel.x - Math.cos(kamYaw) * 0.7, ziel.y, ziel.z + Math.sin(kamYaw) * 0.7).addScaledVector(d, -4.5);
+  if (kameraWackeln > 0) {
+    kamera.position.x += rnd(-1, 1) * kameraWackeln * 0.4; kamera.position.y += rnd(-1, 1) * kameraWackeln * 0.4;
+    kameraWackeln = Math.max(0, kameraWackeln - 1 / 60 * 1.5);
+  }
   if (kamera.position.y < 0.4) kamera.position.y = 0.4;
   kamera.lookAt(_c.copy(kamera.position).add(d));
   sonne.position.set(f.pos.x, 0, f.pos.z).addScaledVector(SONNEN_RICHTUNG, 60);
@@ -1871,7 +2078,7 @@ function hubAnzeige(a) { // Bildschirm am HUB zeigt das Lager
 
 function zeichnen(echtDt) {
   spieler.zeichnen();
-  for (const g of gegner) g.zeichnen();
+  for (const g of gegner) { g.zeichnen(); g.gruppe.visible = !(g.blitzT > 0 && Math.floor(zeit * 40) % 2); }
   for (const b of gebaeude) {
     const u = b.gruppe.userData;
     if (u.dreh && b.arbeitet) u.dreh.rotation.y += echtDt * 14;

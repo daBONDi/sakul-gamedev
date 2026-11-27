@@ -18,7 +18,7 @@
     #kreuz { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 26px; text-shadow: 0 0 3px #000; pointer-events: none; }
     #tipp { position: fixed; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); font-size: 16px; text-shadow: 0 0 4px #000; white-space: nowrap; }
     #tipp .nein { color: #ff7777; }
-    #meldung { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); font-size: 28px; font-weight: bold; text-shadow: 0 2px 6px #000; text-align: center; transition: opacity 0.4s; pointer-events: none; }
+    #meldung { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); font-size: 28px; font-weight: bold; text-shadow: 0 2px 6px #000; text-align: center; white-space: pre-line; transition: opacity 0.4s; pointer-events: none; }
     #leiste { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
     .slot { width: 82px; height: 82px; background: rgba(20, 25, 45, 0.75); border: 3px solid transparent; border-radius: 12px; text-align: center; font-size: 12px; padding-top: 4px; position: relative; }
     .slot .emo { font-size: 28px; display: block; }
@@ -27,6 +27,11 @@
     .slot.aktiv { border-color: #ffd166; background: rgba(60, 60, 20, 0.85); }
     .slot.teuer .preis { color: #ff7777; }
     .slot.zu { opacity: 0.45; }
+    #bossLeiste { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); width: min(420px, 50vw); pointer-events: none; }
+    .boss { background: rgba(40, 10, 20, 0.75); border-radius: 10px; padding: 5px 10px 7px; margin-bottom: 6px; font-weight: bold; text-shadow: 0 1px 3px #000; }
+    .boss small { font-weight: normal; opacity: 0.8; }
+    .bossBalken { height: 10px; background: #3a1010; border-radius: 5px; overflow: hidden; margin-top: 4px; }
+    .bossBalken div { height: 100%; background: linear-gradient(90deg, #ff2a2a, #ffb020); transition: width 0.15s; }
     #rot { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255, 0, 0, 0.55)); opacity: 0; pointer-events: none; transition: opacity 0.3s; }
     #menue { position: fixed; inset: 0; background: rgba(15, 20, 40, 0.85); display: flex; align-items: center; justify-content: center; }
     #menue .innen { max-width: 620px; padding: 24px 32px; background: #1f2747; border-radius: 18px; box-shadow: 0 10px 40px #0008; }
@@ -50,6 +55,7 @@
     <hr style="border-color:#fff3">
     <div id="welle"></div>
   </div>
+  <div id="bossLeiste"></div>
   <div id="kreuz">+</div>
   <div id="tipp"></div>
   <div id="meldung"></div>
@@ -60,7 +66,7 @@
     <div class="innen">
       <h1>🤸 RagdolFactory</h1>
       <p id="menueText">Baue eine Fabrik! Bohrer holen Erz aus Felsen, Förderbänder bringen es zur Schmelze und dann zum <b>HUB</b>.
-        Aber Vorsicht: Roboter greifen an. Wenn sie dich hauen, fliegst du als <b>Ragdoll</b> durch die Gegend – und die Roboter auch, wenn du sie triffst!</p>
+        Aber Vorsicht: Roboter greifen an. Wenn sie dich hauen, fliegst du als <b>Ragdoll</b> durch die Gegend – und die Roboter auch, wenn du sie triffst!<br>⚠️ Jede 2. Welle kommt ein <b>Boss</b>, jede 10. Welle der <b>👑 RIESEN-ROBO</b>!</p>
       <table>
         <tr><td>Maus</td><td>Umschauen</td></tr>
         <tr><td>W A S D</td><td>Laufen (Shift = Rennen), Leertaste = Springen</td></tr>
