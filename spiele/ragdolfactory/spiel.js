@@ -23,19 +23,33 @@ const GEBAEUDE = {
   bohrer:    { name: 'Bohrer',     emoji: '⛏️', kosten: { eisen: 6 },            hoehe: 3.0, halb: 0.9 },
   band:      { name: 'Band',       emoji: '➡️', kosten: { eisen: 1 },            hoehe: 0.35, halb: 1.0 },
   schmelze:  { name: 'Schmelze',   emoji: '🔥', kosten: { eisen: 5, kupfer: 3 }, hoehe: 2.6, halb: 0.9 },
-  schleuder: { name: 'Schleuder',  emoji: '🚀', kosten: { eisen: 4, kupfer: 2 }, hoehe: 0.3, halb: 0.95, sperre: 2 },
-  turm:      { name: 'Ball-Turm',  emoji: '🗼', kosten: { eisen: 10, kupfer: 8 }, hoehe: 2.7, halb: 0.9, sperre: 1 },
+  schleuder: { name: 'Schleuder',  emoji: '🚀', kosten: { eisen: 4, kupfer: 2 }, hoehe: 0.3, halb: 0.95, sperre: 'kupfer10' },
+  turm:      { name: 'Ball-Turm',  emoji: '🗼', kosten: { eisen: 10, kupfer: 8 }, hoehe: 2.7, halb: 0.9, sperre: 'eisen10' },
   hub:       { name: 'HUB',        emoji: '🏠', kosten: {},                      hoehe: 2.8, halb: 0.9 },
 };
 const WERKZEUGE = ['hand', 'bohrer', 'band', 'schmelze', 'schleuder', 'turm', 'abriss'];
 
+// Meilensteine: einer nach dem anderen. bonus = Extra-Barren als Belohnung
+const anzahlGebaut = typ => gebaeude.filter(b => b.typ === typ).length;
 const MEILENSTEINE = [
-  { text: 'Liefere 10 Eisenbarren zum HUB', zahl: () => stand.geliefert.eisen, ziel: 10, belohnung: 'Ball-Turm freigeschaltet! (Taste 5)' },
-  { text: 'Liefere 10 Kupferbarren zum HUB', zahl: () => stand.geliefert.kupfer, ziel: 10, belohnung: 'Schleuder freigeschaltet! (Taste 4)' },
-  { text: 'Haue 10 Roboter kaputt', zahl: () => stand.kills, ziel: 10, belohnung: 'Deine Kanone schießt jetzt 3 Bälle!' },
-  { text: 'Liefere 100 Eisenbarren zum HUB', zahl: () => stand.geliefert.eisen, ziel: 100, belohnung: '🏆 Du bist FABRIK-CHEF! 🏆' },
-  { text: 'Besiege 3 Bosse', zahl: () => stand.bossKills || 0, ziel: 3, belohnung: 'Deine Bälle machen jetzt DOPPELTEN Schaden!' },
+  { id: 'eisen10',   text: 'Liefere 10 Eisenbarren zum HUB',   zahl: () => stand.geliefert.eisen, ziel: 10, belohnung: '🗼 Ball-Turm freigeschaltet! (Taste 5)' },
+  { id: 'kupfer10',  text: 'Liefere 10 Kupferbarren zum HUB',  zahl: () => stand.geliefert.kupfer, ziel: 10, belohnung: '🚀 Schleuder freigeschaltet! (Taste 4)' },
+  { id: 'schmelze',  text: 'Baue 2 Schmelzen',                 zahl: () => anzahlGebaut('schmelze'), ziel: 2, belohnung: '💥 Neue Waffe: Plopp-Schrot! (Q = Waffe wechseln)' },
+  { id: 'robo10',    text: 'Haue 10 Roboter kaputt',           zahl: () => stand.kills, ziel: 10, belohnung: '🔫 Deine Ball-Kanone schießt jetzt 3 Bälle!' },
+  { id: 'boss1',     text: 'Besiege einen Boss',               zahl: () => stand.bossKills || 0, ziel: 1, belohnung: '🚀 Neue Waffe: RAKETENWERFER!' },
+  { id: 'baender',   text: 'Baue 30 Förderbänder',             zahl: () => anzahlGebaut('band'), ziel: 30, belohnung: '🌀 Neue Waffe: Ball-Minigun!' },
+  { id: 'rein',      text: 'Baue einen Bohrer auf ⭐ reinem Erz', zahl: () => gebaeude.filter(b => b.typ === 'bohrer' && b.rein).length, ziel: 1, belohnung: '🎳 Neue Waffe: Bowling-Werfer!' },
+  { id: 'eisen100',  text: 'Liefere 100 Eisenbarren zum HUB',  zahl: () => stand.geliefert.eisen, ziel: 100, belohnung: '🏆 Du bist FABRIK-CHEF! +30 Kupfer', bonus: { kupfer: 30 } },
+  { id: 'boss3',     text: 'Besiege 3 Bosse',                  zahl: () => stand.bossKills || 0, ziel: 3, belohnung: '💪 Alle Waffen machen DOPPELTEN Schaden!' },
+  { id: 'kupfer100', text: 'Liefere 100 Kupferbarren zum HUB', zahl: () => stand.geliefert.kupfer, ziel: 100, belohnung: '⚡ Neue Waffe: Blitz-Werfer!' },
+  { id: 'tuerme',    text: 'Baue 5 Ball-Türme',                zahl: () => anzahlGebaut('turm'), ziel: 5, belohnung: '🗼 Türme schießen jetzt doppelt so schnell!' },
+  { id: 'robo100',   text: 'Haue 100 Roboter kaputt',          zahl: () => stand.kills, ziel: 100, belohnung: '👊 MEGA-FAUST: F haut jetzt alles weg!' },
+  { id: 'riese',     text: 'Besiege den 👑 RIESEN-ROBO',       zahl: () => stand.rieseKills || 0, ziel: 1, belohnung: '🚀🚀 Raketenwerfer schießt 2 Raketen!' },
+  { id: 'eisen500',  text: 'Liefere 500 Eisenbarren zum HUB',  zahl: () => stand.geliefert.eisen, ziel: 500, belohnung: '🌟 Du bist eine RAGDOL-LEGENDE! +200 Eisen +200 Kupfer', bonus: { eisen: 200, kupfer: 200 } },
 ];
+const ALTE_MEILENSTEINE = ['eisen10', 'kupfer10', 'robo10', 'eisen100', 'boss3'];  // Reihenfolge von früher (für alte Spielstände)
+const hat = id => stand.erledigt.includes(id);
+const aktuellerMeilenstein = () => MEILENSTEINE.find(m => !hat(m.id));
 
 // Erz-Felsen: [Art, Feld-x, Feld-z]
 const ERZ_ORTE = [
@@ -51,13 +65,16 @@ const DIR_WINKEL = [Math.PI / 2, 0, -Math.PI / 2, Math.PI];
 function neuerStand() {
   return {
     lager: { ...START_LAGER }, erz: { eisen: 0, kupfer: 0 }, geliefert: { eisen: 0, kupfer: 0 },
-    kills: 0, bossKills: 0, meilenstein: 0, welle: 0, welleT: ERSTE_WELLE, gegnerAn: true, bauten: [],
+    kills: 0, bossKills: 0, rieseKills: 0, erledigt: [], welle: 0, welleT: ERSTE_WELLE, gegnerAn: true, bauten: [],
   };
 }
 let stand = neuerStand();
 try {
   const s = JSON.parse(localStorage.getItem(SPEICHER_NAME));
-  if (s && s.lager) stand = Object.assign(neuerStand(), s);
+  if (s && s.lager) {
+    if (!s.erledigt) s.erledigt = ALTE_MEILENSTEINE.slice(0, s.meilenstein || 0);  // alten Spielstand umbauen
+    stand = Object.assign(neuerStand(), s);
+  }
 } catch (e) { /* kein Spielstand */ }
 
 // ================= SZENE =================
@@ -889,7 +906,7 @@ function gebaeudeUpdate(b, dt) {
       zielP.y += 0.5 * BALL_SCHWERKRAFT * flug * flug;          // etwas höher zielen, weil der Ball runterfällt
       const richtung = zielP.sub(start).normalize();
       b.gruppe.userData.kopf.rotation.y = Math.atan2(richtung.x, richtung.z) - b.gruppe.rotation.y;
-      if (b.cd <= 0) { b.cd = 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung, 2); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
+      if (b.cd <= 0) { b.cd = hat('tuerme') ? 0.45 : 0.9; b.rueckstoss = 1; ballSchiessen(start.addScaledVector(richtung, 1.0), richtung, 2); rauch(start.x, start.y, start.z, 0xffffff, 0.3, 0.8, 0.5, 0.3, 0.5); }
     }
   }
 }
@@ -1365,12 +1382,73 @@ function spielerGetroffen(von, schaden, staerke) {
 const BALL_SCHWERKRAFT = 12;
 const BALL_GEO = new THREE.SphereGeometry(0.18, 12, 8);
 const BALL_MATS = BALL_FARBEN.map(c => mat(c, { roughness: 0.3, emissive: c, emissiveIntensity: 0.25 }));
-let baelle = [];
+const BOWLING_MAT = mat(0x6a2bd8, { roughness: 0.15, metalness: 0.3, emissive: 0x2a0a60, emissiveIntensity: 0.5 });
+let baelle = [], raketen = [], blitze = [];
 
-function ballSchiessen(start, richtung, schaden = 1) {
-  const m = new THREE.Mesh(BALL_GEO, BALL_MATS[Math.floor(Math.random() * 4)]);
-  m.castShadow = true; szene.add(m);
-  baelle.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(BALL_TEMPO), t: 2.5, verbraucht: false, schaden: schaden * (stand.meilenstein >= 5 ? 2 : 1) });
+// ================= WAFFEN =================
+// cd = Wartezeit zwischen zwei Schüssen (Sekunden). sperre = welcher Meilenstein sie freischaltet
+const WAFFEN = [
+  { id: 'ball',    name: 'Ball-Kanone',    emoji: '🔫', cd: 0.28, info: 'Bunte Gummibälle' },
+  { id: 'schrot',  name: 'Plopp-Schrot',   emoji: '💥', cd: 0.8,  info: '8 Bälle auf einmal', sperre: 'schmelze' },
+  { id: 'rakete',  name: 'Raketenwerfer',  emoji: '🚀', cd: 1.2,  info: 'BUMM! Auch Raketen-Sprung möglich', sperre: 'boss1' },
+  { id: 'minigun', name: 'Ball-Minigun',   emoji: '🌀', cd: 0.07, info: 'Maus gedrückt halten!', sperre: 'baender' },
+  { id: 'bowling', name: 'Bowling-Werfer', emoji: '🎳', cd: 0.9,  info: 'Rollt durch alle Roboter durch', sperre: 'rein' },
+  { id: 'blitz',   name: 'Blitz-Werfer',   emoji: '⚡', cd: 0.8,  info: 'Springt von Roboter zu Roboter', sperre: 'kupfer100' },
+];
+let waffeNr = 0;
+const waffeFrei = w => !w.sperre || hat(w.sperre);
+function waffeWechseln(schritt = 1) {
+  for (let k = 1; k <= WAFFEN.length; k++) {
+    const n = (waffeNr + k * schritt + WAFFEN.length * 2) % WAFFEN.length;
+    if (waffeFrei(WAFFEN[n])) { waffeNr = n; break; }
+  }
+  werkzeugWaehlen('hand');
+  waffenModellZeigen();
+  meldung(`${WAFFEN[waffeNr].emoji} ${WAFFEN[waffeNr].name}`, 1);
+}
+const schadenMal = () => (hat('boss3') ? 2 : 1);
+
+// Waffen-Modelle in der rechten Hand
+const waffenModelle = {};
+function waffenModelleBauen(hand) {
+  const D = (o, rx, ry, rz) => { o.rotation.set(rx, ry, rz); return o; };
+  const lauf = (r, l, m, x, y, z) => D(rohr(r, r, l, m, x, y, z, 10), Math.PI / 2, 0, 0);
+  const neu = id => { const g = new THREE.Group(); g.position.set(0, 0.02, 0.12); hand.add(g); waffenModelle[id] = g; return g; };
+  let g = neu('ball');
+  g.add(kasten(0.12, 0.14, 0.34, mat(0xff8c1a), 0, 0, 0.1), lauf(0.05, 0.3, MAT.dunkelMetall, 0, 0.02, 0.38));
+  g.add(kasten(0.06, 0.14, 0.08, MAT.dunkel, 0, -0.12, 0.02), kugel(0.07, BALL_MATS[0], 0, 0.12, 0.08));
+  g = neu('schrot');
+  g.add(kasten(0.2, 0.12, 0.3, mat(0x2a9df4), 0, 0, 0.08));
+  for (const x of [-0.06, 0, 0.06]) g.add(lauf(0.035, 0.32, MAT.dunkelMetall, x, 0.02, 0.36));
+  g.add(kasten(0.06, 0.14, 0.08, MAT.dunkel, 0, -0.12, 0.0));
+  g = neu('rakete');
+  g.add(lauf(0.1, 0.9, mat(0x4f7a2a), 0, 0.12, 0.15), lauf(0.11, 0.06, MAT.gelb, 0, 0.12, 0.58));
+  g.add(D(rohr(0.001, 0.09, 0.16, MAT.rot, 0, 0.12, 0.66, 10), Math.PI / 2, 0, 0));
+  g.add(kasten(0.05, 0.14, 0.06, MAT.dunkel, 0, -0.02, 0.05), kasten(0.08, 0.06, 0.12, MAT.dunkel, 0.08, 0.22, 0.1));
+  g = neu('minigun');
+  g.add(kasten(0.18, 0.18, 0.3, MAT.dunkelMetall, 0, 0, 0.05), kasten(0.06, 0.14, 0.08, MAT.dunkel, 0, -0.14, 0));
+  const dreh = new THREE.Group(); dreh.position.z = 0.4; g.add(dreh); g.userData.dreh = dreh;
+  for (let k = 0; k < 6; k++) { const w = k / 6 * Math.PI * 2; dreh.add(lauf(0.025, 0.45, MAT.chrom, Math.cos(w) * 0.06, Math.sin(w) * 0.06, 0)); }
+  dreh.add(lauf(0.1, 0.04, MAT.gelb, 0, 0, 0.18));
+  g = neu('bowling');
+  g.add(kasten(0.22, 0.2, 0.36, mat(0x8a2be2), 0, 0, 0.1), D(rohr(0.17, 0.17, 0.1, MAT.dunkelMetall, 0, 0, 0.32, 16), Math.PI / 2, 0, 0));
+  g.add(kugel(0.14, BOWLING_MAT, 0, 0, 0.34), kasten(0.06, 0.14, 0.08, MAT.dunkel, 0, -0.16, 0));
+  g = neu('blitz');
+  g.add(kasten(0.12, 0.12, 0.3, MAT.dunkelMetall, 0, 0, 0.05), kasten(0.06, 0.14, 0.08, MAT.dunkel, 0, -0.12, 0));
+  const spule = mat(0xc87533, { metalness: 0.8, roughness: 0.3 });
+  for (let k = 0; k < 4; k++) { const t = new THREE.Mesh(geo('spule', () => new THREE.TorusGeometry(0.07, 0.02, 6, 14)), spule); t.position.z = 0.24 + k * 0.06; g.add(t); }
+  g.add(kugel(0.06, mat(0x9ff7ff, { emissive: 0x33ddff, emissiveIntensity: 2 }), 0, 0, 0.48));
+  for (const m of Object.values(waffenModelle)) m.traverse(o => { o.castShadow = true; });
+}
+function waffenModellZeigen() {
+  for (const [id, m] of Object.entries(waffenModelle)) m.visible = werkzeug === 'hand' && id === WAFFEN[waffeNr].id;
+}
+
+function ballSchiessen(start, richtung, schaden = 1, { tempo = BALL_TEMPO, leben = 2.5, groesse = 1, durch = false, stoss = 1, matr = null } = {}) {
+  const m = new THREE.Mesh(BALL_GEO, matr || BALL_MATS[Math.floor(Math.random() * 4)]);
+  m.scale.setScalar(groesse); m.castShadow = true; szene.add(m);
+  baelle.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(tempo), t: leben, verbraucht: false,
+    schaden: schaden * schadenMal(), r: 0.18 * groesse, durch, stoss, getroffen: new Set() });
 }
 
 function trifft(g, pos, r) {
@@ -1384,20 +1462,26 @@ function baelleUpdate(dt) {
   for (const b of baelle) {
     b.vel.y -= BALL_SCHWERKRAFT * dt;
     b.pos.addScaledVector(b.vel, dt);
-    if (b.pos.y < 0.18) { b.pos.y = 0.18; b.vel.y *= -0.6; b.vel.x *= 0.85; b.vel.z *= 0.85; }
+    if (b.pos.y < b.r) {
+      b.pos.y = b.r;
+      if (b.durch) { b.vel.y = Math.abs(b.vel.y) > 3 ? -b.vel.y * 0.3 : 0; b.vel.x *= 0.995; b.vel.z *= 0.995; } // Bowlingkugel rollt
+      else { b.vel.y *= -0.6; b.vel.x *= 0.85; b.vel.z *= 0.85; }
+    }
+    if (b.durch) b.mesh.rotation.x += Math.hypot(b.vel.x, b.vel.z) * dt / b.r;
     const geb = zellen.get(key(zelleVon(b.pos.x), zelleVon(b.pos.z)));
     if (geb && b.pos.y < geb.box.y2 && b.pos.x > geb.box.x1 && b.pos.x < geb.box.x2 && b.pos.z > geb.box.z1 && b.pos.z < geb.box.z2) {
       b.pos.addScaledVector(b.vel, -dt); b.vel.multiplyScalar(-0.4);
     }
     if (!b.verbraucht) {
       for (const g of gegner) {
-        if (!trifft(g, b.pos, 0.18)) continue;
+        if (b.getroffen.has(g) || !trifft(g, b.pos, b.r)) continue;
         const n = b.vel.clone().normalize();
-        g.umfallen(n.x * 11 / g.s, 5 / g.s, n.z * 11 / g.s);
+        g.umfallen(n.x * 11 * b.stoss / g.s, 5 * b.stoss / g.s, n.z * 11 * b.stoss / g.s);
         gegnerSchaden(g, b.schaden);
-        b.verbraucht = true; b.vel.multiplyScalar(-0.25);
         puff(b.pos.x, b.pos.y, b.pos.z, 0xffe14f, 8, { leucht: true, groesse: 0.6, leben: 0.4 });
         SOUND.klong();
+        if (b.durch) { b.getroffen.add(g); continue; }   // Bowlingkugel rollt weiter!
+        b.verbraucht = true; b.vel.multiplyScalar(-0.25);
         break;
       }
     }
@@ -1408,19 +1492,147 @@ function baelleUpdate(dt) {
   baelle = baelle.filter(b => b.t > 0);
 }
 
+// ---------- Raketen ----------
+const RAKETE_GEO = (() => {
+  const k = new THREE.CylinderGeometry(0.09, 0.09, 0.6, 10); k.rotateX(Math.PI / 2);
+  const s = new THREE.ConeGeometry(0.09, 0.22, 10); s.rotateX(Math.PI / 2); s.translate(0, 0, 0.41);
+  const f = new THREE.BoxGeometry(0.34, 0.03, 0.14); f.translate(0, 0, -0.24);
+  const f2 = new THREE.BoxGeometry(0.03, 0.34, 0.14); f2.translate(0, 0, -0.24);
+  return mergeGeometries([k.toNonIndexed(), s.toNonIndexed(), f.toNonIndexed(), f2.toNonIndexed()]);
+})();
+const RAKETE_MAT = mat(0xe8e8e8, { roughness: 0.4, metalness: 0.4, emissive: 0x330000 });
+function raketeSchiessen(start, richtung) {
+  const m = new THREE.Mesh(RAKETE_GEO, RAKETE_MAT);
+  m.position.copy(start); m.lookAt(start.clone().add(richtung)); m.castShadow = true; szene.add(m);
+  raketen.push({ mesh: m, pos: start.clone(), vel: richtung.clone().multiplyScalar(34), t: 3 });
+}
+function raketenUpdate(dt) {
+  for (const r of raketen) {
+    r.pos.addScaledVector(r.vel, dt); r.t -= dt;
+    r.mesh.position.copy(r.pos);
+    rauch(r.pos.x, r.pos.y, r.pos.z, wahl([0xdddddd, 0xbbbbbb, 0xffa040]), 0.35, 1.2, 0.9, 0.2, 0.6);
+    let knall = r.t <= 0 || r.pos.y < 0.15;
+    const kk = key(zelleVon(r.pos.x), zelleVon(r.pos.z)), box = zellen.get(kk)?.box || hindernisse.get(kk);
+    if (box && r.pos.y < box.y2 && r.pos.x > box.x1 && r.pos.x < box.x2 && r.pos.z > box.z1 && r.pos.z < box.z2) knall = true;
+    if (!knall) for (const g of gegner) if (!g.tot && trifft(g, r.pos, 0.25)) { knall = true; break; }
+    if (knall) { explosion(r.pos, 4.5, 6); r.t = 0; szene.remove(r.mesh); }
+  }
+  raketen = raketen.filter(r => r.t > 0);
+}
+// Explosion: Roboter fliegen weg (und du auch, wenn du zu nah dran bist – Raketen-Sprung!)
+function explosion(pos, radius, schaden) {
+  const p = pos.clone();
+  SOUND.bumm(0.3);
+  const ring = new THREE.Mesh(RING_GEO, new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.8, depthWrite: false }));
+  ring.rotation.x = Math.PI / 2; ring.position.set(p.x, Math.max(0.25, p.y), p.z); szene.add(ring);
+  ringe.push({ mesh: ring, t: 0, max: radius });
+  puff(p.x, p.y, p.z, 0xffb030, 22, { leucht: true, groesse: 0.9, tempo: 1.4, leben: 0.6 });
+  puff(p.x, p.y, p.z, 0xff4a1a, 12, { leucht: true, groesse: 0.6, tempo: 1.8, leben: 0.5 });
+  for (let k = 0; k < 10; k++) rauch(p.x + rnd(-1, 1), p.y + rnd(0, 1), p.z + rnd(-1, 1), wahl([0x444444, 0x666666, 0xff8a30]), 1.2, 2.5, 1.4, 1, 0.75);
+  const ds = spieler.pos.distanceTo(p);
+  if (ds < 30) kameraWackeln = Math.max(kameraWackeln, 0.45 * (1 - ds / 30));
+  for (const g of gegner) {
+    const m = g.mitte(), d = m.distanceTo(p);
+    if (d > radius + 0.5 * g.s) continue;
+    const dir = m.sub(p); dir.y = 0; dir.normalize();
+    const k = 1 - Math.min(1, d / (radius + 0.5 * g.s)) * 0.6;
+    g.umfallen(dir.x * 14 * k / g.s, 10 * k / g.s, dir.z * 14 * k / g.s);
+    gegnerSchaden(g, Math.ceil(schaden * k * schadenMal()));
+  }
+  const sm = spieler.mitte(), dsp = sm.distanceTo(p);
+  if (dsp < radius * 0.55) { // Raketen-Sprung: kein Schaden, aber du fliegst!
+    const dir = sm.sub(p).normalize(), k = 1 - dsp / (radius * 0.55);
+    if (spieler.modus === 'steht') spieler.sofortStehen();
+    spieler.umfallen(dir.x * 12 * k, 8 + 14 * k, dir.z * 12 * k);
+  }
+}
+
+// ---------- Blitz ----------
+const BLITZ_MAT = new THREE.LineBasicMaterial({ color: 0x9ff7ff });
+function blitzLinie(a, b) {
+  const punkte = [a.clone()];
+  for (let k = 1; k < 8; k++) {
+    const p = a.clone().lerp(b, k / 8);
+    p.x += rnd(-0.35, 0.35); p.y += rnd(-0.35, 0.35); p.z += rnd(-0.35, 0.35);
+    punkte.push(p);
+  }
+  punkte.push(b.clone());
+  const linie = new THREE.Line(new THREE.BufferGeometry().setFromPoints(punkte), BLITZ_MAT);
+  szene.add(linie);
+  blitze.push({ linie, t: 0.18 });
+  puff(b.x, b.y, b.z, 0x9ff7ff, 6, { leucht: true, groesse: 0.4, leben: 0.3 });
+}
+function blitzSchiessen(start) {
+  const d = blickRichtung(), auge = kamera.position;
+  let ziel = null, bester = 0.3;
+  for (const g of gegner) { // wer ist am nächsten am Fadenkreuz?
+    if (g.tot) continue;
+    const m = g.mitte(), zu = m.clone().sub(auge), weit = zu.length();
+    if (weit > 40) continue;
+    const winkel = zu.normalize().angleTo(d);
+    if (winkel < bester) { bester = winkel; ziel = g; }
+  }
+  if (!ziel) { blitzLinie(start, start.clone().addScaledVector(d, 15)); return; }
+  const schon = new Set();
+  let von = start;
+  for (let n = 0; n < 6 && ziel; n++) {
+    const m = ziel.mitte();
+    blitzLinie(von, m);
+    schon.add(ziel);
+    ziel.umfallen(rnd(-3, 3), 7 / ziel.s, rnd(-3, 3));
+    gegnerSchaden(ziel, 3 * schadenMal());
+    von = m;
+    let naechster = null, nd = 11;
+    for (const g of gegner) {
+      if (g.tot || schon.has(g)) continue;
+      const dd = g.mitte().distanceTo(m);
+      if (dd < nd) { nd = dd; naechster = g; }
+    }
+    ziel = naechster;
+  }
+}
+function blitzeUpdate(dt) {
+  for (const b of blitze) { b.t -= dt; if (b.t <= 0) { szene.remove(b.linie); b.linie.geometry.dispose(); } }
+  blitze = blitze.filter(b => b.t > 0);
+}
+
+function streuen(r, s) { return r.clone().add(new THREE.Vector3(rnd(-s, s), rnd(-s, s), rnd(-s, s))).normalize(); }
+
+let waffeRueck = 0;
 function schiessen() {
   if (schussCD > 0 || spieler.modus !== 'steht') return;
-  schussCD = 0.28;
+  const w = WAFFEN[waffeNr];
+  schussCD = w.cd;
+  waffeRueck = 1;
   const f = spieler, fx = Math.sin(f.yaw), fz = Math.cos(f.yaw);
-  const start = new THREE.Vector3(f.pos.x + fx * 0.5 - Math.cos(f.yaw) * 0.25, f.pos.y + 1.4, f.pos.z + fz * 0.5 + Math.sin(f.yaw) * 0.25);
+  const start = new THREE.Vector3(f.pos.x + fx * 0.8 - Math.cos(f.yaw) * 0.25, f.pos.y + 1.4, f.pos.z + fz * 0.8 + Math.sin(f.yaw) * 0.25);
   const ziel = zielPunkt(80) || kamera.position.clone().addScaledVector(blickRichtung(), 80);
   const richtung = ziel.sub(start).normalize();
-  richtung.y += 0.04; // ein bisschen hoch, weil Bälle fallen
-  ballSchiessen(start, richtung.normalize());
-  if (stand.meilenstein >= 3) { // Belohnung: 3 Bälle
-    for (const w of [-0.08, 0.08]) ballSchiessen(start, richtung.clone().applyAxisAngle(Y_ACHSE, w));
+  if (w.id === 'ball') {
+    richtung.y += 0.04; richtung.normalize();
+    ballSchiessen(start, richtung);
+    if (hat('robo10')) for (const a of [-0.08, 0.08]) ballSchiessen(start, richtung.clone().applyAxisAngle(Y_ACHSE, a));
+    SOUND.plopp();
+  } else if (w.id === 'schrot') {
+    richtung.y += 0.03;
+    for (let k = 0; k < 8; k++) ballSchiessen(start, streuen(richtung, 0.13), 1, { tempo: 26, leben: 0.9, stoss: 1.3 });
+    SOUND.schrot();
+  } else if (w.id === 'minigun') {
+    richtung.y += 0.03;
+    ballSchiessen(start, streuen(richtung, 0.035), 1, { tempo: 38, leben: 1.6, groesse: 0.7 });
+    SOUND.tack();
+  } else if (w.id === 'bowling') {
+    richtung.y = Math.max(richtung.y, -0.15) + 0.06; richtung.normalize();
+    ballSchiessen(start, richtung, 4, { tempo: 22, leben: 4, groesse: 2.4, durch: true, stoss: 1.8, matr: BOWLING_MAT });
+    SOUND.bowling();
+  } else if (w.id === 'rakete') {
+    raketeSchiessen(start, richtung);
+    if (hat('riese')) raketeSchiessen(start.clone().addScaledVector(Y_ACHSE, 0.4), richtung.clone().applyAxisAngle(Y_ACHSE, 0.06));
+    SOUND.rakete();
+  } else if (w.id === 'blitz') {
+    blitzSchiessen(start);
+    SOUND.blitz();
   }
-  SOUND.plopp();
 }
 
 function schlagen() {
@@ -1428,15 +1640,22 @@ function schlagen() {
   if (f.modus !== 'steht' || f.schlag > 0.3) return;
   f.schlag = 1;
   const fx = Math.sin(f.yaw), fz = Math.cos(f.yaw);
+  const mega = hat('robo100');   // Mega-Faust: viel weiter und stärker
   let traf = false;
   for (const g of gegner) {
     const dx = g.pos.x - f.pos.x, dz = g.pos.z - f.pos.z, d = Math.hypot(dx, dz);
     const m = g.mitte();
     const dm = Math.hypot(m.x - f.pos.x, m.z - f.pos.z);
-    if (Math.min(d, dm) > 2.3 || (dx * fx + dz * fz) / (d || 1) < 0.2) continue;
-    g.umfallen(fx * 14 / g.s, 8 / g.s, fz * 14 / g.s);
-    gegnerSchaden(g, 2);
+    if (Math.min(d, dm) > (mega ? 5 : 2.3) || (dx * fx + dz * fz) / (d || 1) < 0.2) continue;
+    const k = mega ? 1.8 : 1;
+    g.umfallen(fx * 14 * k / g.s, 8 * k / g.s, fz * 14 * k / g.s);
+    gegnerSchaden(g, (mega ? 5 : 2) * schadenMal());
     traf = true;
+  }
+  if (mega) {
+    const p = new THREE.Vector3(f.pos.x + fx * 1.5, 0.3, f.pos.z + fz * 1.5);
+    const ring = new THREE.Mesh(RING_GEO, new THREE.MeshBasicMaterial({ color: 0xffe14f, transparent: true, opacity: 0.8, depthWrite: false }));
+    ring.rotation.x = Math.PI / 2; ring.position.copy(p); szene.add(ring); ringe.push({ mesh: ring, t: 0, max: 3 });
   }
   // Erz mit der Faust abbauen
   const zi = zelleVon(f.pos.x + fx * 1.4), zj = zelleVon(f.pos.z + fz * 1.4);
@@ -1444,7 +1663,7 @@ function schlagen() {
   if (!traf && erz && !zellen.get(key(zi, zj))) {
     erz.schlaege++;
     puff(zi * G, 0.5, zj * G, erz.art === 'eisen' ? 0xb5553a : 0xff8c3a, 5);
-    if (erz.schlaege >= 3) {
+    if (erz.schlaege >= (mega ? 1 : 3)) {
       erz.schlaege = 0; stand.lager[erz.art]++;
       meldung(`+1 ${erz.art === 'eisen' ? 'Eisenbarren' : 'Kupferbarren'} (mit der Faust!)`, 1.2);
     }
@@ -1508,6 +1727,7 @@ function gegnerSchaden(g, n) {
   stand.lager.eisen += eisen; stand.lager.kupfer += kupfer;
   if (g.boss) {
     stand.bossKills = (stand.bossKills || 0) + 1;
+    if (g.art === 'riese') stand.rieseKills = (stand.rieseKills || 0) + 1;
     meldung(`🏆 ${g.info.name} besiegt! +${eisen} Eisen +${kupfer} Kupfer`, 4);
     SOUND.tada();
     kameraWackeln = 0.6;
@@ -1698,16 +1918,10 @@ function gegnerUpdate(g, dt) {
   g.update(dt);
 }
 
-function gebaeudeGetroffen(b, n = 1) {
+function gebaeudeGetroffen(b) {
+  // Roboter können nichts kaputt machen – das Gebäude wackelt nur
   b.wackel = 0.3;
   SOUND.klong();
-  if (b.typ === 'hub') { // der HUB geht nicht kaputt, aber Roboter klauen Barren
-    stand.lager.eisen = Math.max(0, stand.lager.eisen - n);
-    meldung('⚠️ Roboter klauen am HUB!', 1);
-    return;
-  }
-  b.hp -= n;
-  if (b.hp <= 0 && zellen.get(key(b.i, b.j)) === b) { meldung(`💥 Dein ${GEBAEUDE[b.typ].name} wurde kaputt gemacht!`); abreissen(b, false); speichern(); }
 }
 
 // Fliegende Ragdolls werfen andere um – wie Bowling!
@@ -1834,14 +2048,14 @@ function bauRichtung() {
   const d = Math.abs(fx) > Math.abs(fz) ? (fx > 0 ? 0 : 2) : (fz > 0 ? 1 : 3);
   return (d + drehung) % 4;
 }
-function freigeschaltet(typ) { return stand.meilenstein >= (GEBAEUDE[typ].sperre || 0); }
+function freigeschaltet(typ) { return !GEBAEUDE[typ].sperre || hat(GEBAEUDE[typ].sperre); }
 function genugGeld(typ) { return Object.entries(GEBAEUDE[typ].kosten).every(([m, n]) => stand.lager[m] >= n); }
 function kostenText(typ) {
   return Object.entries(GEBAEUDE[typ].kosten).map(([m, n]) => `${n} ${m === 'eisen' ? '⬜' : '🟧'}`).join(' ');
 }
 
 function bauProblem(typ, i, j) {
-  if (!freigeschaltet(typ)) return `🔒 Erst Meilenstein ${GEBAEUDE[typ].sperre} schaffen`;
+  if (!freigeschaltet(typ)) return `🔒 Erst Meilenstein „${MEILENSTEINE.find(m => m.id === GEBAEUDE[typ].sperre).text}“ schaffen`;
   if (Math.abs(i) > WELT - 2 || Math.abs(j) > WELT - 2) return 'Zu weit draußen';
   if (zellen.get(key(i, j))) return 'Da steht schon was';
   const frei = besetzt.get(key(i, j));
@@ -2062,11 +2276,16 @@ const SOUND = {
   bumm: (laut = 0.3) => { ton(140, 30, 0.6, 'sawtooth', laut); ton(80, 25, 0.7, 'sine', laut); },
   peng: () => ton(500, 90, 0.3, 'sawtooth', 0.1),
   zisch: () => ton(300, 2400, 0.6, 'sawtooth', 0.06),
+  schrot: () => { ton(400, 120, 0.2, 'square', 0.1); ton(900, 200, 0.12, 'sawtooth', 0.05); },
+  tack: () => ton(700, 350, 0.05, 'square', 0.035),
+  bowling: () => { ton(160, 60, 0.4, 'triangle', 0.2); ton(90, 50, 0.6, 'sine', 0.15, 0.05); },
+  rakete: () => { ton(120, 600, 0.35, 'sawtooth', 0.08); ton(200, 80, 0.5, 'square', 0.05); },
+  blitz: () => { for (let k = 0; k < 4; k++) ton(rnd(1200, 3000), rnd(200, 600), 0.08, 'sawtooth', 0.06, k * 0.03); },
   tada: () => [523, 659, 784, 1047].forEach((f, k) => ton(f, f, 0.3, 'triangle', 0.15, k * 0.12)),
 };
 
 // ================= HUD =================
-const el = Object.fromEntries(['minikarte', 'hubWeg', 'grosseKarte', 'karteGross', 'bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
+const el = Object.fromEntries(['waffen', 'meilensteinListe', 'minikarte', 'hubWeg', 'grosseKarte', 'karteGross', 'bossLeiste', 'lager', 'lebenBalken', 'meilenstein', 'welle', 'tipp', 'meldung', 'leiste', 'rot', 'menue', 'menueText', 'gegnerAn', 'los', 'neu']
   .map(id => [id, document.getElementById(id)]));
 const altesHTML = new Map();
 function setHTML(e, html) { if (altesHTML.get(e) !== html) { altesHTML.set(e, html); e.innerHTML = html; } }
@@ -2081,7 +2300,7 @@ const slots = WERKZEUGE.map((w, k) => {
   const info = GEBAEUDE[w];
   const emo = w === 'hand' ? '🔫' : w === 'abriss' ? '🧨' : info.emoji;
   const name = w === 'hand' ? 'Ball-Kanone' : w === 'abriss' ? 'Abreißen' : info.name;
-  d.innerHTML = `<span class="taste">${w === 'abriss' ? 'X' : k}</span><span class="emo">${emo}</span>${name}<div class="preis"></div>`;
+  d.innerHTML = `<span class="taste">${w === 'abriss' ? 'X' : k}</span><span class="emo">${emo}</span><span class="nm">${name}</span><div class="preis"></div>`;
   d.addEventListener('mousedown', e => { e.stopPropagation(); werkzeugWaehlen(w); });
   el.leiste.appendChild(d);
   return d;
@@ -2091,10 +2310,14 @@ function hudUpdate() {
   setHTML(el.lager, `⬜ Eisenbarren: <b>${stand.lager.eisen}</b><br>🟧 Kupferbarren: <b>${stand.lager.kupfer}</b>` +
     `<br><small>Erz im HUB: ${stand.erz.eisen}/3 Eisen · ${stand.erz.kupfer}/3 Kupfer</small>`);
   el.lebenBalken.style.width = Math.max(0, spieler.hp / SPIELER_LEBEN * 100) + '%';
-  const ms = MEILENSTEINE[stand.meilenstein];
+  const ms = aktuellerMeilenstein();
   setHTML(el.meilenstein, ms
-    ? `🎯 <b>Meilenstein ${stand.meilenstein + 1}/${MEILENSTEINE.length}</b><br>${ms.text}<br>Fortschritt: <b>${Math.min(ms.zahl(), ms.ziel)} / ${ms.ziel}</b>`
-    : '🏆 <b>Alle Meilensteine geschafft!</b><br>Du bist Fabrik-Chef!');
+    ? `🎯 <b>Meilenstein ${stand.erledigt.length + 1}/${MEILENSTEINE.length}</b><br>${ms.text}<br>Fortschritt: <b>${Math.min(ms.zahl(), ms.ziel)} / ${ms.ziel}</b><br><small>🎁 ${ms.belohnung}</small>`
+    : '🌟 <b>Alle Meilensteine geschafft!</b><br>Du bist eine RAGDOL-LEGENDE!');
+  setHTML(el.waffen, WAFFEN.map((w, k) => `<div class="waffe${k === waffeNr ? ' aktiv' : ''}${waffeFrei(w) ? '' : ' zu'}" data-nr="${k}" title="${w.info}">${waffeFrei(w) ? w.emoji : '🔒'}</div>`).join('')
+    + `<div class="waffenName">${WAFFEN[waffeNr].name}<br><small>Q = wechseln</small></div>`);
+  setHTML(slots[0].querySelector('.emo'), WAFFEN[waffeNr].emoji);
+  setHTML(slots[0].querySelector('.nm'), WAFFEN[waffeNr].name);
   const lebend = gegner.filter(g => !g.tot).length;
   setHTML(el.bossLeiste, gegner.filter(g => g.boss && !g.tot).slice(0, 4).map(g =>
     `<div class="boss"><span>${g.info.name}</span> <small>${g.info.info}</small><div class="bossBalken"><div style="width:${Math.max(0, g.hp / g.maxHp * 100)}%"></div></div></div>`).join(''));
@@ -2117,9 +2340,12 @@ function hudUpdate() {
 }
 
 function meilensteinPruefen() {
-  const ms = MEILENSTEINE[stand.meilenstein];
+  const ms = aktuellerMeilenstein();
   if (!ms || ms.zahl() < ms.ziel) return;
-  stand.meilenstein++;
+  stand.erledigt.push(ms.id);
+  for (const [m, n] of Object.entries(ms.bonus || {})) stand.lager[m] += n;
+  const neueWaffe = WAFFEN.findIndex(w => w.sperre === ms.id);
+  if (neueWaffe >= 0) { waffeNr = neueWaffe; werkzeugWaehlen('hand'); }
   meldung(`🎉 Meilenstein geschafft! ${ms.belohnung}`, 4);
   SOUND.tada();
   puff(0, 4, 0, 0xffd166, 30);
@@ -2133,6 +2359,22 @@ let pausiert = true;
 function werkzeugWaehlen(w) {
   werkzeug = w;
   letzteZelle = null;
+  waffenModellZeigen();
+}
+waffenModelleBauen(spieler.enden.find(([i]) => i === I.rHa)[1]);
+waffenModellZeigen();
+setTimeout(() => meilensteinListeMalen(), 0);
+el.waffen.addEventListener('mousedown', e => {
+  const nr = e.target.closest('[data-nr]')?.dataset.nr;
+  if (nr === undefined || !waffeFrei(WAFFEN[+nr])) return;
+  e.stopPropagation(); waffeNr = +nr; werkzeugWaehlen('hand');
+});
+function meilensteinListeMalen() { // Liste im Pause-Menü
+  const aktuell = aktuellerMeilenstein();
+  el.meilensteinListe.innerHTML = MEILENSTEINE.map((m, k) => {
+    const fertig = hat(m.id), jetzt = m === aktuell;
+    return `<div class="${fertig ? 'fertig' : jetzt ? 'jetzt' : 'spaeter'}">${fertig ? '✅' : jetzt ? '🎯' : '🔒'} <b>${k + 1}.</b> ${m.text}${jetzt ? ` (${Math.min(m.zahl(), m.ziel)}/${m.ziel})` : ''}<br><small>🎁 ${m.belohnung}</small></div>`;
+  }).join('');
 }
 
 addEventListener('keydown', e => {
@@ -2141,7 +2383,7 @@ addEventListener('keydown', e => {
   if (pausiert) return;
   const zahl = /^Digit([0-5])$/.exec(e.code);
   if (zahl) werkzeugWaehlen(WERKZEUGE[+zahl[1]]);
-  if (e.code === 'KeyQ') werkzeugWaehlen('hand');
+  if (e.code === 'KeyQ') waffeWechseln(e.shiftKey ? -1 : 1);
   if (e.code === 'KeyX') werkzeugWaehlen(werkzeug === 'abriss' ? 'hand' : 'abriss');
   if (e.code === 'KeyR') drehung = (drehung + 1) % 4;
   if (e.code === 'KeyM') grosseKarte(!grosseKarteAuf);
@@ -2184,7 +2426,7 @@ function pause(an) {
   pausiert = an;
   el.menue.style.display = an ? 'flex' : 'none';
   mausUnten = false;
-  if (an) { el.los.textContent = '▶ Weiterspielen'; speichern(); }
+  if (an) { el.los.textContent = '▶ Weiterspielen'; speichern(); meilensteinListeMalen(); }
 }
 
 el.gegnerAn.checked = stand.gegnerAn;
@@ -2222,6 +2464,9 @@ function update(dt) {
   partikelUpdate(dt);
   bandTextur.offset.y += BAND_TEMPO * G * dt;   // Pfeile laufen mit dem Band mit
   if (mausUnten && werkzeug === 'band') bandZiehen();
+  if (mausUnten && werkzeug === 'hand' && !pausiert) schiessen();   // Maus gedrückt halten = Dauerfeuer
+  raketenUpdate(dt);
+  blitzeUpdate(dt);
   meilensteinPruefen();
   speicherT += dt;
   if (speicherT > 5) speichern();
@@ -2290,6 +2535,12 @@ function zeichnen(echtDt) {
   for (const m of Object.values(ERZ_MAT)) m.emissiveIntensity = 0.5 + Math.sin(zeit * 2.2) * 0.3;
   for (const w of wolken) { w.position.x += echtDt * 2; if (w.position.x > 680) w.position.x = -680; }
   himmel.position.copy(kamera.position);
+  waffeRueck = Math.max(0, waffeRueck - echtDt * 8);
+  const wm = waffenModelle[WAFFEN[waffeNr].id];
+  if (wm) {
+    wm.position.z = 0.12 - waffeRueck * 0.1;
+    if (wm.userData.dreh && mausUnten && werkzeug === 'hand') wm.userData.dreh.rotation.z += echtDt * 30;
+  }
   if (MAT.wasser) MAT.wasser.emissiveIntensity = 1 + Math.sin(zeit * 1.5) * 0.3;
   kameraUpdate();
   geistUpdate();
