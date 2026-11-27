@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RagdolFactory</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #9fd3ff; font-family: system-ui, sans-serif; color: #fff; user-select: none; }
+    canvas { display: block; }
+    .kasten { background: rgba(20, 25, 45, 0.72); border-radius: 12px; padding: 10px 14px; }
+    #links { position: fixed; top: 12px; left: 12px; min-width: 210px; }
+    #leben { height: 14px; background: #4a1d1d; border-radius: 7px; overflow: hidden; margin-bottom: 8px; }
+    #lebenBalken { height: 100%; width: 100%; background: linear-gradient(90deg, #ff4d4d, #ff9a3c); transition: width 0.2s; }
+    #lager { font-size: 18px; line-height: 1.5; }
+    #rechts { position: fixed; top: 12px; right: 12px; width: 270px; font-size: 15px; line-height: 1.4; }
+    #rechts b { color: #ffd166; }
+    #kreuz { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 26px; text-shadow: 0 0 3px #000; pointer-events: none; }
+    #tipp { position: fixed; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); font-size: 16px; text-shadow: 0 0 4px #000; white-space: nowrap; }
+    #tipp .nein { color: #ff7777; }
+    #meldung { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); font-size: 28px; font-weight: bold; text-shadow: 0 2px 6px #000; text-align: center; transition: opacity 0.4s; pointer-events: none; }
+    #leiste { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+    .slot { width: 82px; height: 82px; background: rgba(20, 25, 45, 0.75); border: 3px solid transparent; border-radius: 12px; text-align: center; font-size: 12px; padding-top: 4px; position: relative; }
+    .slot .emo { font-size: 28px; display: block; }
+    .slot .taste { position: absolute; top: 2px; left: 6px; color: #aaa; font-weight: bold; }
+    .slot .preis { color: #ccc; font-size: 11px; }
+    .slot.aktiv { border-color: #ffd166; background: rgba(60, 60, 20, 0.85); }
+    .slot.teuer .preis { color: #ff7777; }
+    .slot.zu { opacity: 0.45; }
+    #rot { position: fixed; inset: 0; background: radial-gradient(transparent 40%, rgba(255, 0, 0, 0.55)); opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+    #menue { position: fixed; inset: 0; background: rgba(15, 20, 40, 0.85); display: flex; align-items: center; justify-content: center; }
+    #menue .innen { max-width: 620px; padding: 24px 32px; background: #1f2747; border-radius: 18px; box-shadow: 0 10px 40px #0008; }
+    #menue h1 { margin: 0 0 6px; font-size: 42px; color: #ffb347; }
+    #menue p { margin: 6px 0 14px; line-height: 1.4; }
+    #menue button { font-size: 20px; padding: 10px 22px; border: 0; border-radius: 10px; background: #ffb347; color: #222; font-weight: bold; cursor: pointer; margin-right: 8px; }
+    #menue button.leise { background: #444c70; color: #fff; font-size: 15px; }
+    #menue table { border-collapse: collapse; margin: 10px 0 16px; font-size: 15px; }
+    #menue td { padding: 2px 12px 2px 0; }
+    #menue td:first-child { color: #ffd166; font-weight: bold; white-space: nowrap; }
+    #menue label { display: block; margin: 0 0 16px; font-size: 17px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="links" class="kasten">
+    <div id="leben"><div id="lebenBalken"></div></div>
+    <div id="lager"></div>
+  </div>
+  <div id="rechts" class="kasten">
+    <div id="meilenstein"></div>
+    <hr style="border-color:#fff3">
+    <div id="welle"></div>
+  </div>
+  <div id="kreuz">+</div>
+  <div id="tipp"></div>
+  <div id="meldung"></div>
+  <div id="leiste"></div>
+  <div id="rot"></div>
+
+  <div id="menue">
+    <div class="innen">
+      <h1>🤸 RagdolFactory</h1>
+      <p id="menueText">Baue eine Fabrik! Bohrer holen Erz aus Felsen, Förderbänder bringen es zur Schmelze und dann zum <b>HUB</b>.
+        Aber Vorsicht: Roboter greifen an. Wenn sie dich hauen, fliegst du als <b>Ragdoll</b> durch die Gegend – und die Roboter auch, wenn du sie triffst!</p>
+      <table>
+        <tr><td>Maus</td><td>Umschauen</td></tr>
+        <tr><td>W A S D</td><td>Laufen (Shift = Rennen), Leertaste = Springen</td></tr>
+        <tr><td>Linksklick</td><td>Gummiball schießen / Gebäude bauen (Band: gedrückt halten und ziehen)</td></tr>
+        <tr><td>F</td><td>Faustschlag (haut auch Erz aus Felsen!)</td></tr>
+        <tr><td>0–5 / Mausrad</td><td>Werkzeug wählen, Rechtsklick = Hand</td></tr>
+        <tr><td>R</td><td>Gebäude drehen</td></tr>
+        <tr><td>X</td><td>Abreißen (du bekommst alles zurück)</td></tr>
+        <tr><td>G</td><td>Einfach umfallen 🤪</td></tr>
+        <tr><td>Esc</td><td>Pause</td></tr>
+      </table>
+      <label><input type="checkbox" id="gegnerAn" checked> 🤖 Roboter-Angriffe an</label>
+      <button id="los">▶ Spielen</button>
+      <button id="neu" class="leise">Neue Fabrik anfangen</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module" src="spiel.js"></script>
+</body>
+</html>
