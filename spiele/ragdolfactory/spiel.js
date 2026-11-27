@@ -12,7 +12,7 @@ const ERSTE_WELLE = 90;      // Sekunden bis die ersten Roboter kommen
 const WELLEN_PAUSE = 60;     // Sekunden zwischen den Wellen
 const BALL_TEMPO = 30;
 const SPIELER_LEBEN = 100;
-const START_LAGER = { eisen: 20, kupfer: 10 };
+const START_LAGER = { eisen: 30, kupfer: 10 };
 const SPEICHER_NAME = 'ragdolfactory-spielstand';
 const DT = 1 / 60;           // Physik rechnet 60 Mal pro Sekunde
 
@@ -428,7 +428,7 @@ class Figur {
   mitte() { // Mitte vom Bauch
     return new THREE.Vector3().add(this.p[I.lS]).add(this.p[I.rS]).add(this.p[I.lH]).add(this.p[I.rH]).multiplyScalar(0.25);
   }
-  tempo() { // wie schnell fliegt der Bauch (m/s)
+  flugTempo() { // wie schnell fliegt der Bauch (m/s)
     return _a.copy(this.p[I.lS]).add(this.p[I.rH]).sub(this.a[I.lS]).sub(this.a[I.rH]).multiplyScalar(0.5 / DT);
   }
 
@@ -852,7 +852,7 @@ function bowling() {
   const alle = [spieler, ...gegner];
   for (const f of alle) {
     if (f.modus !== 'ragdoll') continue;
-    const v = f.tempo().clone();
+    const v = f.flugTempo().clone();
     if (v.length() < 6) continue;
     const m = f.mitte();
     for (const h of alle) {
