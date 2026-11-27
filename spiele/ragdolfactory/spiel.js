@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ================= EINSTELLUNGEN (hier kannst du rumprobieren!) =================
 const G = 2;                 // Größe eines Bau-Feldes in Metern
@@ -62,18 +63,24 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
 document.body.prepend(renderer.domElement);
 
+const HORIZONT = 0xc4e3fa;
 const szene = new THREE.Scene();
-szene.background = new THREE.Color(0x9fd3ff);
-szene.fog = new THREE.Fog(0x9fd3ff, 55, 140);
-const kamera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 300);
+szene.background = new THREE.Color(HORIZONT);
+szene.fog = new THREE.Fog(HORIZONT, 70, 330);
+const kamera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 700);
 
-szene.add(new THREE.HemisphereLight(0xffffff, 0x557744, 1.3));
-const sonne = new THREE.DirectionalLight(0xffffff, 2.2);
+const SONNEN_RICHTUNG = new THREE.Vector3(30, 38, 16).normalize();
+szene.add(new THREE.HemisphereLight(0xcfe8ff, 0x5b7a3a, 1.1));
+const sonne = new THREE.DirectionalLight(0xfff0d8, 2.8);
 sonne.castShadow = true;
 sonne.shadow.mapSize.set(2048, 2048);
-Object.assign(sonne.shadow.camera, { left: -35, right: 35, top: 35, bottom: -35, near: 1, far: 120 });
+sonne.shadow.bias = -0.0004; sonne.shadow.normalBias = 0.03;
+Object.assign(sonne.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, near: 1, far: 150 });
 szene.add(sonne, sonne.target);
 
 addEventListener('resize', () => {
@@ -82,157 +89,588 @@ addEventListener('resize', () => {
   kamera.updateProjectionMatrix();
 });
 
+const HOCH = new THREE.Vector3(0, 1, 0);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const mat = (farbe, extra = {}) => new THREE.MeshStandardMaterial({ color: farbe, roughness: 0.7, ...extra });
+const BALL_FARBEN = [0xff4fa3, 0xffe14f, 0x4fd8ff, 0x8aff4f];
+const wahl = liste => liste[Math.floor(Math.random() * liste.length)];
 function leinwand(b, h) { const c = document.createElement('canvas'); c.width = b; c.height = h; return [c, c.getContext('2d')]; }
-
-// Gras-Boden mit Kästchen (ein Kästchen = ein Bau-Feld)
-const RAND = WELT * G + 20;
-{
-  const [c, g] = leinwand(128, 128);
-  g.fillStyle = '#6fbf4f'; g.fillRect(0, 0, 128, 128);
-  for (let k = 0; k < 300; k++) { g.fillStyle = Math.random() < 0.5 ? '#66b347' : '#7acb5a'; g.fillRect(Math.random() * 128, Math.random() * 128, 3, 3); }
-  g.strokeStyle = 'rgba(0,0,0,0.13)'; g.lineWidth = 3; g.strokeRect(0, 0, 128, 128);
+function textur(b, h, malen, rx = 1, ry = 1) {
+  const [c, g] = leinwand(b, h);
+  malen(g, b, h);
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-  t.repeat.set(RAND, RAND); t.offset.set(0.5, 0.5);
-  const boden = new THREE.Mesh(new THREE.PlaneGeometry(RAND * 2, RAND * 2), new THREE.MeshStandardMaterial({ map: t, roughness: 1 }));
-  boden.rotation.x = -Math.PI / 2; boden.receiveShadow = true;
-  szene.add(boden);
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  t.repeat.set(rx, ry);
+  return t;
+}
+function kruemel(g, b, h, farben, n, groesse, alpha = [0.2, 0.6]) {
+  for (let k = 0; k < n; k++) {
+    g.globalAlpha = rnd(alpha[0], alpha[1]); g.fillStyle = wahl(farben);
+    g.fillRect(rnd(0, b), rnd(0, h), rnd(1, groesse), rnd(1, groesse));
+  }
+  g.globalAlpha = 1;
+}
+function nieten(g, b, h, abstand, farbe = 'rgba(255,255,255,0.35)') {
+  g.fillStyle = farbe;
+  for (let x = abstand / 2; x < b; x += abstand) for (const y of [5, h - 5]) { g.beginPath(); g.arc(x, y, 2.2, 0, 7); g.fill(); }
 }
 
-// Förderband-Textur mit Pfeilen (bewegt sich!)
-const bandTextur = (() => {
-  const [c, g] = leinwand(64, 64);
-  g.fillStyle = '#2b2b30'; g.fillRect(0, 0, 64, 64);
-  g.strokeStyle = '#f2b705'; g.lineWidth = 7;
-  g.beginPath(); g.moveTo(12, 18); g.lineTo(32, 42); g.lineTo(52, 18); g.stroke();
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(1, 2);
-  return t;
-})();
+// ---------- Texturen (alle selbst gemalt!) ----------
+const TEX = {
+  gras: textur(256, 256, (g) => {
+    g.fillStyle = '#6cb84a'; g.fillRect(0, 0, 256, 256);
+    kruemel(g, 256, 256, ['#5aa33d', '#7fcc5c', '#4f9435', '#8fd66a'], 2500, 4);
+    g.lineWidth = 1;
+    for (let k = 0; k < 900; k++) {
+      const x = rnd(0, 256), y = rnd(0, 256);
+      g.globalAlpha = 0.5; g.strokeStyle = Math.random() < 0.5 ? '#3f852a' : '#9be27a';
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd(-3, 3), y - rnd(4, 10)); g.stroke();
+    }
+    g.globalAlpha = 1; g.strokeStyle = 'rgba(30,60,20,0.22)'; g.lineWidth = 2; g.strokeRect(1, 1, 254, 254);
+  }),
+  beton: textur(128, 128, (g) => {
+    g.fillStyle = '#b4b2aa'; g.fillRect(0, 0, 128, 128);
+    kruemel(g, 128, 128, ['#9c9a92', '#c8c6be', '#8a8880'], 900, 3);
+    g.strokeStyle = 'rgba(60,60,60,0.35)'; g.lineWidth = 1;
+    for (let k = 0; k < 3; k++) { g.beginPath(); let x = rnd(0, 128), y = rnd(0, 128); g.moveTo(x, y); for (let s = 0; s < 5; s++) { x += rnd(-12, 12); y += rnd(-12, 12); g.lineTo(x, y); } g.stroke(); }
+    g.strokeStyle = 'rgba(40,40,40,0.5)'; g.lineWidth = 3; g.strokeRect(1, 1, 126, 126);
+  }),
+  warn: textur(64, 64, (g) => {
+    g.fillStyle = '#f2b705'; g.fillRect(0, 0, 64, 64);
+    g.fillStyle = '#1d1d1f';
+    for (let x = -64; x < 128; x += 32) { g.beginPath(); g.moveTo(x, 64); g.lineTo(x + 16, 64); g.lineTo(x + 80, 0); g.lineTo(x + 64, 0); g.fill(); }
+    kruemel(g, 64, 64, ['#000', '#fff'], 80, 2, [0.05, 0.15]);
+  }),
+  metall: textur(128, 128, (g) => {
+    g.fillStyle = '#7d848f'; g.fillRect(0, 0, 128, 128);
+    kruemel(g, 128, 128, ['#6d747f', '#8d949f', '#5d646f'], 600, 3);
+    g.strokeStyle = 'rgba(20,20,30,0.45)'; g.lineWidth = 2; g.strokeRect(2, 2, 124, 124); g.beginPath(); g.moveTo(64, 2); g.lineTo(64, 126); g.stroke();
+    nieten(g, 128, 128, 16);
+  }),
+  dunkelMetall: textur(64, 64, (g) => {
+    g.fillStyle = '#3a3e46'; g.fillRect(0, 0, 64, 64);
+    kruemel(g, 64, 64, ['#2c3038', '#4a4e56'], 300, 2);
+    g.strokeStyle = 'rgba(255,255,255,0.1)'; g.strokeRect(1, 1, 62, 62);
+  }),
+  ziegel: textur(128, 128, (g) => {
+    g.fillStyle = '#5b4a40'; g.fillRect(0, 0, 128, 128);
+    for (let r = 0; r < 8; r++) for (let s = -1; s < 4; s++) {
+      g.fillStyle = wahl(['#9b3b2b', '#a84632', '#8a3224', '#b0503a', '#93402c']);
+      g.fillRect(s * 32 + (r % 2) * 16 + 1, r * 16 + 1, 30, 14);
+    }
+    kruemel(g, 128, 128, ['#000', '#fff'], 500, 2, [0.05, 0.15]);
+  }),
+  gitter: textur(64, 64, (g) => {
+    g.fillStyle = '#4a4f57'; g.fillRect(0, 0, 64, 64);
+    g.fillStyle = '#1b1d21';
+    for (let x = 0; x < 64; x += 8) for (let y = 0; y < 64; y += 8) g.fillRect(x + 2, y + 2, 4, 4);
+  }, 2, 2),
+  gummi: textur(64, 64, (g) => {
+    g.fillStyle = '#2a2a2e'; g.fillRect(0, 0, 64, 64);
+    g.fillStyle = '#3b3b41';
+    for (let y = 0; y < 64; y += 8) g.fillRect(0, y, 64, 3);
+    g.strokeStyle = 'rgba(242,183,5,0.75)'; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(20, 22); g.lineTo(32, 38); g.lineTo(44, 22); g.stroke();
+  }, 1, 2),
+  hubWand: textur(128, 128, (g) => {
+    g.fillStyle = '#2a6fdb'; g.fillRect(0, 0, 128, 128);
+    kruemel(g, 128, 128, ['#2463c4', '#3a7fe8'], 400, 3);
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 2;
+    for (const x of [2, 64]) g.strokeRect(x, 2, 62, 124);
+    nieten(g, 128, 128, 21);
+  }),
+  holz: textur(64, 64, (g) => {
+    g.fillStyle = '#8a5d36'; g.fillRect(0, 0, 64, 64);
+    g.strokeStyle = 'rgba(60,35,15,0.45)';
+    for (let y = 2; y < 64; y += 5) { g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(20, y + rnd(-2, 2), 40, y + rnd(-2, 2), 64, y); g.stroke(); }
+  }),
+  pfeil: textur(64, 64, (g) => {
+    g.clearRect(0, 0, 64, 64);
+    g.strokeStyle = '#eaffef'; g.lineWidth = 7; g.lineCap = 'round';
+    for (const y of [16, 36]) { g.beginPath(); g.moveTo(14, y + 14); g.lineTo(32, y); g.lineTo(50, y + 14); g.stroke(); }
+  }),
+  rauch: textur(64, 64, (g) => {
+    const v = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    v.addColorStop(0, 'rgba(255,255,255,1)'); v.addColorStop(0.5, 'rgba(255,255,255,0.5)'); v.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = v; g.fillRect(0, 0, 64, 64);
+  }),
+};
+function stoffTextur(farbe) {
+  return textur(64, 64, (g) => {
+    g.fillStyle = farbe; g.fillRect(0, 0, 64, 64);
+    g.globalAlpha = 0.12; g.strokeStyle = '#000';
+    for (let k = 0; k < 64; k += 3) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 64); g.stroke(); }
+    g.globalAlpha = 1;
+    kruemel(g, 64, 64, ['#000', '#fff'], 200, 2, [0.04, 0.12]);
+  });
+}
+function roboterTextur(farbe, rost) {
+  return textur(128, 128, (g) => {
+    g.fillStyle = farbe; g.fillRect(0, 0, 128, 128);
+    kruemel(g, 128, 128, ['#000', '#fff'], 700, 3, [0.04, 0.14]);
+    g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 2;
+    g.strokeRect(3, 3, 122, 58); g.strokeRect(3, 67, 58, 58); g.strokeRect(67, 67, 58, 58);
+    nieten(g, 128, 128, 18, 'rgba(255,255,255,0.4)');
+    for (let k = 0; k < 7; k++) { // Rost-Flecken
+      const x = rnd(0, 128), y = rnd(0, 128), r = rnd(4, 12);
+      const v = g.createRadialGradient(x, y, 0, x, y, r);
+      v.addColorStop(0, rost); v.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = v; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 1;
+    for (let k = 0; k < 10; k++) { const x = rnd(0, 128), y = rnd(0, 128); g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd(-10, 10), y + rnd(-4, 4)); g.stroke(); }
+  });
+}
+
+// ---------- Himmel, Berge, Wolken ----------
+const himmel = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: {
+    oben: { value: new THREE.Color(0x2f7fe0) }, mitte: { value: new THREE.Color(HORIZONT) },
+    unten: { value: new THREE.Color(0xe6f3ff) }, sonnenRichtung: { value: SONNEN_RICHTUNG },
+  },
+  vertexShader: 'varying vec3 vR; void main(){ vR = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform vec3 oben; uniform vec3 mitte; uniform vec3 unten; uniform vec3 sonnenRichtung; varying vec3 vR;
+    void main(){
+      float h = vR.y;
+      vec3 c = h > 0.0 ? mix(mitte, oben, pow(h, 0.55)) : mix(mitte, unten, min(1.0, -h * 4.0));
+      float s = max(dot(vR, sonnenRichtung), 0.0);
+      c += vec3(1.0, 0.92, 0.75) * (pow(s, 900.0) * 4.0 + pow(s, 12.0) * 0.25);
+      gl_FragColor = vec4(c, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+}));
+himmel.frustumCulled = false;
+szene.add(himmel);
+
+{ // Berge in der Ferne
+  const bergMat = mat(0x7f8fa6, { flatShading: true, roughness: 1 }), schneeMat = mat(0xf4f8ff, { flatShading: true, roughness: 0.9 });
+  for (let k = 0; k < 40; k++) {
+    const w = k / 40 * Math.PI * 2 + rnd(-0.05, 0.05), r = rnd(220, 290);
+    const br = rnd(40, 80), h = rnd(35, 85), seg = Math.floor(rnd(5, 8));
+    const berg = new THREE.Mesh(new THREE.ConeGeometry(br, h, seg), bergMat);
+    berg.position.set(Math.cos(w) * r, h / 2 - 2, Math.sin(w) * r); berg.rotation.y = rnd(0, 6);
+    const schnee = new THREE.Mesh(new THREE.ConeGeometry(br * 0.31, h * 0.3, seg), schneeMat);
+    schnee.position.y = h * 0.35 + 0.3; berg.add(schnee);
+    szene.add(berg);
+  }
+}
+const wolken = [];
+{
+  const wolkenMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x8899aa, flatShading: true });
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  for (let k = 0; k < 22; k++) {
+    const w = new THREE.Group();
+    const n = Math.floor(rnd(5, 9));
+    for (let s = 0; s < n; s++) {
+      const kugel = new THREE.Mesh(geo, wolkenMat);
+      const gr = rnd(4, 9);
+      kugel.scale.set(gr * 1.3, gr * 0.7, gr);
+      kugel.position.set(rnd(-12, 12), rnd(-2, 3), rnd(-6, 6));
+      w.add(kugel);
+    }
+    w.position.set(rnd(-300, 300), rnd(70, 110), rnd(-300, 300));
+    szene.add(w); wolken.push(w);
+  }
+}
+
+// ---------- Geometrien wiederverwenden (spart Speicher) ----------
+const geoSpeicher = new Map();
+function geo(name, machen) { if (!geoSpeicher.has(name)) geoSpeicher.set(name, machen()); return geoSpeicher.get(name); }
+const boxGeo = (b, h, t) => geo(`b${b},${h},${t}`, () => new THREE.BoxGeometry(b, h, t));
+const zylGeo = (r1, r2, h, seg) => geo(`z${r1},${r2},${h},${seg}`, () => new THREE.CylinderGeometry(r1, r2, h, seg));
+const kugelGeo = (r, a = 12, b = 8) => geo(`k${r},${a},${b}`, () => new THREE.SphereGeometry(r, a, b));
+const ebeneGeo = (b, h) => geo(`e${b},${h}`, () => new THREE.PlaneGeometry(b, h));
 
 // ================= MATERIALIEN =================
-const mat = (farbe, extra = {}) => new THREE.MeshStandardMaterial({ color: farbe, roughness: 0.7, ...extra });
 const MAT = {
-  grau: mat(0x6c7380), dunkel: mat(0x33363d), gelb: mat(0xf2b705), rot: mat(0xd6402e), blau: mat(0x2a6fdb),
-  ziegel: mat(0x9b3b2b), metall: mat(0xb8c0c8, { metalness: 0.7, roughness: 0.3 }), gruen: mat(0x3ddc84, { emissive: 0x1a8a4a, emissiveIntensity: 0.6 }),
-  fels: mat(0x7d7a76, { flatShading: true }), band: new THREE.MeshStandardMaterial({ map: bandTextur, roughness: 0.9 }),
-  holz: mat(0x7a5232), blatt: mat(0x2f8f3a, { flatShading: true }),
+  grau: mat(0xffffff, { map: TEX.metall, roughness: 0.55, metalness: 0.4 }),
+  dunkel: mat(0x33363d), schwarz: mat(0x16171a, { roughness: 0.9 }),
+  dunkelMetall: mat(0xffffff, { map: TEX.dunkelMetall, roughness: 0.5, metalness: 0.6 }),
+  gelb: mat(0xf2b705, { roughness: 0.45 }), rot: mat(0xd6402e, { roughness: 0.45 }), rotRohr: mat(0xb83a2a, { roughness: 0.4, metalness: 0.3 }),
+  blau: mat(0x2a6fdb), weiss: mat(0xeef2f6, { roughness: 0.4, side: THREE.DoubleSide }),
+  hubWand: mat(0xffffff, { map: TEX.hubWand, roughness: 0.5, metalness: 0.2 }),
+  ziegel: mat(0xffffff, { map: TEX.ziegel, roughness: 0.95 }),
+  beton: mat(0xffffff, { map: TEX.beton, roughness: 0.95 }),
+  warn: mat(0xffffff, { map: TEX.warn, roughness: 0.6 }),
+  gitter: mat(0xffffff, { map: TEX.gitter, roughness: 0.6, metalness: 0.5 }),
+  metall: mat(0xb8c0c8, { metalness: 0.7, roughness: 0.3 }),
+  chrom: mat(0xe8eef4, { metalness: 0.95, roughness: 0.15 }),
+  gruen: mat(0x3ddc84, { emissive: 0x1a8a4a, emissiveIntensity: 0.6 }),
+  fels: mat(0x7d7a76, { flatShading: true, roughness: 1 }),
+  band: new THREE.MeshStandardMaterial({ map: TEX.gummi, roughness: 0.9 }),
+  gummi: mat(0x222226, { roughness: 1 }),
+  holz: mat(0xffffff, { map: TEX.holz, roughness: 0.9 }),
+  rinde: mat(0x6b4a2e, { roughness: 1 }),
+  blatt: mat(0xffffff, { flatShading: true, roughness: 0.9 }),
+  oliv: mat(0x5a6b2f, { roughness: 0.8 }),
+  reflex: mat(0xdfe6ea, { emissive: 0x666666, emissiveIntensity: 0.4, roughness: 0.3 }),
+  gold: mat(0xffc94a, { metalness: 0.9, roughness: 0.25 }),
 };
+const bandTextur = TEX.gummi;
+
+// Items auf dem Band: Erz = zackige Brocken, Barren = Trapez-Barren
+function zackig(g, staerke) {
+  const p = g.attributes.position;
+  for (let k = 0; k < p.count; k++) {
+    const x = p.getX(k), y = p.getY(k), z = p.getZ(k);
+    const f = 1 + staerke * (Math.abs(Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5) % 1 - 0.5);
+    p.setXYZ(k, x * f, y * f, z * f);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const ERZ_GEO = zackig(new THREE.DodecahedronGeometry(0.22, 1), 0.45);
+const BARREN_GEO = (() => { const g = new THREE.CylinderGeometry(0.17, 0.24, 0.14, 4); g.rotateY(Math.PI / 4); g.scale(1.3, 1, 0.75); return g; })();
 const ITEMS = {
-  eisenerz:     { mat: mat(0x8a4b3a, { flatShading: true }), barren: false, metall: 'eisen' },
-  kupfererz:    { mat: mat(0xc0702b, { flatShading: true }), barren: false, metall: 'kupfer' },
-  eisenbarren:  { mat: mat(0xd0d6dc, { metalness: 0.8, roughness: 0.3 }), barren: true, metall: 'eisen' },
-  kupferbarren: { mat: mat(0xe8894a, { metalness: 0.8, roughness: 0.3 }), barren: true, metall: 'kupfer' },
+  eisenerz:     { mat: mat(0x7a4535, { flatShading: true, roughness: 0.9 }), barren: false, metall: 'eisen' },
+  kupfererz:    { mat: mat(0xb5652a, { flatShading: true, roughness: 0.8 }), barren: false, metall: 'kupfer' },
+  eisenbarren:  { mat: mat(0xd0d6dc, { metalness: 0.9, roughness: 0.25 }), barren: true, metall: 'eisen' },
+  kupferbarren: { mat: mat(0xf08a4a, { metalness: 0.9, roughness: 0.25 }), barren: true, metall: 'kupfer' },
 };
-const ERZ_GEO = new THREE.DodecahedronGeometry(0.22);
-const BARREN_GEO = new THREE.BoxGeometry(0.5, 0.18, 0.28);
 function itemMesh(art) {
   const m = new THREE.Mesh(ITEMS[art].barren ? BARREN_GEO : ERZ_GEO, ITEMS[art].mat);
-  m.castShadow = true; szene.add(m); return m;
+  m.castShadow = true; m.rotation.y = rnd(0, 6); szene.add(m); return m;
 }
 
 function kasten(b, h, t, m, x = 0, y = 0, z = 0) {
-  const k = new THREE.Mesh(new THREE.BoxGeometry(b, h, t), m);
+  const k = new THREE.Mesh(boxGeo(b, h, t), m);
   k.position.set(x, y, z); k.castShadow = k.receiveShadow = true; return k;
 }
 function rohr(r1, r2, h, m, x = 0, y = 0, z = 0, seg = 14) {
-  const k = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, h, seg), m);
+  const k = new THREE.Mesh(zylGeo(r1, r2, h, seg), m);
   k.position.set(x, y, z); k.castShadow = k.receiveShadow = true; return k;
+}
+function kugel(r, m, x = 0, y = 0, z = 0) {
+  const k = new THREE.Mesh(kugelGeo(r), m);
+  k.position.set(x, y, z); k.castShadow = true; return k;
 }
 function schild(text, farbe = '#ffd166') {
   const [c, g] = leinwand(256, 96);
-  g.fillStyle = 'rgba(20,25,45,0.85)'; g.fillRect(0, 0, 256, 96);
-  g.fillStyle = farbe; g.font = 'bold 64px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(20,25,45,0.9)'; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 248, 88, 18) : g.rect(4, 4, 248, 88); g.fill();
+  g.strokeStyle = farbe; g.lineWidth = 5; g.stroke();
+  g.fillStyle = farbe; g.font = 'bold 60px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(text, 128, 50);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t }));
   s.scale.set(2.4, 0.9, 1); return s;
 }
 
-// ================= WELT: Erz-Felsen + Deko =================
+// ================= WELT: Boden, Gras, Bäume, Zaun, Erz-Felsen =================
 const zellen = new Map();          // "i,j" -> Gebäude
-const erzFelsen = new Map();       // "i,j" -> { art, schlaege }
+const erzFelsen = new Map();       // "i,j" -> { art, schlaege, gruppe }
 const key = (i, j) => i + ',' + j;
 const zelleVon = x => Math.round(x / G);
+const RAND = WELT * G + 60;
 
+{ // Boden: Gras-Textur + große hellere/dunklere Flecken
+  TEX.gras.repeat.set(RAND, RAND); TEX.gras.offset.set(0.5, 0.5);
+  const bodenGeo = new THREE.PlaneGeometry(RAND * 2, RAND * 2, 90, 90);
+  const p = bodenGeo.attributes.position, farben = [];
+  for (let k = 0; k < p.count; k++) {
+    const x = p.getX(k), y = p.getY(k);
+    const n = 0.5 + 0.22 * Math.sin(x * 0.07 + 1.3) * Math.cos(y * 0.06) + 0.14 * Math.sin(x * 0.21 + y * 0.17) + 0.08 * Math.cos(x * 0.45 - y * 0.38);
+    const v = 0.78 + 0.32 * n;
+    farben.push(v * (0.95 + 0.1 * (n - 0.5)), v, v * 0.88);
+  }
+  bodenGeo.setAttribute('color', new THREE.Float32BufferAttribute(farben, 3));
+  const boden = new THREE.Mesh(bodenGeo, new THREE.MeshStandardMaterial({ map: TEX.gras, vertexColors: true, roughness: 1 }));
+  boden.rotation.x = -Math.PI / 2; boden.receiveShadow = true;
+  szene.add(boden);
+}
+const PLATTE = 5; // Beton-Platz um den HUB (halbe Breite in Metern)
+{
+  const beton = mat(0xffffff, { map: TEX.beton.clone(), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2 });
+  beton.map.repeat.set(PLATTE, PLATTE); beton.map.needsUpdate = true;
+  const platte = new THREE.Mesh(new THREE.PlaneGeometry(PLATTE * 2, PLATTE * 2), beton);
+  platte.rotation.x = -Math.PI / 2; platte.position.y = 0.012; platte.receiveShadow = true;
+  szene.add(platte);
+  for (let k = 0; k < 4; k++) { // Warnstreifen am Rand
+    const h = new THREE.Group(); h.rotation.y = k * Math.PI / 2; szene.add(h);
+    const streifen = new THREE.Mesh(new THREE.PlaneGeometry(PLATTE * 2, 0.3), MAT.warn);
+    streifen.rotation.x = -Math.PI / 2; streifen.position.set(0, 0.02, PLATTE - 0.15); streifen.receiveShadow = true;
+    h.add(streifen);
+  }
+}
+
+// Deko mit "Instanzen": tausende Grashalme, Blumen, Steinchen – aber schnell
+const dekoProZelle = new Map();
+const NULL_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
+function deko(geometrie, material, anzahl, platz, schatten = false, farben = null) {
+  const im = new THREE.InstancedMesh(geometrie, material, anzahl);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
+  for (let k = 0; k < anzahl; k++) {
+    const [x, z, gr, y = 0] = platz();
+    p.set(x, y, z); q.setFromAxisAngle(HOCH, rnd(0, Math.PI * 2)); s.setScalar(gr);
+    m4.compose(p, q, s); im.setMatrixAt(k, m4);
+    if (farben) im.setColorAt(k, c.set(wahl(farben)).offsetHSL(rnd(-0.02, 0.02), 0, rnd(-0.06, 0.06)));
+    const kk = key(zelleVon(x), zelleVon(z));
+    if (!dekoProZelle.has(kk)) dekoProZelle.set(kk, []);
+    dekoProZelle.get(kk).push({ im, k, m: m4.clone() });
+  }
+  im.receiveShadow = true; im.castShadow = schatten;
+  szene.add(im); return im;
+}
+function dekoZeigen(i, j, zeigen) {
+  for (const d of dekoProZelle.get(key(i, j)) || []) {
+    d.im.setMatrixAt(d.k, zeigen ? d.m : NULL_MATRIX);
+    d.im.instanceMatrix.needsUpdate = true;
+  }
+}
+const aufPlatte = (x, z) => Math.abs(x) < PLATTE + 0.3 && Math.abs(z) < PLATTE + 0.3;
+const nahErz = (x, z) => ERZ_ORTE.some(([, i, j]) => Math.hypot(x - i * G, z - j * G) < 1.6);
+function freierPlatz(weit) {
+  for (;;) { const x = rnd(-weit, weit), z = rnd(-weit, weit); if (!aufPlatte(x, z) && !nahErz(x, z)) return [x, z]; }
+}
+{
+  // Grashalme
+  const pos = [], col = [], nor = [];
+  for (let k = 0; k < 6; k++) {
+    const w = rnd(0, Math.PI * 2), r = rnd(0, 0.1), x = Math.cos(w) * r, z = Math.sin(w) * r;
+    const h = rnd(0.2, 0.42), b = 0.035, lx = rnd(-0.1, 0.1), lz = rnd(-0.1, 0.1);
+    const qx = Math.cos(w + 1.57) * b, qz = Math.sin(w + 1.57) * b;
+    pos.push(x - qx, 0, z - qz, x + qx, 0, z + qz, x + lx, h, z + lz);
+    col.push(0.22, 0.42, 0.13, 0.22, 0.42, 0.13, 0.62, 0.88, 0.4);
+    nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+  }
+  const halm = new THREE.BufferGeometry();
+  halm.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  halm.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  halm.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  const halmMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 1 });
+  deko(halm, halmMat, 9000, () => [...freierPlatz(WELT * G + 40), rnd(0.7, 1.4)]);
+  // Blumen
+  const blume = new THREE.IcosahedronGeometry(0.07, 0); blume.translate(0, 0.25, 0);
+  deko(blume, mat(0xffffff, { roughness: 0.6, emissive: 0x222222 }), 900, () => [...freierPlatz(WELT * G + 30), rnd(0.8, 1.3)], false,
+    [0xffffff, 0xffe14f, 0xc77dff, 0xff5d73, 0x7ec8ff]);
+  // Steinchen
+  deko(zackig(new THREE.DodecahedronGeometry(0.12, 0), 0.5), MAT.fels, 500, () => [...freierPlatz(WELT * G + 30), rnd(0.6, 2.2), 0.02], true);
+}
+
+{ // Bäume + Büsche rund um das Gelände
+  const tanneGeo = (() => {
+    const teile = [[1.7, 2.2, 1.6], [1.3, 1.9, 2.6], [0.9, 1.6, 3.5], [0.5, 1.2, 4.3]].map(([r, h, y]) => {
+      const c = new THREE.ConeGeometry(r, h, 8); c.translate(0, y, 0); return c;
+    });
+    return mergeGeometries(teile);
+  })();
+  const laubGeo = mergeGeometries([[0, 3.4, 0, 1.5], [0.9, 3.0, 0.3, 1.1], [-0.8, 3.1, -0.4, 1.15], [0.2, 4.2, -0.2, 1.0], [-0.3, 2.9, 0.9, 1.0]]
+    .map(([x, y, z, r]) => { const g = new THREE.IcosahedronGeometry(r, 0); g.translate(x, y, z); return g; }));
+  const buschGeo = mergeGeometries([[0, 0.4, 0, 0.6], [0.5, 0.35, 0.2, 0.45], [-0.4, 0.35, -0.2, 0.5]]
+    .map(([x, y, z, r]) => { const g = new THREE.IcosahedronGeometry(r, 0); g.translate(x, y, z); return g; }));
+  const stammGeo = new THREE.CylinderGeometry(0.16, 0.26, 2.4, 7); stammGeo.translate(0, 1.2, 0);
+  const ring = (rMin, rMax) => () => { const w = rnd(0, Math.PI * 2), r = rnd(rMin, rMax); return [Math.cos(w) * r, Math.sin(w) * r, rnd(0.8, 1.6)]; };
+  const orteT = Array.from({ length: 110 }, ring(WELT * G + 6, WELT * G + 55));
+  const orteL = Array.from({ length: 80 }, ring(WELT * G + 6, WELT * G + 55));
+  let k = 0;
+  deko(stammGeo, MAT.rinde, orteT.length + orteL.length, () => { const o = k < orteT.length ? orteT[k] : orteL[k - orteT.length]; k++; return o; }, true);
+  k = 0; deko(tanneGeo, MAT.blatt, orteT.length, () => orteT[k++], true, [0x2f7a3a, 0x2a6e35, 0x3a8a42]);
+  k = 0; deko(laubGeo, MAT.blatt, orteL.length, () => orteL[k++], true, [0x4caf50, 0x5cbf4a, 0x8bc34a, 0xd4a03a]);
+  deko(buschGeo, MAT.blatt, 120, ring(WELT * G + 3, WELT * G + 40), true, [0x3f9a40, 0x4caf50, 0x2f8a3a]);
+  // große Felsen
+  deko(zackig(new THREE.DodecahedronGeometry(1, 0), 0.4), MAT.fels, 60, ring(WELT * G + 4, WELT * G + 50), true);
+}
+
+{ // Holzzaun um das Gelände
+  const z = WELT * G + 1.5, pfosten = [];
+  for (let s = -z; s <= z; s += 3) pfosten.push([s, -z], [s, z], [-z, s], [z, s]);
+  let k = 0;
+  const pfostenGeo = new THREE.BoxGeometry(0.18, 1.3, 0.18); pfostenGeo.translate(0, 0.65, 0);
+  deko(pfostenGeo, MAT.holz, pfosten.length, () => [...pfosten[k++], 1], true);
+  for (let s = 0; s < 4; s++) for (const y of [0.45, 0.95]) {
+    const latte = kasten(z * 2, 0.12, 0.06, MAT.holz, 0, y, 0);
+    const h = new THREE.Group(); h.rotation.y = s * Math.PI / 2; latte.position.z = z; h.add(latte); szene.add(h);
+  }
+}
+
+// Erz-Felsen mit leuchtenden Kristallen
+const ERZ_MAT = {
+  eisen: mat(0xc0583a, { emissive: 0x5a1408, emissiveIntensity: 0.6, flatShading: true, roughness: 0.35, metalness: 0.3 }),
+  kupfer: mat(0xff8c3a, { emissive: 0x7a3400, emissiveIntensity: 0.6, flatShading: true, roughness: 0.35, metalness: 0.3 }),
+};
+const KRISTALL_GEO = (() => {
+  const saeule = new THREE.CylinderGeometry(0.1, 0.12, 0.5, 6); saeule.translate(0, 0.25, 0);
+  const spitze = new THREE.ConeGeometry(0.1, 0.22, 6); spitze.translate(0, 0.61, 0);
+  return mergeGeometries([saeule, spitze]);
+})();
+const FELS_GEO = zackig(new THREE.DodecahedronGeometry(0.6, 1), 0.35);
 for (const [art, i, j] of ERZ_ORTE) {
   const grp = new THREE.Group();
   grp.position.set(i * G, 0, j * G);
-  const fels = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9), MAT.fels);
-  fels.scale.set(1.1, 0.35, 1.1); fels.position.y = 0.1; fels.receiveShadow = true; grp.add(fels);
-  const kmat = mat(art === 'eisen' ? 0xb5553a : 0xff8c3a, { emissive: art === 'eisen' ? 0x401008 : 0x6a2c00, flatShading: true });
-  for (let k = 0; k < 6; k++) {
-    const kr = new THREE.Mesh(new THREE.OctahedronGeometry(0.18 + Math.random() * 0.15), kmat);
-    const w = k / 6 * Math.PI * 2;
-    kr.position.set(Math.cos(w) * 0.5, 0.35, Math.sin(w) * 0.5); kr.rotation.set(Math.random(), Math.random(), Math.random());
-    kr.scale.y = 1.8; kr.castShadow = true; grp.add(kr);
+  for (let k = 0; k < 4; k++) {
+    const f = new THREE.Mesh(FELS_GEO, MAT.fels);
+    f.position.set(rnd(-0.45, 0.45), 0.05, rnd(-0.45, 0.45)); f.scale.set(rnd(0.8, 1.3), rnd(0.3, 0.55), rnd(0.8, 1.3));
+    f.rotation.y = rnd(0, 6); f.castShadow = f.receiveShadow = true; grp.add(f);
+  }
+  for (let k = 0; k < 9; k++) {
+    const kr = new THREE.Mesh(KRISTALL_GEO, ERZ_MAT[art]);
+    const w = rnd(0, Math.PI * 2), r = rnd(0.1, 0.65);
+    kr.position.set(Math.cos(w) * r, 0.15, Math.sin(w) * r);
+    kr.rotation.set(Math.sin(w) * rnd(0.2, 0.6), rnd(0, 6), -Math.cos(w) * rnd(0.2, 0.6));
+    kr.scale.setScalar(rnd(0.7, 1.5)); kr.castShadow = true; grp.add(kr);
+  }
+  for (let k = 0; k < 6; k++) { // Brocken drumherum
+    const b = new THREE.Mesh(ERZ_GEO, ITEMS[art + 'erz'].mat);
+    const w = rnd(0, Math.PI * 2), r = rnd(0.7, 1.0);
+    b.position.set(Math.cos(w) * r, 0.06, Math.sin(w) * r); b.scale.setScalar(rnd(0.5, 0.9)); b.castShadow = true; grp.add(b);
   }
   szene.add(grp);
-  erzFelsen.set(key(i, j), { art, schlaege: 0 });
-}
-// Bäume und Steine am Rand (nur Deko)
-for (let k = 0; k < 90; k++) {
-  const w = Math.random() * Math.PI * 2, r = WELT * G * (0.75 + Math.random() * 0.45);
-  const x = Math.cos(w) * r, z = Math.sin(w) * r;
-  if (Math.random() < 0.7) {
-    const s = 0.8 + Math.random() * 0.8;
-    szene.add(rohr(0.2 * s, 0.3 * s, 2 * s, MAT.holz, x, s, z, 7));
-    const krone = new THREE.Mesh(new THREE.ConeGeometry(1.4 * s, 3 * s, 7), MAT.blatt);
-    krone.position.set(x, 3.2 * s, z); krone.castShadow = true; szene.add(krone);
-  } else {
-    const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.6 + Math.random()), MAT.fels);
-    st.position.set(x, 0.2, z); st.castShadow = true; szene.add(st);
-  }
+  erzFelsen.set(key(i, j), { art, schlaege: 0, gruppe: grp });
 }
 
 // ================= GEBÄUDE-MODELLE =================
-function bauModell(typ) {
-  const g = new THREE.Group();
+function bauModell(typ, erzArt) {
+  const g = new THREE.Group(), u = g.userData;
+  const add = (...teile) => { for (const t of teile) g.add(t); return teile[0]; };
+  const dreh = (obj, rx, ry, rz) => { obj.rotation.set(rx, ry, rz); return obj; };
+
   if (typ === 'bohrer') {
-    g.add(kasten(1.8, 0.5, 1.8, MAT.grau, 0, 0.25, 0));
-    g.add(kasten(1.1, 2.2, 1.1, MAT.gelb, 0, 1.5, 0));
-    g.add(kasten(1.3, 0.3, 1.3, MAT.dunkel, 0, 2.75, 0));
-    g.add(kasten(0.6, 0.35, 0.5, MAT.dunkel, 0, 0.6, 0.85)); // Ausgang
-    const d = new THREE.Group(); d.position.y = 3.0;
-    d.add(kasten(1.0, 0.15, 0.2, MAT.rot)); d.add(kasten(0.2, 0.15, 1.0, MAT.rot));
-    g.add(d); g.userData.dreh = d;
-  } else if (typ === 'band') {
-    g.add(kasten(1.4, 0.2, 2, MAT.dunkel, 0, 0.1, 0));
-    const oben = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 2), MAT.band);
-    oben.rotation.x = -Math.PI / 2; oben.position.y = 0.21; oben.receiveShadow = true;
-    g.add(oben);
-    g.add(kasten(0.1, 0.3, 2, MAT.gelb, 0.66, 0.2, 0)); g.add(kasten(0.1, 0.3, 2, MAT.gelb, -0.66, 0.2, 0));
-  } else if (typ === 'schmelze') {
-    g.add(kasten(1.8, 1.8, 1.8, MAT.ziegel, 0, 0.9, 0));
-    g.add(kasten(1.9, 0.2, 1.9, MAT.dunkel, 0, 1.9, 0));
-    g.add(rohr(0.25, 0.3, 1.4, MAT.dunkel, 0.45, 2.6, -0.45));
-    const glut = mat(0xff7a1a, { emissive: 0xff5a00, emissiveIntensity: 0.3 });
-    g.add(kasten(0.9, 0.5, 0.06, glut, 0, 1.15, 0.91));
-    g.add(kasten(0.6, 0.35, 0.5, MAT.dunkel, 0, 0.3, 0.95)); // Ausgang
-    g.userData.glut = glut;
-  } else if (typ === 'hub') {
-    g.add(kasten(1.9, 2.6, 1.9, MAT.blau, 0, 1.3, 0));
-    g.add(kasten(2.1, 0.2, 2.1, MAT.gelb, 0, 2.7, 0));
-    g.add(rohr(0.05, 0.05, 1.2, MAT.metall, 0, 3.4, 0));
-    const lampe = new THREE.Mesh(new THREE.SphereGeometry(0.15), mat(0xff3030, { emissive: 0xff0000, emissiveIntensity: 1 }));
-    lampe.position.y = 4.05; g.add(lampe);
-    for (let k = 0; k < 4; k++) { // Einwurf-Klappen
-      const kl = kasten(0.8, 0.5, 0.08, MAT.dunkel, 0, 0.5, 0.96);
-      const h = new THREE.Group(); h.rotation.y = k * Math.PI / 2; h.add(kl); g.add(h);
+    add(kasten(1.9, 0.2, 1.9, MAT.beton, 0, 0.1, 0));
+    add(kasten(1.92, 0.06, 0.12, MAT.warn, 0, 0.2, 0.9), kasten(1.92, 0.06, 0.12, MAT.warn, 0, 0.2, -0.9),
+      kasten(0.12, 0.06, 1.92, MAT.warn, 0.9, 0.2, 0), kasten(0.12, 0.06, 1.92, MAT.warn, -0.9, 0.2, 0));
+    for (const [x, z] of [[-0.72, -0.72], [0.72, -0.72], [-0.72, 0.72], [0.72, 0.72]]) {
+      add(kasten(0.14, 2.5, 0.14, MAT.dunkelMetall, x, 1.45, z));
+      add(kasten(0.26, 0.08, 0.26, MAT.dunkelMetall, x, 0.24, z)); // Fußplatte
     }
-    const s = schild('HUB'); s.position.y = 4.8; g.add(s);
+    for (const x of [-0.72, 0.72]) { // Kreuz-Streben an den Seiten
+      add(dreh(kasten(0.07, 0.07, 1.9, MAT.dunkelMetall, x, 1.05, 0), 0.75, 0, 0), dreh(kasten(0.07, 0.07, 1.9, MAT.dunkelMetall, x, 1.05, 0), -0.75, 0, 0));
+    }
+    add(kasten(1.62, 0.16, 1.62, MAT.gelb, 0, 2.72, 0));
+    add(kasten(1.0, 1.0, 1.0, MAT.gelb, 0, 2.05, 0));
+    add(kasten(0.7, 0.45, 0.04, MAT.gitter, 0, 2.1, 0.51), kasten(0.04, 0.45, 0.7, MAT.gitter, 0.51, 2.1, 0));
+    add(kasten(1.04, 0.1, 1.04, MAT.dunkelMetall, 0, 1.58, 0));
+    add(kasten(0.5, 0.12, 0.02, MAT.warn, 0, 2.42, 0.51));
+    add(rohr(0.36, 0.36, 0.5, MAT.dunkelMetall, 0, 3.05, 0, 16));
+    for (let k = 0; k < 4; k++) add(rohr(0.42, 0.42, 0.035, MAT.metall, 0, 2.88 + k * 0.11, 0, 16));
+    const rotor = new THREE.Group(); rotor.position.y = 3.36; add(rotor);
+    rotor.add(rohr(0.1, 0.1, 0.14, MAT.chrom, 0, 0, 0, 10));
+    for (let k = 0; k < 3; k++) { const a = new THREE.Group(); a.rotation.y = k * Math.PI * 2 / 3; a.add(dreh(kasten(0.6, 0.03, 0.14, MAT.rot, 0.32, 0, 0), 0.3, 0, 0)); rotor.add(a); }
+    u.dreh = rotor;
+    const bohr = new THREE.Group(); add(bohr);
+    bohr.add(rohr(0.08, 0.08, 1.0, MAT.chrom, 0, 1.05, 0, 10));
+    bohr.add(dreh(rohr(0.001, 0.26, 0.55, MAT.metall, 0, 0.4, 0, 12), Math.PI, 0, 0));
+    for (let k = 0; k < 6; k++) { // Spiral-Schneiden
+      const s = new THREE.Group(); s.rotation.y = k * 1.1; s.position.y = 0.3 + k * 0.1;
+      s.add(dreh(kasten(0.36 - k * 0.04, 0.03, 0.08, MAT.dunkelMetall, 0.12, 0, 0), 0, 0, 0.4)); bohr.add(s);
+    }
+    u.bohr = bohr;
+    if (erzArt) { // leuchtender Erz-Ring im Bohrloch
+      const ring = new THREE.Mesh(geo('bohrring', () => new THREE.TorusGeometry(0.34, 0.06, 6, 20)), ERZ_MAT[erzArt]);
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.21; add(ring);
+    }
+    add(dreh(kasten(0.6, 0.05, 0.75, MAT.metall, 0, 0.62, 0.72), 0.3, 0, 0));
+    add(dreh(kasten(0.05, 0.22, 0.75, MAT.gelb, 0.31, 0.72, 0.72), 0.3, 0, 0), dreh(kasten(0.05, 0.22, 0.75, MAT.gelb, -0.31, 0.72, 0.72), 0.3, 0, 0));
+    add(rohr(0.06, 0.06, 1.5, MAT.rotRohr, -0.5, 0.95, -0.55, 8), rohr(0.09, 0.09, 0.08, MAT.dunkelMetall, -0.5, 1.7, -0.55, 8));
+    add(dreh(rohr(0.06, 0.06, 0.25, MAT.rotRohr, -0.5, 1.72, -0.42, 8), Math.PI / 2, 0, 0));
+    const lampe = kugel(0.09, mat(0xff9a00, { emissive: 0xff7a00, emissiveIntensity: 0 }), 0.62, 2.9, 0.62);
+    add(lampe, rohr(0.07, 0.08, 0.08, MAT.dunkel, 0.62, 2.82, 0.62, 8));
+    u.lampe = lampe.material;
+  } else if (typ === 'band') {
+    for (const x of [-0.68, 0.68]) {
+      add(kasten(0.1, 0.24, 2, MAT.dunkelMetall, x, 0.24, 0));
+      add(kasten(0.12, 0.05, 2, MAT.gelb, x, 0.38, 0));
+    }
+    for (const z of [-0.75, 0.75]) {
+      for (const x of [-0.62, 0.62]) add(kasten(0.08, 0.16, 0.08, MAT.dunkel, x, 0.08, z));
+      add(kasten(1.3, 0.04, 0.06, MAT.dunkel, 0, 0.06, z));
+    }
+    for (const z of [-0.92, 0.92]) add(dreh(rohr(0.1, 0.1, 1.26, MAT.chrom, 0, 0.24, z, 10), 0, 0, Math.PI / 2));
+    add(kasten(1.24, 0.1, 1.84, MAT.gummi, 0, 0.27, 0));
+    const oben = new THREE.Mesh(ebeneGeo(1.24, 1.9), MAT.band);
+    oben.rotation.x = -Math.PI / 2; oben.position.y = 0.335; oben.receiveShadow = true;
+    add(oben);
+  } else if (typ === 'schmelze') {
+    add(kasten(1.9, 0.2, 1.9, MAT.beton, 0, 0.1, 0));
+    add(kasten(1.6, 1.5, 1.6, MAT.ziegel, 0, 0.95, 0));
+    for (const [x, z] of [[-0.78, -0.78], [0.78, -0.78], [-0.78, 0.78], [0.78, 0.78]]) add(kasten(0.14, 1.6, 0.14, MAT.dunkelMetall, x, 0.98, z));
+    for (const y of [0.45, 1.45]) add(kasten(1.64, 0.08, 1.64, MAT.dunkelMetall, 0, y, 0));
+    add(kasten(1.8, 0.14, 1.8, MAT.dunkelMetall, 0, 1.77, 0));
+    add(dreh(rohr(0.001, 1.2, 0.5, MAT.dunkelMetall, 0, 2.09, 0, 4), 0, Math.PI / 4, 0));
+    add(kasten(0.46, 1.5, 0.46, MAT.ziegel, 0.45, 2.45, -0.45));
+    add(kasten(0.56, 0.12, 0.56, MAT.dunkelMetall, 0.45, 3.2, -0.45), kasten(0.52, 0.06, 0.52, MAT.dunkelMetall, 0.45, 2.6, -0.45));
+    u.rauch = [0.45, 3.35, -0.45];
+    const glut = mat(0xff7a1a, { emissive: 0xff5a00, emissiveIntensity: 0.3 });
+    add(kasten(0.8, 0.6, 0.05, glut, 0, 0.95, 0.81));
+    for (let k = 0; k < 5; k++) add(kasten(0.04, 0.6, 0.06, MAT.schwarz, -0.32 + k * 0.16, 0.95, 0.835));
+    add(kasten(0.96, 0.08, 0.1, MAT.dunkelMetall, 0, 1.29, 0.83), kasten(0.96, 0.08, 0.1, MAT.dunkelMetall, 0, 0.61, 0.83));
+    const leuchten = new THREE.Mesh(ebeneGeo(1.4, 1.0), new THREE.MeshBasicMaterial({ color: 0xff7a1a, map: TEX.rauch, transparent: true, opacity: 0.3, depthWrite: false }));
+    leuchten.rotation.x = -Math.PI / 2; leuchten.position.set(0, 0.21, 1.05); add(leuchten);
+    u.glut = glut; u.glutBoden = leuchten.material;
+    add(dreh(rohr(0.45, 0.2, 0.45, MAT.metall, -0.45, 2.3, -0.45, 4), 0, Math.PI / 4, 0)); // Einfüll-Trichter
+    add(rohr(0.07, 0.07, 1.3, MAT.rotRohr, 0.86, 1.0, 0.35, 8), rohr(0.07, 0.07, 1.3, MAT.rotRohr, 0.86, 1.0, -0.1, 8));
+    add(rohr(0.11, 0.11, 0.06, MAT.dunkelMetall, 0.86, 0.6, 0.35, 8), rohr(0.11, 0.11, 0.06, MAT.dunkelMetall, 0.86, 1.4, -0.1, 8));
+    add(dreh(kasten(0.55, 0.05, 0.6, MAT.metall, 0, 0.4, 1.0), 0.25, 0, 0));
+    add(dreh(kasten(0.05, 0.18, 0.6, MAT.gelb, 0.28, 0.48, 1.0), 0.25, 0, 0), dreh(kasten(0.05, 0.18, 0.6, MAT.gelb, -0.28, 0.48, 1.0), 0.25, 0, 0));
+  } else if (typ === 'hub') {
+    add(kasten(1.98, 0.25, 1.98, MAT.gitter, 0, 0.125, 0));
+    add(kasten(1.7, 2.2, 1.7, MAT.hubWand, 0, 1.35, 0));
+    for (const [x, z] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) add(kasten(0.12, 2.3, 0.12, MAT.gelb, x, 1.4, z));
+    const fenster = mat(0x9fe0ff, { emissive: 0x3aa0ff, emissiveIntensity: 0.6, roughness: 0.1, metalness: 0.3 });
+    const [c, gx] = leinwand(256, 128);
+    const anzeigeTex = new THREE.CanvasTexture(c); anzeigeTex.colorSpace = THREE.SRGBColorSpace;
+    const anzeigeMat = new THREE.MeshBasicMaterial({ map: anzeigeTex });
+    for (let k = 0; k < 4; k++) {
+      const h = new THREE.Group(); h.rotation.y = k * Math.PI / 2; add(h);
+      h.add(kasten(1.2, 0.32, 0.04, fenster, 0, 2.15, 0.86));
+      h.add(kasten(0.8, 0.42, 0.05, MAT.schwarz, 0, 0.62, 0.86));
+      h.add(kasten(0.96, 0.07, 0.07, MAT.warn, 0, 0.87, 0.87), kasten(0.96, 0.07, 0.07, MAT.warn, 0, 0.38, 0.87));
+      const bild = new THREE.Mesh(ebeneGeo(1.0, 0.5), anzeigeMat); bild.position.set(0, 1.45, 0.875); h.add(bild);
+      h.add(kasten(1.1, 0.6, 0.03, MAT.dunkel, 0, 1.45, 0.86));
+    }
+    u.anzeige = { gx, tex: anzeigeTex, text: '' };
+    add(kasten(1.98, 0.15, 1.98, MAT.dunkelMetall, 0, 2.52, 0));
+    for (let k = 0; k < 4; k++) { // Geländer
+      const h = new THREE.Group(); h.rotation.y = k * Math.PI / 2; add(h);
+      h.add(kasten(1.9, 0.05, 0.05, MAT.gelb, 0, 2.95, 0.93));
+      for (const x of [-0.93, 0, 0.93]) h.add(kasten(0.05, 0.4, 0.05, MAT.gelb, x, 2.78, 0.93));
+    }
+    const schuessel = new THREE.Group(); schuessel.position.set(0.45, 2.6, 0.45); add(schuessel);
+    schuessel.add(rohr(0.04, 0.05, 0.5, MAT.metall, 0, 0.25, 0, 8));
+    const teller = new THREE.Mesh(geo('teller', () => new THREE.SphereGeometry(0.38, 18, 8, 0, Math.PI * 2, 0, 0.9)), MAT.weiss);
+    teller.position.y = 0.6; teller.rotation.x = 2.2; teller.castShadow = true; schuessel.add(teller);
+    schuessel.add(dreh(rohr(0.015, 0.015, 0.4, MAT.metall, 0, 0.72, 0.12, 4), 0.9, 0, 0));
+    u.schuessel = schuessel;
+    add(rohr(0.04, 0.06, 1.4, MAT.metall, -0.5, 3.3, -0.5, 6));
+    const blink = kugel(0.1, mat(0xff3030, { emissive: 0xff0000, emissiveIntensity: 1 }), -0.5, 4.05, -0.5);
+    add(blink); u.blink = blink.material;
+    const s = schild('HUB'); s.position.y = 4.9; add(s);
   } else if (typ === 'schleuder') {
-    g.add(rohr(0.85, 0.95, 0.3, MAT.dunkel, 0, 0.15, 0));
-    g.add(rohr(0.72, 0.72, 0.06, MAT.gruen, 0, 0.31, 0));
-    const pfeil = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.6, 3), MAT.gelb);
-    pfeil.rotation.x = Math.PI / 2; pfeil.position.set(0, 0.38, 0.25); pfeil.scale.z = 0.2; g.add(pfeil);
+    add(rohr(0.92, 0.97, 0.12, MAT.dunkelMetall, 0, 0.06, 0, 8));
+    add(rohr(0.95, 0.95, 0.03, MAT.warn, 0, 0.135, 0, 8));
+    const federGeo = geo('feder', () => new THREE.TorusGeometry(0.1, 0.02, 5, 12));
+    for (const [x, z] of [[0.45, 0.45], [-0.45, 0.45], [0.45, -0.45], [-0.45, -0.45]]) for (let k = 0; k < 3; k++) {
+      const f = new THREE.Mesh(federGeo, MAT.chrom); f.rotation.x = Math.PI / 2; f.position.set(x, 0.15 + k * 0.035, z); add(f);
+    }
+    const pad = new THREE.Group(); pad.position.y = 0.26; add(pad);
+    pad.add(rohr(0.8, 0.82, 0.07, MAT.gruen, 0, 0, 0, 24));
+    const pfeile = new THREE.Mesh(ebeneGeo(0.9, 0.9), new THREE.MeshBasicMaterial({ map: TEX.pfeil, transparent: true, depthWrite: false }));
+    pfeile.rotation.x = -Math.PI / 2; pfeile.rotation.z = Math.PI; pfeile.position.y = 0.04; pad.add(pfeile);
+    const ring = new THREE.Mesh(geo('schleuderring', () => new THREE.TorusGeometry(0.8, 0.035, 6, 32)), mat(0x9dffc4, { emissive: 0x3dff8a, emissiveIntensity: 1 }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.04; pad.add(ring);
+    u.pad = pad; u.ring = ring.material;
   } else if (typ === 'turm') {
-    g.add(rohr(0.7, 0.8, 0.5, MAT.grau, 0, 0.25, 0));
-    g.add(rohr(0.2, 0.2, 1.8, MAT.metall, 0, 1.4, 0));
-    const kopf = new THREE.Group(); kopf.position.y = 2.4;
-    kopf.add(kasten(0.8, 0.6, 0.8, MAT.rot));
-    const lauf = rohr(0.14, 0.14, 0.9, MAT.dunkel, 0, 0, 0.6); lauf.rotation.x = Math.PI / 2; kopf.add(lauf);
-    g.add(kopf); g.userData.kopf = kopf;
+    add(rohr(0.75, 0.85, 0.15, MAT.dunkelMetall, 0, 0.075, 0, 8));
+    for (let k = 0; k < 3; k++) {
+      const h = new THREE.Group(); h.rotation.y = k * Math.PI * 2 / 3; add(h);
+      h.add(dreh(kasten(0.1, 1.5, 0.1, MAT.dunkelMetall, 0, 0.75, 0.38), -0.42, 0, 0));
+    }
+    add(rohr(0.15, 0.2, 2.0, MAT.metall, 0, 1.1, 0, 10));
+    add(rohr(0.28, 0.28, 0.12, MAT.dunkelMetall, 0, 1.98, 0, 12));
+    add(kasten(0.5, 0.3, 0.4, MAT.oliv, 0.55, 0.3, 0.3), kasten(0.52, 0.04, 0.42, MAT.dunkel, 0.55, 0.46, 0.3));
+    BALL_FARBEN.forEach((c, k) => add(kugel(0.09, mat(c, { roughness: 0.3 }), 0.43 + (k % 2) * 0.22, 0.53, 0.22 + Math.floor(k / 2) * 0.17)));
+    const kopf = new THREE.Group(); kopf.position.y = 2.3; add(kopf);
+    const koerper = kugel(0.4, MAT.rot); koerper.scale.set(1, 0.72, 1.15); kopf.add(koerper);
+    const guertel = new THREE.Mesh(geo('turmring', () => new THREE.TorusGeometry(0.4, 0.04, 6, 20)), MAT.dunkelMetall);
+    guertel.rotation.x = Math.PI / 2; kopf.add(guertel);
+    const laeufe = new THREE.Group(); kopf.add(laeufe);
+    for (const x of [-0.15, 0.15]) {
+      laeufe.add(dreh(rohr(0.075, 0.075, 0.8, MAT.dunkelMetall, x, 0, 0.55, 10), Math.PI / 2, 0, 0));
+      laeufe.add(dreh(rohr(0.1, 0.1, 0.1, MAT.chrom, x, 0, 0.95, 10), Math.PI / 2, 0, 0));
+    }
+    kopf.add(kugel(0.08, mat(0xff2020, { emissive: 0xff0000, emissiveIntensity: 1.5 }), 0, 0.17, 0.38));
+    kopf.add(rohr(0.02, 0.02, 0.3, MAT.metall, -0.2, 0.38, -0.1, 4));
+    u.kopf = kopf; u.laeufe = laeufe;
   }
   return g;
 }
